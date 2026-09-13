@@ -295,6 +295,7 @@ mod tests {
             deadline_exceeded: false,
             captured_responses: vec![],
             screenshot: None,
+            block: None,
         }
     }
 

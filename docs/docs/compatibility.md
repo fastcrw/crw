@@ -21,6 +21,7 @@ How you point the SDK depends on the language: the **JS/TS SDK** honours a `/fir
 | --- | --- |
 | Screenshot output | Supported, but only on an instance with a capture-capable browser tier (Chrome or Playwright). Check `screenshot.supported` on `GET /v1/capabilities` |
 | `success` semantics | `success: false` when target returns HTTP 4xx/5xx with minimal content; `success: true` with `warning` when target returns error status but has real content |
+| Anti-bot walls | A wall no renderer tier can clear is HTTP 200 with `success: false` and `error_code: "anti_bot"`, not a 5xx. Firecrawl-shaped code that branches on the HTTP status will read it as a success, so branch on `success` |
 | JS waiting | Numeric delay only; no selector-based wait primitive |
 | `extract` format | Accepted as alias for `json`. Use `formats: ["json"]` with `jsonSchema` for structured extraction |
 | SDKs | Official packages: `crw` (Python 0.16.0) and `crw-sdk` (TypeScript 0.16.0) |
