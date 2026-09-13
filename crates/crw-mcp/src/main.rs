@@ -448,7 +448,7 @@ async fn parse_response(resp: reqwest::Response) -> Result<Value, String> {
 
     // A failure envelope at HTTP 200 is still a failure. An anti-bot wall the
     // renderer could not clear arrives this way, and deciding on the transport
-    // alone would hand the agent `isError: false` with a body-less document —
+    // alone would hand the agent `isError: false` with a body-less document,
     // which a model reports as "the page was empty" and then acts on. Surfacing
     // it as an error instead puts the real reason in the model's context, where
     // it can pick another URL or tell the user.

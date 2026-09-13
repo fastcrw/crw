@@ -626,7 +626,7 @@ pub fn looks_like_cloudflare_challenge(html: &str) -> bool {
 /// There is no Turnstile widget and no challenge orchestrator on this page, so a
 /// cold solve against it is guaranteed to fail. It costs a full solve budget
 /// (measured on prod at a p50 of 25.5s per attempt) and, worse, reading it as a
-/// challenge sets `route_to_cloak`, which suppresses the chrome_proxy arm — the
+/// challenge sets `route_to_cloak`, which suppresses the chrome_proxy arm: the
 /// one tier that CAN recover an IP-reputation block like this one, behind a
 /// residential exit.
 ///
