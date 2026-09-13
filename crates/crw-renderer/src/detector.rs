@@ -620,6 +620,26 @@ pub fn looks_like_cloudflare_challenge(html: &str) -> bool {
     weak_hits >= 2
 }
 
+/// Cloudflare's hard block page (error 1020 / WAF deny), as distinct from the
+/// managed challenge the solver exists for.
+///
+/// There is no Turnstile widget and no challenge orchestrator on this page, so a
+/// cold solve against it is guaranteed to fail. It costs a full solve budget
+/// (measured on prod at a p50 of 25.5s per attempt) and, worse, reading it as a
+/// challenge sets `route_to_cloak`, which suppresses the chrome_proxy arm — the
+/// one tier that CAN recover an IP-reputation block like this one, behind a
+/// residential exit.
+///
+/// The pair is the structural marker `crw_crawl::single::classify_block`
+/// already trusts for this vendor, plus the page's own block heading. BOTH are
+/// required on purpose: a support article, a blog post or a code sample that
+/// merely mentions "error 1020" or "you are unable to access" sits comfortably
+/// under the weak-marker size cap below and must not trip this. Case-sensitive
+/// and un-lowercased, matching the `classify_block` arm it mirrors.
+pub fn looks_like_cloudflare_firewall_block(html: &str) -> bool {
+    html.contains(r#"<span class="cf-error-code">"#) && html.contains("you have been blocked")
+}
+
 /// Returns true when the `cf-mitigated` response header indicates the
 /// request was challenged or blocked by Cloudflare. Independent of the
 /// HTTP status code — Cloudflare may return 200 with this header set.
@@ -1055,6 +1075,55 @@ mod tests {
                 .repeat(6)
         );
         assert!(!looks_like_generic_bot_wall(&html, false));
+    }
+
+    /// The 1020 page is a deny, not a challenge. It carries no widget and no
+    /// orchestrator, so the solver has nothing to solve.
+    #[test]
+    fn cloudflare_1020_is_a_firewall_block() {
+        let html = concat!(
+            r#"<html><head><title>Attention Required! | Cloudflare</title></head>"#,
+            r#"<body><h1>Sorry, you have been blocked</h1>"#,
+            r#"<p>You are unable to access example.com</p>"#,
+            r#"<span class="cf-error-code">1020</span>"#,
+            r#"<p>Performance &amp; security by Cloudflare</p></body></html>"#,
+        );
+        assert!(looks_like_cloudflare_firewall_block(html));
+        // Precondition for the veto being worth anything: without it, this page
+        // reads as a solvable challenge on the two weak markers below.
+        assert!(
+            looks_like_cloudflare_challenge(html),
+            "if this ever stops being true the veto at the route_to_cloak site is dead code"
+        );
+    }
+
+    /// The half that must never be vetoed: a genuine managed challenge always
+    /// carries a STRONG marker, and it is not a firewall block.
+    #[test]
+    fn managed_challenge_is_not_a_firewall_block() {
+        let html = concat!(
+            r#"<html><head><title>Just a moment...</title></head><body>"#,
+            r#"<script>window._cf_chl_opt={cvId:"3"};</script>"#,
+            r#"<p>Checking your browser before accessing the site</p>"#,
+            r#"<p>Performance &amp; security by Cloudflare</p></body></html>"#,
+        );
+        assert!(!looks_like_cloudflare_firewall_block(html));
+        assert!(looks_like_cloudflare_challenge(html));
+    }
+
+    /// Both halves of the pair are required. Prose that names the error code,
+    /// or a support page that explains being blocked, must not veto a real
+    /// challenge on one string alone.
+    #[test]
+    fn prose_about_being_blocked_is_not_a_firewall_block() {
+        let heading_only = r#"<html><body><article><h1>Why you have been blocked</h1>
+            <p>Cloudflare error 1020 means a firewall rule matched your request.</p>
+            </article></body></html>"#;
+        assert!(!looks_like_cloudflare_firewall_block(heading_only));
+
+        let span_only = r#"<html><body><span class="cf-error-code">1020</span>
+            <p>A docs page quoting the markup of an error page.</p></body></html>"#;
+        assert!(!looks_like_cloudflare_firewall_block(span_only));
     }
 
     #[test]

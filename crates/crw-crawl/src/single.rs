@@ -2,8 +2,9 @@ use crw_core::Deadline;
 use crw_core::config::{BUILTIN_UA_POOL, ExtractionConfig, LlmConfig};
 use crw_core::error::CrwResult;
 use crw_core::types::{
-    BlockOutcome, ChangeTrackingMode, FetchResult, OutputFormat, RequestedRenderer, ScrapeData,
-    ScrapeRequest, resolve_pinned_renderer, resolve_render_js,
+    BlockOutcome, ChangeTrackingMode, FetchResult, OutputFormat, RequestedRenderer,
+    STRUCTURAL_FAILURE_VENDOR, ScrapeData, ScrapeRequest, resolve_pinned_renderer,
+    resolve_render_js,
 };
 use crw_renderer::FallbackRenderer;
 use crw_renderer::http_only::HttpFetcher;
@@ -755,6 +756,21 @@ async fn scrape_url_inner(
                             // browser tier hardcodes it to `None`, and it is read
                             // later for `data.content_type`.
                             fetch_result.html = std::mem::take(&mut js_fetch.html);
+                            // And for the same reason, the wall verdict. This is
+                            // an assignment, not a merge, which is the point: it
+                            // carries a verdict the escalation reached AND clears
+                            // one the discarded tier left behind, so a wall we
+                            // just escaped cannot be stamped onto the page that
+                            // escaped it.
+                            //
+                            // Deliberately inside the `accept` branch only. The
+                            // reject arm below is the case where the HTTP tier
+                            // produced substantial good markdown and the JS
+                            // ladder got walled; carrying the verdict there would
+                            // block a page we can serve, which is a recall
+                            // regression and the exact failure this whole change
+                            // exists to avoid.
+                            fetch_result.block = js_fetch.block.take();
                             // Replace the original "Target returned 4xx" with the JS
                             // fetch's warning (which is None for a clean 2xx render),
                             // so a successful escalation doesn't leak the original
@@ -799,7 +815,19 @@ async fn scrape_url_inner(
     // and stamp a typed verdict onto ScrapeData so v1/v2/crawl/batch inherit one
     // decision. Runs before the summary-mode markdown strip below (~L620) so the
     // recovered markdown is still populated for the anti-over-trigger guard.
-    data.block = classify_block(
+    //
+    // Two possible sources, one verdict. `classify_block` reads the body and can
+    // NAME the vendor (cloudflare, datadome, ...), which the SaaS routing
+    // registry learns cloak-needing hosts from, so a named verdict always wins.
+    // Its `structural_failure` verdict does not: that means "we fetched a page
+    // and there was nothing usable in it", a weaker claim than the renderer's
+    // own "this is a wall no tier could clear", and it would route the page to
+    // the `http_error` branch of `routes/scrape.rs` instead of `anti_bot`.
+    //
+    // `fetch_result.block` is set only by the fallback arms of
+    // `crw_renderer::Renderer::fetch`, for a body that is itself an anti-bot
+    // wall. It used to be raised as an error that the server mapped to 502.
+    let classified = classify_block(
         fetch_result.status_code,
         fetch_result.content_type.as_deref(),
         &fetch_result.html,
@@ -809,6 +837,11 @@ async fn scrape_url_inner(
         &fetch_result.url,
         fetch_result.final_url.as_deref(),
     );
+    data.block = match (classified, fetch_result.block.clone()) {
+        (Some(c), Some(carried)) if c.vendor == STRUCTURAL_FAILURE_VENDOR => Some(carried),
+        (Some(c), _) => Some(c),
+        (None, carried) => carried,
+    };
     // The URL actually read, for `/v2`'s Firecrawl-compatible `metadata.url`.
     // Stamped unconditionally, NOT gated on `redirect_is_material`: that gate
     // exists to decide whether a redirect is worth WARNING about (it ignores a
@@ -2770,6 +2803,7 @@ mod tests {
             deadline_exceeded: false,
             captured_responses: Vec::new(),
             screenshot: None,
+            block: None,
         }
     }
 

@@ -486,6 +486,7 @@ impl PageFetcher for CamoufoxRenderer {
             captured_responses: Vec::new(),
             // Camoufox is an HTTP sidecar (no CDP) — it never captures.
             screenshot: None,
+            block: None,
         })
     }
 

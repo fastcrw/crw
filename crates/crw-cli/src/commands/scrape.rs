@@ -456,6 +456,20 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
     // through the whole fetch + parse pipeline.
     drop(keep_alive_guards);
 
+    // A blocked page is not output. The CLI decided success on the transport
+    // alone, which was survivable only while an unclearable wall came back as a
+    // transport error; now that the verdict travels on the document, that same
+    // check would print an empty body and exit 0, and `--output` would write a
+    // zero-byte file over whatever was there.
+    //
+    // Placed before every format branch below for exactly that reason. The
+    // message is the one `/v1/scrape` puts in its `error` field, so the CLI and
+    // the API say the same thing about the same page.
+    if let Some(block) = &data.block {
+        eprintln!("error: {}", block.message());
+        return Err(CmdError::code_only(1));
+    }
+
     // AI output paths short-circuit `--format`. The backend populates
     // `data.summary` / `data.json` when those OutputFormats are requested.
     if want_summary {

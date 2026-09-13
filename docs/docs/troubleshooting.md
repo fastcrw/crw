@@ -419,7 +419,7 @@ if data["balance"] < 100:
 | `rate_limited` | 429 | RPM rate limit (engine-level) |
 | `search_disabled` | 503 | `/v1/search` called with no search backend configured |
 | `not_found` | 404 | Unknown endpoint or crawl job ID does not exist |
-| `anti_bot` | 4xx/5xx | Anti-bot interstitial detected — always `success: false`; detect via `error_code: "anti_bot"` |
+| `anti_bot` | 200 | Anti-bot wall detected and no renderer tier could clear it. Always `success: false`, and the page body is cleared. Detect via `error_code: "anti_bot"`, never via the HTTP status: the request reached the target and the target refused it, so this is not a gateway failure and is never billed |
 | `renderer_error` | 500 | CDP browser internal error |
 | `internal_error` | 500 | Unexpected engine failure |
 
