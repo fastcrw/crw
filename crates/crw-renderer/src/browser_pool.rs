@@ -298,7 +298,13 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
     /// so `chrome_pool_inflight` / `chrome_pool_idle` track actual state.
     fn refresh_gauges(&self) {
         let inflight = self.inflight.load(Ordering::SeqCst) as i64;
-        let idle = self.idle.lock().unwrap().len() as i64;
+        // Poison-tolerant: reached from `PoolGuard::drop` via
+        // `dec_inflight_and_notify`, which must not panic during future
+        // cancellation. A panicking `Drop` while already unwinding aborts.
+        let idle = match self.idle.lock() {
+            Ok(g) => g.len(),
+            Err(p) => p.into_inner().len(),
+        } as i64;
         crw_core::metrics::metrics()
             .chrome_pool_inflight
             .set(inflight);
@@ -335,14 +341,23 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
                     Instant::now().duration_since(g.last_used) > self.cfg.health_check_after
                 };
                 if needs_check {
-                    // Snapshot conn for the async health check (no lock across await)
-                    let conn = match &s.lock().unwrap().state {
-                        SlotState::Idle { conn, .. } => conn.clone(),
-                        _ => {
-                            // Slot was somehow not Idle — defensive; treat as dead
-                            self.mark_slot_dead_and_drop(&s);
-                            continue;
+                    // Snapshot conn for the async health check (no lock across await).
+                    // The guard MUST be released before `mark_slot_dead_and_drop`,
+                    // which re-locks the same non-reentrant `StdMutex`. A temporary
+                    // in a `match` scrutinee lives until the end of the whole `match`,
+                    // so taking the snapshot in its own block is load-bearing, not
+                    // style: the `_` arm would otherwise self-deadlock.
+                    let conn_opt = {
+                        let g = s.lock().unwrap();
+                        match &g.state {
+                            SlotState::Idle { conn, .. } => Some(conn.clone()),
+                            _ => None,
                         }
+                    };
+                    let Some(conn) = conn_opt else {
+                        // Slot was somehow not Idle — defensive; treat as dead
+                        self.mark_slot_dead_and_drop(&s);
+                        continue;
                     };
                     if conn.health_check().await.is_err() {
                         self.mark_slot_dead_and_drop(&s);
@@ -1457,14 +1472,13 @@ mod tests {
         }));
         assert!(poisoned.is_err());
         assert!(slot.is_poisoned());
+        // Clear poison so the guard's own (non-poison-tolerant) Drop doesn't
+        // panic when this test ends.
+        slot.clear_poison();
 
         // The poison-tolerant `match slot.lock() { Err(p) => p.into_inner(), .. }`
         // path must still record instead of panicking.
         guard.record_target("t-1".into());
-
-        // Clear poison so the guard's own (non-poison-tolerant) Drop doesn't
-        // panic when this test ends.
-        slot.clear_poison();
     }
 
     // ── health-check-driven eviction on acquire ───────────────────────
@@ -1891,5 +1905,58 @@ mod tests {
         let token = BookkeepingToken::<FakeConn>::new(Arc::downgrade(&pool));
         token.commit_decrement();
         assert_eq!(pool.inflight(), 0);
+    }
+
+    // ── Concurrency-correctness regressions ─────────────────────────────
+
+    #[test]
+    fn acquire_does_not_deadlock_on_stale_non_idle_slot() {
+        // Regression: the health-check snapshot read `s.lock().unwrap().state`
+        // directly as the `match` scrutinee. That MutexGuard temporary lives
+        // until the end of the whole `match`, so the non-`Idle` arm called
+        // `mark_slot_dead_and_drop` while the guard was still held — and that
+        // helper re-locks the same non-reentrant `StdMutex`. The result was a
+        // hard self-deadlock.
+        //
+        // Driven from a plain `#[test]` on a dedicated thread rather than
+        // `#[tokio::test]`: the deadlock blocks an OS *thread*, so no timeout
+        // future on that same runtime can ever be polled to catch it. Only an
+        // observer on a separate thread can turn the hang into an assertion.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            rt.block_on(async move {
+                let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+                let conn = Arc::new(FakeConn::default());
+                // Stale enough that `acquire()` health-checks it (cfg: 60s).
+                let slot = stale_idle_slot(conn, "ctx-stale", Duration::from_secs(120));
+                // ...but no longer `Idle` — the shutdown-race state the `_` arm
+                // exists to handle.
+                slot.lock().unwrap().state = SlotState::Closing;
+                pool.idle.lock().unwrap().push_back(slot);
+
+                let acquired = pool.acquire().await.is_ok();
+                let _ = tx.send(acquired);
+            });
+        });
+
+        match rx.recv_timeout(Duration::from_secs(10)) {
+            Ok(acquired) => assert!(
+                acquired,
+                "acquire should discard the dead slot and create a fresh one"
+            ),
+            // Distinguish the two: `Disconnected` fires immediately if anything
+            // inside `block_on` panicked, and reporting that as a deadlock would
+            // send the next reader hunting a lock bug that isn't there.
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("acquire() self-deadlocked on a stale non-Idle slot")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("the acquire worker panicked before reporting a result")
+            }
+        }
     }
 }
