@@ -356,18 +356,27 @@ fn strip_data_uris(md: &str) -> String {
     DATA_URI_RE.replace_all(md, "").to_string()
 }
 
-/// Remove empty anchor links, pilcrow signs (¶), section signs (§), and other
-/// anchor-link artifacts that HTML-to-Markdown converters carry over from
-/// header anchor links.
+/// Remove empty anchor links and the pilcrow (¶) headerlink sigil that
+/// HTML-to-Markdown converters carry over from header anchor links.
+///
+/// The sigil is only stripped **inside an anchor link to a fragment**, which is
+/// what a headerlink actually is. It used to be stripped document-wide, along
+/// with every " §", by two unconditional `replace` calls. That silently
+/// destroyed both characters in body prose: `See § 230 of the CDA` became
+/// `See 230 of the CDA`, and `Nach § 1 BGB` became `Nach 1 BGB`. The space
+/// went too, so nothing marked where the character had been. Section signs are
+/// load-bearing in statutory content, so that is content loss rather than
+/// cleanup, and recall is a hard product invariant.
+///
+/// A sigil that a site renders as header decoration *without* wrapping it in an
+/// anchor is therefore preserved now. The two cases are indistinguishable after
+/// conversion, so the trade is resolved in favour of not destroying content.
 fn strip_anchor_artifacts(md: &str) -> String {
     // Remove empty anchor links: [](#id), [](#id "title"), [¶](#id)
     static EMPTY_ANCHOR_RE: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"\[¶?\]\(#[^)]*\)"#).unwrap());
 
-    let cleaned = EMPTY_ANCHOR_RE.replace_all(md, "");
-    cleaned
-        .replace('\u{00b6}', "") // pilcrow ¶
-        .replace(" \u{00a7}", "") // section sign § (preceded by space)
+    EMPTY_ANCHOR_RE.replace_all(md, "").into_owned()
 }
 
 #[cfg(test)]
@@ -388,6 +397,48 @@ mod tests {
         let md = html_to_markdown(html);
         assert!(!md.contains('\u{00b6}'));
         assert!(md.contains("Section"));
+    }
+
+    #[test]
+    fn preserves_section_sign_in_body_prose() {
+        // Regression: `strip_anchor_artifacts` ran `.replace(" §", "")` over the
+        // whole document, so a statutory citation lost both the sigil and the
+        // space before it. Section signs are load-bearing in legal content.
+        let md = html_to_markdown("<p>See § 230 of the CDA for details.</p>");
+        assert!(
+            md.contains("§ 230"),
+            "statutory citation must survive extraction, got {md:?}"
+        );
+
+        let de = html_to_markdown("<p>Nach § 1 BGB gilt das.</p>");
+        assert!(
+            de.contains("§ 1 BGB"),
+            "German statutory citation must survive extraction, got {de:?}"
+        );
+    }
+
+    #[test]
+    fn preserves_a_decorative_sigil_that_is_not_an_anchor_link() {
+        // Pins the trade-off this behaviour accepts. A site that renders a
+        // headerlink as a bare span rather than an anchor keeps its sigil,
+        // because after conversion it is indistinguishable from content. This
+        // test exists so the fix is not "corrected" by reinstating a
+        // document-wide replace, which is what destroyed `§ 230` in prose.
+        let md = html_to_markdown(r##"<h2>Section <span class="anchor">¶</span></h2>"##);
+        assert!(
+            md.contains('\u{00b6}'),
+            "a sigil outside a fragment anchor is content, not an artifact, got {md:?}"
+        );
+    }
+
+    #[test]
+    fn preserves_pilcrow_in_body_prose() {
+        // Same class: a pilcrow discussed as content, not used as a headerlink.
+        let md = html_to_markdown("<p>The pilcrow ¶ marks a paragraph break.</p>");
+        assert!(
+            md.contains("pilcrow ¶ marks"),
+            "a pilcrow in prose must survive extraction, got {md:?}"
+        );
     }
 
     #[test]

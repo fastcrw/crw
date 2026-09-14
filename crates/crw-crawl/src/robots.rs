@@ -43,6 +43,21 @@ impl RobotsTxt {
         let mut rules = Vec::new();
         let mut sitemaps = Vec::new();
         let mut in_our_section = false;
+        // Whether the previous directive line was also a `User-agent:`.
+        //
+        // Per RFC 9309 §2.2.1 a run of consecutive `User-agent:` lines heads
+        // ONE group, and the group applies if ANY of them matches. Reading
+        // `in_our_section` from the last line alone silently discarded the
+        // rules of the extremely common shape
+        //
+        //     User-agent: *
+        //     User-agent: BadBot
+        //     Disallow: /
+        //
+        // because the last agent is not us. A site-wide `Disallow` that
+        // named us via `*` was dropped and we crawled what it forbade. That is
+        // the fail-open direction, which is the expensive one here.
+        let mut in_agent_run = false;
 
         for line in text.lines() {
             let line = line.trim();
@@ -50,19 +65,31 @@ impl RobotsTxt {
                 continue;
             }
 
-            let lower = line.to_lowercase();
-
-            if let Some(agent) = directive_value(&lower, "user-agent:") {
-                in_our_section = agent == "*" || agent.contains("crw");
+            if let Some(agent) = directive_value(line, "user-agent:") {
+                if !in_agent_run {
+                    // First agent line after a rule: a new group begins.
+                    in_our_section = false;
+                    in_agent_run = true;
+                }
+                let agent = agent.to_ascii_lowercase();
+                if agent == "*" || agent.contains("crw") {
+                    in_our_section = true;
+                }
                 continue;
             }
 
+            // `Sitemap:` is a non-group record (RFC 9309 §2.2.3) and may sit
+            // anywhere, including inside a run of agent lines, so it must not
+            // close the run.
             if let Some(url) = directive_value(line, "sitemap:") {
                 if !url.is_empty() {
                     sitemaps.push(url.to_string());
                 }
                 continue;
             }
+
+            // Any group-member directive closes the agent run.
+            in_agent_run = false;
 
             if in_our_section {
                 if let Some(path) = directive_value(line, "disallow:") {
@@ -183,21 +210,112 @@ fn matches_pattern(path: &str, pattern: &str) -> bool {
 }
 
 /// Safely extract the value after a directive prefix (case-insensitive match).
+///
+/// Compares the head of `line` in place rather than lowercasing it first. The
+/// previous version validated `prefix.len()` against `line.to_lowercase()` and
+/// then applied that offset to `line`, but `to_lowercase` is full Unicode and
+/// does not preserve byte length (`İ` U+0130 is 2 bytes and lowercases to 3;
+/// `K` U+212A is 3 bytes and lowercases to 1). The offset could therefore land
+/// past the end of `line`, or mid-character, and panic on remote
+/// attacker-controlled `robots.txt`.
+///
+/// No live panic was reachable, because none of the four prefixes in use
+/// contains a letter with a length-changing uppercase mapping, but it became
+/// a remote panic the day someone added a prefix containing `k`. Comparing
+/// with `eq_ignore_ascii_case` is byte-length-preserving by construction (all
+/// four prefixes are ASCII), and `get` returns `None` rather than panicking if
+/// the split would land mid-character.
 fn directive_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
-    let lower = line.to_lowercase();
-    if lower.starts_with(prefix) {
-        let value = line[prefix.len()..].trim();
-        // Strip inline comments (e.g. "Disallow: /admin # admin panel")
-        let value = value.split('#').next().unwrap_or(value).trim();
-        Some(value)
-    } else {
-        None
+    let head = line.get(..prefix.len())?;
+    if !head.eq_ignore_ascii_case(prefix) {
+        return None;
     }
+    let value = line[prefix.len()..].trim();
+    // Strip inline comments (e.g. "Disallow: /admin # admin panel")
+    let value = value.split('#').next().unwrap_or(value).trim();
+    Some(value)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// RFC 9309 §2.2.1: a run of consecutive `User-agent:` lines heads one
+    /// group, and the group applies if ANY of them matches. Reading only the
+    /// last line dropped this site-wide `Disallow`, the fail-open direction.
+    #[test]
+    fn consecutive_user_agent_lines_form_one_group() {
+        let r = RobotsTxt::parse("User-agent: *\nUser-agent: BadBot\nDisallow: /\n");
+        assert!(!r.is_allowed("/anything"), "the `*` group was discarded");
+    }
+
+    /// The same shape with our own name last must also apply.
+    #[test]
+    fn consecutive_user_agent_lines_match_on_any_member() {
+        let r = RobotsTxt::parse("User-agent: SomeBot\nUser-agent: crw\nDisallow: /private\n");
+        assert!(!r.is_allowed("/private/x"));
+        assert!(r.is_allowed("/public"));
+    }
+
+    /// A rule line closes the run, so the next `User-agent:` starts a fresh
+    /// group and must NOT inherit the previous group's match.
+    #[test]
+    fn a_rule_line_closes_the_agent_run() {
+        let r = RobotsTxt::parse(
+            "User-agent: *\nDisallow: /everyone\nUser-agent: OtherBot\nDisallow: /theirs\n",
+        );
+        assert!(!r.is_allowed("/everyone"), "our own group still applies");
+        assert!(
+            r.is_allowed("/theirs"),
+            "a group naming only OtherBot must not bind us"
+        );
+    }
+
+    /// `Sitemap:` is a non-group record and may appear anywhere, including
+    /// between agent lines, so it must not close the run.
+    #[test]
+    fn a_sitemap_line_does_not_close_the_agent_run() {
+        let r = RobotsTxt::parse(
+            "User-agent: *\nSitemap: https://e.test/sitemap.xml\nUser-agent: BadBot\nDisallow: /\n",
+        );
+        assert_eq!(r.sitemaps, vec!["https://e.test/sitemap.xml".to_string()]);
+        assert!(!r.is_allowed("/anything"));
+    }
+
+    /// `directive_value` used to validate the prefix length against a
+    /// lowercased copy and then slice the original at that offset.
+    /// `to_lowercase` is full Unicode and does not preserve byte length, so a
+    /// line whose head changes length under lowercasing could slice out of
+    /// bounds or mid-character. Feed it lines that would have tripped that.
+    #[test]
+    fn directive_parsing_does_not_panic_on_length_changing_unicode() {
+        for line in [
+            "İser-agent: *",
+            "\u{212A}isallow: /x",
+            "Ｕser-agent: *",
+            "é",
+            "",
+            ":",
+            "user-agent",
+        ] {
+            let _ = directive_value(line, "user-agent:");
+            let _ = directive_value(line, "disallow:");
+            let _ = directive_value(line, "sitemap:");
+        }
+        // And the whole parser over the same corpus.
+        let r =
+            RobotsTxt::parse("İser-agent: *\n\u{212A}isallow: /x\nUser-agent: *\nDisallow: /y\n");
+        assert!(!r.is_allowed("/y"));
+    }
+
+    /// Directive prefixes stay case-insensitive after the rewrite.
+    #[test]
+    fn directive_prefixes_remain_case_insensitive() {
+        let r =
+            RobotsTxt::parse("USER-AGENT: *\nDISALLOW: /admin\nSITEMAP: https://e.test/s.xml\n");
+        assert!(!r.is_allowed("/admin/x"));
+        assert_eq!(r.sitemaps, vec!["https://e.test/s.xml".to_string()]);
+    }
 
     #[test]
     fn parses_robots_txt() {

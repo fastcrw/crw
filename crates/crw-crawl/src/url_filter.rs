@@ -202,9 +202,26 @@ impl UrlFilterCfg {
 
 /// Mirror of `crawl::normalize_url` — kept private to this module so the
 /// filter can be exercised in unit tests without crossing module boundaries.
+/// `normalize_matches_crawl_normalize_url` drives a shared corpus through both
+/// copies so the word "mirror" is a contract rather than a comment.
+///
+/// Folds only the case-insensitive components (scheme and authority, RFC 3986
+/// §6.2.2.1). The path and query stay byte-exact: this value is both the dedup
+/// key and the URL `map` reports back to the caller, and lowercasing a
+/// case-sensitive path produced URLs that 404 on the origin they came from.
 fn normalize(url: &str) -> String {
     let without_fragment = url.split('#').next().unwrap_or(url);
-    without_fragment.trim_end_matches('/').to_lowercase()
+    let trimmed = without_fragment.trim_end_matches('/');
+    let Some(sep) = trimmed.find("://") else {
+        return trimmed.to_string();
+    };
+    let authority_start = sep + 3;
+    let authority_end = trimmed[authority_start..]
+        .find(['/', '?'])
+        .map_or(trimmed.len(), |i| authority_start + i);
+    let mut key = trimmed[..authority_end].to_lowercase();
+    key.push_str(&trimmed[authority_end..]);
+    key
 }
 
 /// Returns `host` is matched by any compiled `.gov`/`.mil` suffix.
@@ -1291,9 +1308,10 @@ mod tests {
             &cfg,
         )
         .unwrap();
-        // `normalize()` lowercases the whole URL, so "X" comes back "x".
+        // `normalize()` folds only scheme and host, so the preserved query
+        // value keeps the case the caller wrote.
         assert!(out.contains("t=5"), "phpBB preserve missing: {out}");
-        assert!(out.contains("title=x"), "wiki preserve missing: {out}");
+        assert!(out.contains("title=X"), "wiki preserve missing: {out}");
         assert!(!out.contains("utm_source"), "got {out}");
     }
 
@@ -1323,6 +1341,51 @@ mod tests {
     }
 
     #[test]
+    fn normalize_folds_scheme_and_authority_only() {
+        assert_eq!(
+            normalize("HTTPS://EXAMPLE.COM/Docs/Guide?Id=AbC"),
+            "https://example.com/Docs/Guide?Id=AbC"
+        );
+    }
+
+    #[test]
+    fn normalize_trailing_slash_before_a_query_is_untouched() {
+        assert_eq!(
+            normalize("https://example.com/a/?q=1"),
+            "https://example.com/a/?q=1"
+        );
+    }
+
+    /// `normalize` is documented as a mirror of `crawl::normalize_url`. Before
+    /// this test the two were kept in step by hand, and the only thing saying
+    /// so was a comment. Drive one corpus through both and assert they agree.
+    #[test]
+    fn normalize_matches_crawl_normalize_url() {
+        for url in [
+            "https://example.com/",
+            "HTTPS://EXAMPLE.COM/Page",
+            "https://Example.Com/Path/#fragment",
+            "https://example.com/page?Q=Hello",
+            "https://example.com/a/?q=1",
+            "https://u:p@example.com:443/a/../b",
+            "https://example.com/CAFÉ",
+            "HTTPS://EXAMPLE.COM?Q=1",
+            "https://example.com",
+            "/Just/A/Path/",
+            "",
+            "   ",
+            "#section",
+            "https://example.com/path///",
+        ] {
+            assert_eq!(
+                normalize(url),
+                crate::crawl::normalize_url_for_tests(url),
+                "mirror drifted on {url:?}"
+            );
+        }
+    }
+
+    #[test]
     fn wiki_override_matches_w_index_php_substring() {
         let cfg = cfg_on();
         let out = filter_and_normalize_raw(
@@ -1330,9 +1393,10 @@ mod tests {
             &cfg,
         )
         .unwrap();
-        // `normalize()` lowercases the whole URL (see normalize_url in
-        // crawl.rs), so the preserved value comes back lowercased too.
-        assert!(out.contains("title=main"), "got {out}");
+        // `normalize()` folds only scheme and host (see normalize_url in
+        // crawl.rs). MediaWiki titles are case-sensitive, so preserving the
+        // case here is what makes the returned URL resolve.
+        assert!(out.contains("title=Main"), "got {out}");
         assert!(!out.contains("utm_source"));
     }
 

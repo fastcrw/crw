@@ -101,11 +101,27 @@ pub async fn map(
     };
 
     let mut urls = result.urls;
+    // Match case-insensitively, explicitly. These are raw substring tests
+    // against the discovered URL, and they used to be case-insensitive only by
+    // accident: discovery lowercased every URL it returned, so a caller's
+    // `/docs` matched a `/Docs/...` URL. Now that discovery preserves path
+    // case, a literal `contains` would quietly start dropping URLs
+    // `includePaths` used to return or leaking URLs `excludePaths`
+    // was asked to remove. `search` immediately below already folds both sides
+    // for exactly this reason.
     if !req.include_paths.is_empty() {
-        urls.retain(|u| req.include_paths.iter().any(|p| u.contains(p.as_str())));
+        let needles: Vec<String> = req.include_paths.iter().map(|p| p.to_lowercase()).collect();
+        urls.retain(|u| {
+            let hay = u.to_lowercase();
+            needles.iter().any(|p| hay.contains(p.as_str()))
+        });
     }
     if !req.exclude_paths.is_empty() {
-        urls.retain(|u| !req.exclude_paths.iter().any(|p| u.contains(p.as_str())));
+        let needles: Vec<String> = req.exclude_paths.iter().map(|p| p.to_lowercase()).collect();
+        urls.retain(|u| {
+            let hay = u.to_lowercase();
+            !needles.iter().any(|p| hay.contains(p.as_str()))
+        });
     }
     if let Some(s) = req.search.as_ref().filter(|s| !s.is_empty()) {
         let needle = s.to_lowercase();

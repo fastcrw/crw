@@ -58,6 +58,11 @@ fn request(url: String) -> CrawlRequest {
 
 /// Drive one crawl to completion and hand back the terminal state.
 async fn run(req: CrawlRequest) -> CrawlState {
+    run_with_robots(req, false).await
+}
+
+/// As `run`, but lets a test turn robots.txt enforcement on.
+async fn run_with_robots(req: CrawlRequest, respect_robots: bool) -> CrawlState {
     let id = Uuid::new_v4();
     let (state_tx, state_rx) = tokio::sync::watch::channel(CrawlState {
         id,
@@ -74,7 +79,7 @@ async fn run(req: CrawlRequest) -> CrawlState {
         req,
         renderer: renderer().await,
         max_concurrency: 1,
-        respect_robots: false,
+        respect_robots,
         requests_per_second: 100.0,
         user_agent: "crw-test-default-ua",
         state_tx,
@@ -209,5 +214,136 @@ async fn a_healthy_page_is_neither_marked_nor_counted_blocked() {
             .as_deref()
             .unwrap_or_default()
             .contains("Real page")
+    );
+}
+
+/// The crawl used to enqueue its own dedup key, which was the whole URL
+/// lowercased. On a case-sensitive origin that turned a discovered
+/// `/docs/Guide` into a request for `/docs/guide`, so the page came back as a
+/// 404 failure and `source_url` named a URL that was never requested.
+///
+/// The mock answers `/docs/Guide` and nothing else, so a lowercased request
+/// falls through to the catch-all 404 and the assertions below fail.
+#[tokio::test]
+async fn discovered_links_are_fetched_with_the_case_the_page_wrote() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"<html><body><a href="/docs/Guide">G</a></body></html>"#)
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/docs/Guide"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><h1>Mixed case page</h1></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    // Catch-all: anything else (notably `/docs/guide`) is a 404, which is what
+    // the old behaviour produced.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let mut req = request(format!("{}/", server.uri()));
+    req.max_depth = Some(1);
+    req.max_pages = Some(2);
+
+    let state = run(req).await;
+
+    assert_eq!(state.blocked, 0, "the discovered link did not resolve");
+    assert_eq!(state.data.len(), 2, "seed plus the discovered page");
+    let urls: Vec<&str> = state
+        .data
+        .iter()
+        .map(|d| d.metadata.source_url.as_str())
+        .collect();
+    assert!(
+        urls.iter().any(|u| u.ends_with("/docs/Guide")),
+        "source_url must name the URL that was actually requested, got {urls:?}"
+    );
+    assert!(
+        state.data.iter().any(|d| d
+            .markdown
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Mixed case page")),
+        "the mixed-case page's content is missing, got {urls:?}"
+    );
+}
+
+/// `run_crawl` matched robots rules against `parsed.path()`, dropping the
+/// query. Rules keyed on a query string, the shape Hacker News uses for
+/// `/hide?`, `/vote?` and `/reply?`, therefore matched nothing and the crawl
+/// fetched exactly what the site forbade. `discover_urls` already used the
+/// query-aware check; the crawl, which is the surface that fetches at volume,
+/// did not.
+///
+/// The mock counts hits on the disallowed path, so a crawl that ignores the
+/// rule is caught by the count rather than by an absence.
+#[tokio::test]
+async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /hide?\n"),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"<html><body><a href="/hide?id=1">h</a></body></html>"#)
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    // Answers happily if asked. The assertion is that it is never asked.
+    Mock::given(method("GET"))
+        .and(path("/hide"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><h1>Forbidden page</h1></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let mut req = request(format!("{}/", server.uri()));
+    req.max_depth = Some(1);
+    req.max_pages = Some(5);
+
+    let state = run_with_robots(req, true).await;
+
+    assert!(
+        !state.data.iter().any(|d| d
+            .markdown
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Forbidden page")),
+        "a page disallowed by a query-keyed robots rule was crawled"
+    );
+    // wiremock verifies `.expect(0)` on drop; assert here too so the failure
+    // names the rule rather than surfacing as a panic in teardown.
+    assert_eq!(
+        state.data.len(),
+        1,
+        "only the seed should have been fetched"
     );
 }

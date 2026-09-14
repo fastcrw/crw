@@ -100,10 +100,19 @@ fn enqueue_discovered_links(
             if link_url.origin().ascii_serialization() != origin {
                 continue;
             }
-            let normalized = normalize_url(&link);
-            if !visited.contains(&normalized) && visited.len() < max_pages {
-                visited.insert(normalized.clone());
-                queue.push_back((normalized, depth + 1));
+            // Dedup on the canonical key, but enqueue the link as the page
+            // wrote it. Enqueueing the key instead meant the crawl fetched a
+            // lowercased URL: on a case-sensitive origin `/docs/Guide` went out
+            // as `/docs/guide` and 404'd, `?id=AbC` lost its token, and the
+            // document's `source_url` reported a URL that was never requested.
+            let key = normalize_url(&link);
+            if !visited.contains(&key) && visited.len() < max_pages {
+                visited.insert(key);
+                // The fragment is never sent on the wire, so strip it here
+                // rather than asking the renderer to.
+                let mut fetch_url = link_url.clone();
+                fetch_url.set_fragment(None);
+                queue.push_back((fetch_url.into(), depth + 1));
             }
         }
     }
@@ -251,8 +260,13 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
     // "" to reqwest::Proxy::all, which rejects it with "builder error"
     // (issue #154). A genuinely malformed non-empty value still fails closed below.
     .filter(|p| !p.trim().is_empty());
+    // Without these a seed host that blackholes `/robots.txt` hangs this fetch
+    // forever: the job holds one of the process-wide crawl permits and stays
+    // `InProgress` indefinitely, and non-terminal jobs are never TTL-evicted.
     let mut client_builder = reqwest::Client::builder()
         .user_agent(user_agent)
+        .timeout(ROBOTS_FETCH_TIMEOUT)
+        .connect_timeout(ROBOTS_CONNECT_TIMEOUT)
         .redirect(crw_core::url_safety::safe_redirect_policy());
     if let Some(ref proxy_url) = robots_proxy {
         match reqwest::Proxy::all(proxy_url) {
@@ -276,9 +290,21 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         .expect("reqwest client build should not fail");
 
     let robots = if respect_robots {
-        RobotsTxt::fetch(&origin, &client)
-            .await
-            .unwrap_or_else(|_| RobotsTxt::parse(""))
+        // Fail-open is the existing product decision, but it must not be
+        // silent: with the timeout above, a blackholed robots.txt now turns
+        // into "this site has no rules" after 15s instead of hanging, and an
+        // operator needs to be able to see that happen.
+        match RobotsTxt::fetch(&origin, &client).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(
+                    origin,
+                    error = %e,
+                    "robots.txt fetch failed; proceeding with no rules"
+                );
+                RobotsTxt::parse("")
+            }
+        }
     } else {
         RobotsTxt::parse("")
     };
@@ -307,8 +333,13 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
             break;
         }
 
+        // Match on path AND query. `is_allowed(parsed.path())` drops the query,
+        // which silently allows everything a site keyed its rules on. The
+        // exact failure `is_url_allowed`'s doc comment describes, and which
+        // `discover_urls` already avoids. This is the surface that fetches at
+        // volume, so it was the one that mattered.
         if let Ok(parsed) = url::Url::parse(&url)
-            && !robots.is_allowed(parsed.path())
+            && !robots.is_url_allowed(&parsed)
         {
             tracing::debug!(url, "Blocked by robots.txt");
             continue;
@@ -665,6 +696,14 @@ pub struct DiscoverResult {
 /// is true, the BFS phase still runs but with a much smaller time budget
 /// (we have plenty already; spending the full timeout on slow HTML fetches
 /// would burn time for marginal gain).
+/// Read timeout for the one-shot `robots.txt` fetch. In `run_crawl` this is the
+/// only bound on that request: unlike `discover_urls`, `CrawlOptions` carries no
+/// overall deadline, and `deadline_ms_per_page` never reaches this call.
+const ROBOTS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Connect timeout for the `robots.txt` fetch.
+const ROBOTS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 const SITEMAP_SUFFICIENT_THRESHOLD: usize = 50;
 /// Hard ceiling on the BFS crawl phase when sitemap was sufficient.
 const BFS_SHORT_BUDGET_SECS: u64 = 30;
@@ -843,8 +882,8 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
         .filter(|p| !p.trim().is_empty());
     let mut discover_client_builder = reqwest::Client::builder()
         .user_agent(user_agent)
-        .timeout(std::time::Duration::from_secs(15))
-        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(ROBOTS_FETCH_TIMEOUT)
+        .connect_timeout(ROBOTS_CONNECT_TIMEOUT)
         .redirect(crw_core::url_safety::safe_redirect_policy());
     if let Some(ref proxy_url) = discover_proxy {
         let p = reqwest::Proxy::all(proxy_url).map_err(|e| {
@@ -1212,10 +1251,52 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
     })
 }
 
-/// Normalize URL by removing fragment and trailing slash.
+/// Canonical dedup key for a URL: fragment and trailing slash removed, and the
+/// case-insensitive components folded.
+///
+/// Only the scheme and authority are folded, because only those are defined
+/// case-insensitive (RFC 3986 §6.2.2.1). The path and query are compared
+/// byte-exact: most origins serve them case-sensitively, so folding them
+/// collapsed `/A` and `/a` into one entry and silently dropped one of the two
+/// pages. Because the folded value was also the value that got fetched,
+/// turned `/docs/Guide` into a request for `/docs/guide`.
+///
+/// In `enqueue_discovered_links` this is purely a key: that caller fetches the
+/// link as the page wrote it. `discover_urls` still both fetches and returns
+/// this value, so on the `/map` path it remains a URL as well. That is why
+/// the folding is the only thing that changed here and every other byte is
+/// left exactly as `trim_end_matches` found it.
+///
+/// Deliberately string-based rather than `Url::parse` + re-serialize. Going
+/// through the parser would also percent-encode non-ASCII paths, drop default
+/// ports and userinfo, apply IDNA to the host and remove dot segments. These are four
+/// silent output changes on a public `/map` response, none of them needed to
+/// fix the casing. It also keeps the sitemap fast path (`filter_and_normalize_raw`
+/// pre-screens URLs with no `?` precisely to avoid a parse) actually fast.
+/// Test-only re-export so `url_filter` can assert its mirror has not drifted.
+#[cfg(test)]
+pub(crate) fn normalize_url_for_tests(url: &str) -> String {
+    normalize_url(url)
+}
+
 fn normalize_url(url: &str) -> String {
     let without_fragment = url.split('#').next().unwrap_or(url);
-    without_fragment.trim_end_matches('/').to_lowercase()
+    let trimmed = without_fragment.trim_end_matches('/');
+    let Some(sep) = trimmed.find("://") else {
+        // Relative or schemeless: nothing to fold, and lowercasing a bare path
+        // is the bug this function just stopped doing.
+        return trimmed.to_string();
+    };
+    // The authority runs from after "://" to the first '/' or '?'. Userinfo is
+    // inside it and is technically case-sensitive, but the previous behaviour
+    // folded it too, so leaving it folded is no worse than before.
+    let authority_start = sep + 3;
+    let authority_end = trimmed[authority_start..]
+        .find(['/', '?'])
+        .map_or(trimmed.len(), |i| authority_start + i);
+    let mut key = trimmed[..authority_end].to_lowercase();
+    key.push_str(&trimmed[authority_end..]);
+    key
 }
 
 #[cfg(test)]
@@ -1273,10 +1354,22 @@ mod tests {
     }
 
     #[test]
-    fn normalize_url_lowercase() {
+    fn normalize_url_folds_scheme_and_host_only() {
+        // Scheme and host are case-insensitive per RFC 3986 §6.2.2.1 and are
+        // folded; the path is not, so its case survives into the key.
         assert_eq!(
             normalize_url("HTTPS://EXAMPLE.COM/Page"),
-            "https://example.com/page"
+            "https://example.com/Page"
+        );
+    }
+
+    #[test]
+    fn normalize_url_path_case_distinguishes_two_pages() {
+        // The whole point of not folding the path: these are two documents on
+        // any case-sensitive origin and must not share a frontier slot.
+        assert_ne!(
+            normalize_url("https://example.com/Guide"),
+            normalize_url("https://example.com/guide")
         );
     }
 
@@ -1284,7 +1377,7 @@ mod tests {
     fn normalize_url_combined() {
         assert_eq!(
             normalize_url("https://Example.Com/Path/#fragment"),
-            "https://example.com/path"
+            "https://example.com/Path"
         );
     }
 
@@ -1408,10 +1501,12 @@ mod tests {
     }
 
     #[test]
-    fn normalize_url_query_string_preserved_but_lowercased() {
+    fn normalize_url_query_string_preserved_byte_exact() {
+        // Query values carry IDs, base64 and signatures. Folding them broke
+        // every origin that treats them as opaque tokens.
         assert_eq!(
             normalize_url("https://example.com/page?Q=Hello"),
-            "https://example.com/page?q=hello"
+            "https://example.com/page?Q=Hello"
         );
     }
 
@@ -1429,10 +1524,56 @@ mod tests {
     }
 
     #[test]
-    fn normalize_url_unicode_path_lowercased() {
+    fn normalize_url_unicode_path_case_preserved() {
+        // No percent-encoding either: the key is the caller's bytes with only
+        // the authority folded.
         assert_eq!(
             normalize_url("https://example.com/CAFÉ"),
-            "https://example.com/café"
+            "https://example.com/CAFÉ"
+        );
+    }
+
+    #[test]
+    fn normalize_url_keeps_userinfo_default_port_and_dot_segments() {
+        // Pinning what this function deliberately does NOT do. Routing the key
+        // through `Url::parse` would drop the credentials and the `:443`, and
+        // collapse `/a/../b`, four silent changes to a value `/map` returns.
+        assert_eq!(
+            normalize_url("https://u:p@example.com:443/a/../b"),
+            "https://u:p@example.com:443/a/../b"
+        );
+    }
+
+    #[test]
+    fn normalize_url_trailing_slash_before_a_query_is_untouched() {
+        // `trim_end_matches` works on the whole string, so a slash that is not
+        // last is not a trailing slash. Trimming the PATH component instead
+        // would turn `/a/?q=1` into `/a?q=1`. On the `/map` path that is a
+        // URL the origin may well 301 or 404, which is the bug this change
+        // exists to remove, not to relocate.
+        assert_eq!(
+            normalize_url("https://example.com/a/?q=1"),
+            "https://example.com/a/?q=1"
+        );
+    }
+
+    #[test]
+    fn normalize_url_relative_path_case_preserved() {
+        // The no-scheme arm. The pre-existing relative-path test uses an
+        // already-lowercase path, so it proves nothing about the fold.
+        assert_eq!(normalize_url("/Just/A/Path/"), "/Just/A/Path");
+    }
+
+    #[test]
+    fn normalize_url_authority_without_a_path_is_folded() {
+        assert_eq!(normalize_url("HTTPS://EXAMPLE.COM"), "https://example.com");
+    }
+
+    #[test]
+    fn normalize_url_authority_is_folded_when_a_query_follows_directly() {
+        assert_eq!(
+            normalize_url("HTTPS://EXAMPLE.COM?Q=1"),
+            "https://example.com?Q=1"
         );
     }
 
@@ -2018,8 +2159,9 @@ mod tests {
     }
 
     #[test]
-    fn enqueue_case_variation_links_deduped_via_normalize() {
-        let html = links_html(&["https://EXAMPLE.com/Page", "https://example.com/page"]);
+    fn enqueue_host_case_variation_links_deduped_via_normalize() {
+        // Host case IS folded, so these two hrefs are one page.
+        let html = links_html(&["https://EXAMPLE.com/page", "https://example.com/page"]);
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
         enqueue_discovered_links(
@@ -2031,7 +2173,81 @@ mod tests {
             &mut queue,
             0,
         );
-        assert_eq!(queue.len(), 1, "both hrefs normalize to the same URL");
+        assert_eq!(queue.len(), 1, "host case is folded, so this is one page");
+    }
+
+    #[test]
+    fn enqueue_keeps_path_case_of_the_link_as_written() {
+        // The regression this file exists to prevent: the crawl used to enqueue
+        // its own dedup key, so a mixed-case path went out lowercased and 404'd
+        // on any case-sensitive origin.
+        let html = links_html(&["/docs/Guide"]);
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        enqueue_discovered_links(
+            &html,
+            "https://example.com/",
+            "https://example.com",
+            100,
+            &mut visited,
+            &mut queue,
+            0,
+        );
+        assert_eq!(queue[0].0, "https://example.com/docs/Guide");
+    }
+
+    #[test]
+    fn enqueue_keeps_query_token_case_of_the_link_as_written() {
+        let html = links_html(&["/item?id=AbC123"]);
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        enqueue_discovered_links(
+            &html,
+            "https://example.com/",
+            "https://example.com",
+            100,
+            &mut visited,
+            &mut queue,
+            0,
+        );
+        assert_eq!(queue[0].0, "https://example.com/item?id=AbC123");
+    }
+
+    #[test]
+    fn enqueue_path_case_variants_are_two_distinct_pages() {
+        let html = links_html(&["/Guide", "/guide"]);
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        enqueue_discovered_links(
+            &html,
+            "https://example.com/",
+            "https://example.com",
+            100,
+            &mut visited,
+            &mut queue,
+            0,
+        );
+        assert_eq!(queue.len(), 2, "case-sensitive paths are distinct pages");
+    }
+
+    #[test]
+    fn enqueue_trailing_slash_variant_is_deduped_but_fetched_as_written() {
+        // `/a/` and `/a` share a dedup key, and whichever link the page wrote
+        // first is what goes on the wire, not the stripped key.
+        let html = links_html(&["/a/", "/a"]);
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        enqueue_discovered_links(
+            &html,
+            "https://example.com/",
+            "https://example.com",
+            100,
+            &mut visited,
+            &mut queue,
+            0,
+        );
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].0, "https://example.com/a/");
     }
 
     #[test]

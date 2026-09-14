@@ -178,17 +178,37 @@ impl PageFetcher for ImpersonatedFetcher {
         // Bound the body read by the caller's remaining budget, floored at
         // `MIN_TIER_BUDGET` for the same reason as http_only: send() resolves
         // on headers and a slow-TTFB origin deserves its last sliver.
-        let bytes = match tokio::time::timeout(
-            deadline.remaining().max(crate::MIN_TIER_BUDGET),
-            resp.bytes(),
-        )
-        .await
-        {
-            Ok(r) => r.map_err(|e| CrwError::HttpError(format!("{url}: {e}")))?,
-            Err(_) => {
-                return Err(CrwError::Timeout(start.elapsed().as_millis().max(1) as u64));
-            }
-        };
+        // Streamed and size-checked as it arrives, for the same reason as the
+        // plain tier (see `http_only::read_body_capped`): `Content-Length` is
+        // absent on a chunked response AND on a transport-decompressed one, so
+        // the check above bounds nothing on its own. wreq has no `chunk()`,
+        // hence `bytes_stream` and the `stream` feature.
+        let bytes =
+            match tokio::time::timeout(deadline.remaining().max(crate::MIN_TIER_BUDGET), async {
+                use futures::StreamExt;
+                let mut body: Vec<u8> = Vec::with_capacity(
+                    http_only::BODY_PREALLOC_BYTES.min(http_only::MAX_RESPONSE_BYTES),
+                );
+                let mut stream = resp.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    let chunk = chunk.map_err(|e| CrwError::HttpError(format!("{url}: {e}")))?;
+                    if body.len() + chunk.len() > http_only::MAX_RESPONSE_BYTES {
+                        return Err(CrwError::HttpError(format!(
+                            "Response too large: exceeds {} bytes",
+                            http_only::MAX_RESPONSE_BYTES
+                        )));
+                    }
+                    body.extend_from_slice(&chunk);
+                }
+                Ok(body)
+            })
+            .await
+            {
+                Ok(r) => r?,
+                Err(_) => {
+                    return Err(CrwError::Timeout(start.elapsed().as_millis().max(1) as u64));
+                }
+            };
 
         // Shared response tail with the plain tier (size cap, PDF sniff,
         // binary rejection, charset-aware decode, FetchResult assembly): the

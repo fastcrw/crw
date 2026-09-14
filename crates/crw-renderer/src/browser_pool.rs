@@ -285,10 +285,16 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
         // terminator AtomicBool already prevents). If a future bug ever
         // double-decs we want a stable 0 floor, not a wraparound to usize::MAX
         // that would make the shutdown drain loop spin forever.
-        let prev = self.inflight.load(Ordering::SeqCst);
-        if prev > 0 {
-            self.inflight.fetch_sub(1, Ordering::SeqCst);
-        }
+        //
+        // This must be a single atomic RMW. A `load`-then-`fetch_sub` pair is
+        // check-then-act: two callers that both observe `prev == 1` would both
+        // subtract and produce exactly the `usize::MAX` wraparound this guard
+        // exists to prevent.
+        let _ = self
+            .inflight
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                Some(v.saturating_sub(1))
+            });
         self.notify_idle.notify_waiters();
         self.refresh_gauges();
     }
@@ -298,7 +304,13 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
     /// so `chrome_pool_inflight` / `chrome_pool_idle` track actual state.
     fn refresh_gauges(&self) {
         let inflight = self.inflight.load(Ordering::SeqCst) as i64;
-        let idle = self.idle.lock().unwrap().len() as i64;
+        // Poison-tolerant: reached from `PoolGuard::drop` via
+        // `dec_inflight_and_notify`, which must not panic during future
+        // cancellation. A panicking `Drop` while already unwinding aborts.
+        let idle = match self.idle.lock() {
+            Ok(g) => g.len(),
+            Err(p) => p.into_inner().len(),
+        } as i64;
         crw_core::metrics::metrics()
             .chrome_pool_inflight
             .set(inflight);
@@ -335,14 +347,23 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
                     Instant::now().duration_since(g.last_used) > self.cfg.health_check_after
                 };
                 if needs_check {
-                    // Snapshot conn for the async health check (no lock across await)
-                    let conn = match &s.lock().unwrap().state {
-                        SlotState::Idle { conn, .. } => conn.clone(),
-                        _ => {
-                            // Slot was somehow not Idle — defensive; treat as dead
-                            self.mark_slot_dead_and_drop(&s);
-                            continue;
+                    // Snapshot conn for the async health check (no lock across await).
+                    // The guard MUST be released before `mark_slot_dead_and_drop`,
+                    // which re-locks the same non-reentrant `StdMutex`. A temporary
+                    // in a `match` scrutinee lives until the end of the whole `match`,
+                    // so taking the snapshot in its own block is load-bearing, not
+                    // style: the `_` arm would otherwise self-deadlock.
+                    let conn_opt = {
+                        let g = s.lock().unwrap();
+                        match &g.state {
+                            SlotState::Idle { conn, .. } => Some(conn.clone()),
+                            _ => None,
                         }
+                    };
+                    let Some(conn) = conn_opt else {
+                        // Slot was somehow not Idle. Treat it as dead defensively.
+                        self.mark_slot_dead_and_drop(&s);
+                        continue;
                     };
                     if conn.health_check().await.is_err() {
                         self.mark_slot_dead_and_drop(&s);
@@ -865,10 +886,14 @@ impl<C: ChromeConnOps> Drop for PoolGuard<C> {
             return;
         };
 
-        // Step 1: claim terminator
+        // Step 1: claim terminator.
+        // Poison-tolerant throughout this Drop: per the panic-free invariant
+        // above, unwrapping a poisoned slot mutex here would panic while
+        // unwinding and abort the process. `record_target` already takes this
+        // approach; `Drop` needs it strictly more.
         let we_won = slot
             .lock()
-            .unwrap()
+            .unwrap_or_else(|p| p.into_inner())
             .terminator
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok();
@@ -883,7 +908,7 @@ impl<C: ChromeConnOps> Drop for PoolGuard<C> {
         // close does NOT free them, so dropping the ids here is what leaked the
         // renderer process on every timed-out / cancelled render.
         let cleanup = {
-            let mut g = slot.lock().unwrap();
+            let mut g = slot.lock().unwrap_or_else(|p| p.into_inner());
             match std::mem::replace(&mut g.state, SlotState::Closing) {
                 SlotState::CheckedOut {
                     conn,
@@ -1461,10 +1486,6 @@ mod tests {
         // The poison-tolerant `match slot.lock() { Err(p) => p.into_inner(), .. }`
         // path must still record instead of panicking.
         guard.record_target("t-1".into());
-
-        // Clear poison so the guard's own (non-poison-tolerant) Drop doesn't
-        // panic when this test ends.
-        slot.clear_poison();
     }
 
     // ── health-check-driven eviction on acquire ───────────────────────
@@ -1891,5 +1912,117 @@ mod tests {
         let token = BookkeepingToken::<FakeConn>::new(Arc::downgrade(&pool));
         token.commit_decrement();
         assert_eq!(pool.inflight(), 0);
+    }
+
+    // ── Concurrency-correctness regressions ─────────────────────────────
+
+    #[test]
+    fn acquire_does_not_deadlock_on_stale_non_idle_slot() {
+        // Regression: the health-check snapshot read `s.lock().unwrap().state`
+        // directly as the `match` scrutinee. That MutexGuard temporary lives
+        // until the end of the whole `match`, so the non-`Idle` arm called
+        // `mark_slot_dead_and_drop` while the guard was still held. That
+        // helper re-locks the same non-reentrant `StdMutex`. The result was a
+        // hard self-deadlock.
+        //
+        // Driven from a plain `#[test]` on a dedicated thread rather than
+        // `#[tokio::test]`: the deadlock blocks an OS *thread*, so no timeout
+        // future on that same runtime can ever be polled to catch it. Only an
+        // observer on a separate thread can turn the hang into an assertion.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime");
+            rt.block_on(async move {
+                let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+                let conn = Arc::new(FakeConn::default());
+                // Stale enough that `acquire()` health-checks it (cfg: 60s).
+                let slot = stale_idle_slot(conn, "ctx-stale", Duration::from_secs(120));
+                // ...but no longer `Idle`, the shutdown-race state the `_` arm
+                // exists to handle.
+                slot.lock().unwrap().state = SlotState::Closing;
+                pool.idle.lock().unwrap().push_back(slot);
+
+                let acquired = pool.acquire().await.is_ok();
+                let _ = tx.send(acquired);
+            });
+        });
+
+        match rx.recv_timeout(Duration::from_secs(10)) {
+            Ok(acquired) => assert!(
+                acquired,
+                "acquire should discard the dead slot and create a fresh one"
+            ),
+            // Distinguish the two: `Disconnected` fires immediately if anything
+            // inside `block_on` panicked, and reporting that as a deadlock would
+            // send the next reader hunting a lock bug that isn't there.
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("acquire() self-deadlocked on a stale non-Idle slot")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                panic!("the acquire worker panicked before reporting a result")
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn over_decrement_floors_at_zero() {
+        // Contract coverage for `dec_inflight_and_notify`'s documented floor:
+        // inflight must never wrap below zero, because `shutdown`'s
+        // `while inflight > 0` drain loop would then spin to its deadline on
+        // every shutdown.
+        //
+        // Note this asserts the invariant, it does not reproduce the race that
+        // used to break it: the old `load`-then-`fetch_sub` pair has a window
+        // too narrow to hit reliably from a unit test. The guarantee now comes
+        // from `fetch_update` being a single atomic RMW, not from this test.
+        let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+
+        pool.inflight.store(1, Ordering::SeqCst);
+        let mut handles = Vec::new();
+        for _ in 0..16 {
+            let p = pool.clone();
+            handles.push(tokio::spawn(async move { p.dec_inflight_and_notify() }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert_eq!(
+            pool.inflight(),
+            0,
+            "over-decrement must floor at 0, never wrap to usize::MAX"
+        );
+    }
+
+    #[tokio::test]
+    async fn guard_drop_survives_a_poisoned_slot_mutex() {
+        // Regression: `PoolGuard::drop` unwrapped the slot mutex twice, despite
+        // the panic-free invariant documented on `BookkeepingToken`. `Drop` runs
+        // during future cancellation; a panic there while already unwinding
+        // aborts the process. `record_target` was already poison-tolerant.
+        // `Drop` needs it strictly more.
+        let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+        let guard = pool.acquire().await.unwrap();
+        guard.record_target("t-1".into());
+        let slot = guard.slot.clone().expect("guard holds a slot");
+
+        // Poison the slot mutex from another thread.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = slot.lock().unwrap();
+            panic!("intentional poison");
+        }));
+        assert!(slot.is_poisoned(), "slot mutex should be poisoned");
+
+        // Must not panic.
+        drop(guard);
+
+        assert_eq!(
+            pool.inflight(),
+            0,
+            "Drop must still complete its bookkeeping on a poisoned slot"
+        );
     }
 }
