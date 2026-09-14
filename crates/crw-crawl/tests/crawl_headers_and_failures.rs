@@ -211,3 +211,68 @@ async fn a_healthy_page_is_neither_marked_nor_counted_blocked() {
             .contains("Real page")
     );
 }
+
+/// The crawl used to enqueue its own dedup key, which was the whole URL
+/// lowercased. On a case-sensitive origin that turned a discovered
+/// `/docs/Guide` into a request for `/docs/guide`, so the page came back as a
+/// 404 failure and `source_url` named a URL that was never requested.
+///
+/// The mock answers `/docs/Guide` and nothing else, so a lowercased request
+/// falls through to the catch-all 404 and the assertions below fail.
+#[tokio::test]
+async fn discovered_links_are_fetched_with_the_case_the_page_wrote() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"<html><body><a href="/docs/Guide">G</a></body></html>"#)
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/docs/Guide"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><h1>Mixed case page</h1></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    // Catch-all: anything else (notably `/docs/guide`) is a 404, which is what
+    // the old behaviour produced.
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+
+    let mut req = request(format!("{}/", server.uri()));
+    req.max_depth = Some(1);
+    req.max_pages = Some(2);
+
+    let state = run(req).await;
+
+    assert_eq!(state.blocked, 0, "the discovered link did not resolve");
+    assert_eq!(state.data.len(), 2, "seed plus the discovered page");
+    let urls: Vec<&str> = state
+        .data
+        .iter()
+        .map(|d| d.metadata.source_url.as_str())
+        .collect();
+    assert!(
+        urls.iter().any(|u| u.ends_with("/docs/Guide")),
+        "source_url must name the URL that was actually requested, got {urls:?}"
+    );
+    assert!(
+        state.data.iter().any(|d| d
+            .markdown
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Mixed case page")),
+        "the mixed-case page's content is missing, got {urls:?}"
+    );
+}
