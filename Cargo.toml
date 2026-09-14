@@ -48,7 +48,13 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "coo
 # `socks` mirrors the reqwest line above: `ProxyEntry` accepts socks5/socks5h, and
 # without the feature wreq silently routes a socks5 URL down its HTTP-proxy path,
 # putting `Proxy-Authorization` on the wire to a port that does not speak HTTP.
-wreq = { version = "0.16", features = ["gzip", "brotli", "zstd", "deflate", "charset", "socks"] }
+# `stream` is what makes `Response::bytes_stream` exist. Without it the only way
+# to read a body is `bytes()`, which buffers the whole thing before any size can
+# be checked. `Content-Length` does not bound it: it is absent on any chunked
+# response, and tower-http's decompression body reports no size hint at all, so
+# a payload that expands on decode arrives with no number to check against.
+# reqwest already has `stream` enabled above and gives the plain tier `chunk()`.
+wreq = { version = "0.16", features = ["gzip", "brotli", "zstd", "deflate", "charset", "socks", "stream"] }
 wreq-util = "0.2"
 
 # Serialization
