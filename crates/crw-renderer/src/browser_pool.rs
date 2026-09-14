@@ -285,10 +285,16 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
         // terminator AtomicBool already prevents). If a future bug ever
         // double-decs we want a stable 0 floor, not a wraparound to usize::MAX
         // that would make the shutdown drain loop spin forever.
-        let prev = self.inflight.load(Ordering::SeqCst);
-        if prev > 0 {
-            self.inflight.fetch_sub(1, Ordering::SeqCst);
-        }
+        //
+        // This must be a single atomic RMW. A `load`-then-`fetch_sub` pair is
+        // check-then-act: two callers that both observe `prev == 1` would both
+        // subtract and produce exactly the `usize::MAX` wraparound this guard
+        // exists to prevent.
+        let _ = self
+            .inflight
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                Some(v.saturating_sub(1))
+            });
         self.notify_idle.notify_waiters();
         self.refresh_gauges();
     }
@@ -1958,5 +1964,35 @@ mod tests {
                 panic!("the acquire worker panicked before reporting a result")
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn over_decrement_floors_at_zero() {
+        // Contract coverage for `dec_inflight_and_notify`'s documented floor:
+        // inflight must never wrap below zero, because `shutdown`'s
+        // `while inflight > 0` drain loop would then spin to its deadline on
+        // every shutdown.
+        //
+        // Note this asserts the invariant, it does not reproduce the race that
+        // used to break it: the old `load`-then-`fetch_sub` pair has a window
+        // too narrow to hit reliably from a unit test. The guarantee now comes
+        // from `fetch_update` being a single atomic RMW, not from this test.
+        let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+
+        pool.inflight.store(1, Ordering::SeqCst);
+        let mut handles = Vec::new();
+        for _ in 0..16 {
+            let p = pool.clone();
+            handles.push(tokio::spawn(async move { p.dec_inflight_and_notify() }));
+        }
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        assert_eq!(
+            pool.inflight(),
+            0,
+            "over-decrement must floor at 0, never wrap to usize::MAX"
+        );
     }
 }
