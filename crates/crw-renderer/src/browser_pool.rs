@@ -886,10 +886,14 @@ impl<C: ChromeConnOps> Drop for PoolGuard<C> {
             return;
         };
 
-        // Step 1: claim terminator
+        // Step 1: claim terminator.
+        // Poison-tolerant throughout this Drop: per the panic-free invariant
+        // above, unwrapping a poisoned slot mutex here would panic while
+        // unwinding and abort the process. `record_target` already takes this
+        // approach; `Drop` needs it strictly more.
         let we_won = slot
             .lock()
-            .unwrap()
+            .unwrap_or_else(|p| p.into_inner())
             .terminator
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok();
@@ -904,7 +908,7 @@ impl<C: ChromeConnOps> Drop for PoolGuard<C> {
         // close does NOT free them, so dropping the ids here is what leaked the
         // renderer process on every timed-out / cancelled render.
         let cleanup = {
-            let mut g = slot.lock().unwrap();
+            let mut g = slot.lock().unwrap_or_else(|p| p.into_inner());
             match std::mem::replace(&mut g.state, SlotState::Closing) {
                 SlotState::CheckedOut {
                     conn,
@@ -1478,9 +1482,6 @@ mod tests {
         }));
         assert!(poisoned.is_err());
         assert!(slot.is_poisoned());
-        // Clear poison so the guard's own (non-poison-tolerant) Drop doesn't
-        // panic when this test ends.
-        slot.clear_poison();
 
         // The poison-tolerant `match slot.lock() { Err(p) => p.into_inner(), .. }`
         // path must still record instead of panicking.
@@ -1993,6 +1994,35 @@ mod tests {
             pool.inflight(),
             0,
             "over-decrement must floor at 0, never wrap to usize::MAX"
+        );
+    }
+
+    #[tokio::test]
+    async fn guard_drop_survives_a_poisoned_slot_mutex() {
+        // Regression: `PoolGuard::drop` unwrapped the slot mutex twice, despite
+        // the panic-free invariant documented on `BookkeepingToken`. `Drop` runs
+        // during future cancellation; a panic there while already unwinding
+        // aborts the process. `record_target` was already poison-tolerant —
+        // `Drop` needs it strictly more.
+        let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+        let guard = pool.acquire().await.unwrap();
+        guard.record_target("t-1".into());
+        let slot = guard.slot.clone().expect("guard holds a slot");
+
+        // Poison the slot mutex from another thread.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = slot.lock().unwrap();
+            panic!("intentional poison");
+        }));
+        assert!(slot.is_poisoned(), "slot mutex should be poisoned");
+
+        // Must not panic.
+        drop(guard);
+
+        assert_eq!(
+            pool.inflight(),
+            0,
+            "Drop must still complete its bookkeeping on a poisoned slot"
         );
     }
 }
