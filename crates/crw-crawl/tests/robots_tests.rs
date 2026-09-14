@@ -44,8 +44,8 @@ User-agent: CRW
 Disallow: /crw-blocked/
 "#;
     let robots = RobotsTxt::parse(text);
-    // Both * and CRW sections apply, so / is disallowed from * section
-    assert!(!robots.is_allowed("/anything"));
+    // The exact CRW group takes precedence over the wildcard group.
+    assert!(robots.is_allowed("/anything"));
     assert!(!robots.is_allowed("/crw-blocked/page"));
 }
 

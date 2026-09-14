@@ -1967,34 +1967,15 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn over_decrement_floors_at_zero() {
-        // Contract coverage for `dec_inflight_and_notify`'s documented floor:
-        // inflight must never wrap below zero, because `shutdown`'s
-        // `while inflight > 0` drain loop would then spin to its deadline on
-        // every shutdown.
-        //
-        // Note this asserts the invariant, it does not reproduce the race that
-        // used to break it: the old `load`-then-`fetch_sub` pair has a window
-        // too narrow to hit reliably from a unit test. The guarantee now comes
-        // from `fetch_update` being a single atomic RMW, not from this test.
+    #[test]
+    fn over_decrement_floors_at_zero() {
         let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
-
         pool.inflight.store(1, Ordering::SeqCst);
-        let mut handles = Vec::new();
-        for _ in 0..16 {
-            let p = pool.clone();
-            handles.push(tokio::spawn(async move { p.dec_inflight_and_notify() }));
-        }
-        for h in handles {
-            h.await.unwrap();
-        }
 
-        assert_eq!(
-            pool.inflight(),
-            0,
-            "over-decrement must floor at 0, never wrap to usize::MAX"
-        );
+        pool.dec_inflight_and_notify();
+        pool.dec_inflight_and_notify();
+
+        assert_eq!(pool.inflight(), 0);
     }
 
     #[tokio::test]

@@ -7,56 +7,59 @@ struct Rule {
     allow: bool,
 }
 
+#[derive(Debug, Default)]
+struct Group {
+    agents: Vec<String>,
+    rules: Vec<Rule>,
+}
+
+const ROBOTS_PRODUCT_TOKEN: &str = "crw";
+const MAX_ROBOTS_BYTES: usize = 500 * 1024;
+
 /// Simple robots.txt parser with wildcard and Allow support.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RobotsTxt {
     rules: Vec<Rule>,
     pub sitemaps: Vec<String>,
 }
 
 impl RobotsTxt {
-    pub async fn fetch(base_url: &str, client: &reqwest::Client) -> CrwResult<Self> {
+    pub async fn fetch(base_url: &str, client: &reqwest::Client) -> CrwResult<Option<Self>> {
         let url = format!("{}/robots.txt", base_url.trim_end_matches('/'));
 
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| CrwError::HttpError(crw_core::error::reqwest_message(e)))?;
+        let resp = client.get(&url).send().await.map_err(|e| {
+            CrwError::TargetUnreachable(format!(
+                "robots.txt request failed: {}",
+                crw_core::error::reqwest_message(e)
+            ))
+        })?;
 
+        if resp.status().is_client_error() {
+            return Ok(None);
+        }
         if !resp.status().is_success() {
-            return Ok(Self {
-                rules: vec![],
-                sitemaps: vec![],
-            });
+            return Err(CrwError::TargetUnreachable(format!(
+                "robots.txt returned HTTP {}",
+                resp.status().as_u16()
+            )));
         }
 
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| CrwError::HttpError(crw_core::error::reqwest_message(e)))?;
-
-        Ok(Self::parse(&text))
+        let (mut bytes, truncated) = read_decoded_prefix(resp).await?;
+        if truncated {
+            let end = bytes
+                .iter()
+                .rposition(|byte| *byte == b'\n')
+                .map_or(0, |index| index + 1);
+            bytes.truncate(end);
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        Ok(Some(Self::parse(&text)))
     }
 
     pub fn parse(text: &str) -> Self {
-        let mut rules = Vec::new();
+        let mut groups = Vec::new();
+        let mut group = Group::default();
         let mut sitemaps = Vec::new();
-        let mut in_our_section = false;
-        // Whether the previous directive line was also a `User-agent:`.
-        //
-        // Per RFC 9309 §2.2.1 a run of consecutive `User-agent:` lines heads
-        // ONE group, and the group applies if ANY of them matches. Reading
-        // `in_our_section` from the last line alone silently discarded the
-        // rules of the extremely common shape
-        //
-        //     User-agent: *
-        //     User-agent: BadBot
-        //     Disallow: /
-        //
-        // because the last agent is not us. A site-wide `Disallow` that
-        // named us via `*` was dropped and we crawled what it forbade. That is
-        // the fail-open direction, which is the expensive one here.
         let mut in_agent_run = false;
 
         for line in text.lines() {
@@ -67,20 +70,17 @@ impl RobotsTxt {
 
             if let Some(agent) = directive_value(line, "user-agent:") {
                 if !in_agent_run {
-                    // First agent line after a rule: a new group begins.
-                    in_our_section = false;
+                    if !group.agents.is_empty() {
+                        groups.push(std::mem::take(&mut group));
+                    }
                     in_agent_run = true;
                 }
-                let agent = agent.to_ascii_lowercase();
-                if agent == "*" || agent.contains("crw") {
-                    in_our_section = true;
+                if !agent.is_empty() {
+                    group.agents.push(agent.to_string());
                 }
                 continue;
             }
 
-            // `Sitemap:` is a non-group record (RFC 9309 §2.2.3) and may sit
-            // anywhere, including inside a run of agent lines, so it must not
-            // close the run.
             if let Some(url) = directive_value(line, "sitemap:") {
                 if !url.is_empty() {
                     sitemaps.push(url.to_string());
@@ -88,27 +88,52 @@ impl RobotsTxt {
                 continue;
             }
 
-            // Any group-member directive closes the agent run.
             in_agent_run = false;
 
-            if in_our_section {
-                if let Some(path) = directive_value(line, "disallow:") {
-                    if !path.is_empty() {
-                        rules.push(Rule {
-                            pattern: path.to_string(),
-                            allow: false,
-                        });
-                    }
-                } else if let Some(path) = directive_value(line, "allow:")
-                    && !path.is_empty()
-                {
-                    rules.push(Rule {
+            if group.agents.is_empty() {
+                continue;
+            }
+
+            if let Some(path) = directive_value(line, "disallow:") {
+                if !path.is_empty() {
+                    group.rules.push(Rule {
                         pattern: path.to_string(),
-                        allow: true,
+                        allow: false,
                     });
                 }
+            } else if let Some(path) = directive_value(line, "allow:")
+                && !path.is_empty()
+            {
+                group.rules.push(Rule {
+                    pattern: path.to_string(),
+                    allow: true,
+                });
             }
         }
+
+        if !group.agents.is_empty() {
+            groups.push(group);
+        }
+
+        let has_exact = groups.iter().any(|group| {
+            group
+                .agents
+                .iter()
+                .any(|agent| agent.eq_ignore_ascii_case(ROBOTS_PRODUCT_TOKEN))
+        });
+        let rules = groups
+            .into_iter()
+            .filter(|group| {
+                group.agents.iter().any(|agent| {
+                    if has_exact {
+                        agent.eq_ignore_ascii_case(ROBOTS_PRODUCT_TOKEN)
+                    } else {
+                        agent == "*"
+                    }
+                })
+            })
+            .flat_map(|group| group.rules)
+            .collect();
 
         Self { rules, sitemaps }
     }
@@ -152,6 +177,25 @@ impl RobotsTxt {
         };
         self.is_allowed(&path_and_query)
     }
+}
+
+async fn read_decoded_prefix(mut response: reqwest::Response) -> CrwResult<(Vec<u8>, bool)> {
+    let mut bytes = Vec::with_capacity(MAX_ROBOTS_BYTES);
+    while bytes.len() < MAX_ROBOTS_BYTES {
+        let Some(chunk) = response.chunk().await.map_err(|error| {
+            CrwError::TargetUnreachable(format!(
+                "robots.txt body failed: {}",
+                crw_core::error::reqwest_message(error)
+            ))
+        })?
+        else {
+            break;
+        };
+        let remaining = MAX_ROBOTS_BYTES - bytes.len();
+        bytes.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+    }
+    let truncated = bytes.len() == MAX_ROBOTS_BYTES;
+    Ok((bytes, truncated))
 }
 
 /// Effective pattern length for specificity calculation.
@@ -209,22 +253,7 @@ fn matches_pattern(path: &str, pattern: &str) -> bool {
     }
 }
 
-/// Safely extract the value after a directive prefix (case-insensitive match).
-///
-/// Compares the head of `line` in place rather than lowercasing it first. The
-/// previous version validated `prefix.len()` against `line.to_lowercase()` and
-/// then applied that offset to `line`, but `to_lowercase` is full Unicode and
-/// does not preserve byte length (`İ` U+0130 is 2 bytes and lowercases to 3;
-/// `K` U+212A is 3 bytes and lowercases to 1). The offset could therefore land
-/// past the end of `line`, or mid-character, and panic on remote
-/// attacker-controlled `robots.txt`.
-///
-/// No live panic was reachable, because none of the four prefixes in use
-/// contains a letter with a length-changing uppercase mapping, but it became
-/// a remote panic the day someone added a prefix containing `k`. Comparing
-/// with `eq_ignore_ascii_case` is byte-length-preserving by construction (all
-/// four prefixes are ASCII), and `get` returns `None` rather than panicking if
-/// the split would land mid-character.
+/// Extract a directive value with an ASCII case-insensitive prefix.
 fn directive_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
     let head = line.get(..prefix.len())?;
     if !head.eq_ignore_ascii_case(prefix) {
@@ -239,6 +268,47 @@ fn directive_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_group_suppresses_wildcard_rules() {
+        let robots = RobotsTxt::parse(
+            "User-agent: *\nAllow: /private\nUser-agent: crw\nDisallow: /private\n",
+        );
+        assert!(!robots.is_allowed("/private"));
+
+        let robots =
+            RobotsTxt::parse("User-agent: *\nDisallow: /public\nUser-agent: CRW\nAllow: /public\n");
+        assert!(robots.is_allowed("/public"));
+    }
+
+    #[test]
+    fn multiple_exact_groups_are_combined() {
+        let robots =
+            RobotsTxt::parse("User-agent: crw\nDisallow: /one\nUser-agent: CRW\nDisallow: /two\n");
+        assert!(!robots.is_allowed("/one"));
+        assert!(!robots.is_allowed("/two"));
+    }
+
+    #[test]
+    fn substring_agent_does_not_match_crw() {
+        let robots =
+            RobotsTxt::parse("User-agent: *\nAllow: /\nUser-agent: notcrwbot\nDisallow: /\n");
+        assert!(robots.is_allowed("/page"));
+    }
+
+    #[test]
+    fn empty_exact_group_still_suppresses_wildcard_rules() {
+        let robots = RobotsTxt::parse(
+            "User-agent: *\nDisallow: /private\nUser-agent: crw\nSitemap: https://e.test/map.xml\n",
+        );
+        assert!(robots.is_allowed("/private"));
+    }
+
+    #[test]
+    fn directives_before_the_first_group_are_ignored() {
+        let robots = RobotsTxt::parse("Disallow: /\nUser-agent: *\nAllow: /\n");
+        assert!(robots.is_allowed("/page"));
+    }
 
     /// RFC 9309 §2.2.1: a run of consecutive `User-agent:` lines heads one
     /// group, and the group applies if ANY of them matches. Reading only the
@@ -282,11 +352,6 @@ mod tests {
         assert!(!r.is_allowed("/anything"));
     }
 
-    /// `directive_value` used to validate the prefix length against a
-    /// lowercased copy and then slice the original at that offset.
-    /// `to_lowercase` is full Unicode and does not preserve byte length, so a
-    /// line whose head changes length under lowercasing could slice out of
-    /// bounds or mid-character. Feed it lines that would have tripped that.
     #[test]
     fn directive_parsing_does_not_panic_on_length_changing_unicode() {
         for line in [
@@ -302,7 +367,6 @@ mod tests {
             let _ = directive_value(line, "disallow:");
             let _ = directive_value(line, "sitemap:");
         }
-        // And the whole parser over the same corpus.
         let r =
             RobotsTxt::parse("İser-agent: *\n\u{212A}isallow: /x\nUser-agent: *\nDisallow: /y\n");
         assert!(!r.is_allowed("/y"));
@@ -390,5 +454,76 @@ Allow: /path
 "#;
         let robots = RobotsTxt::parse(text);
         assert!(robots.is_allowed("/path"));
+    }
+
+    #[tokio::test]
+    async fn fetch_classifies_unavailable_and_unreachable_statuses() {
+        let unavailable = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::path("/robots.txt"))
+            .respond_with(wiremock::ResponseTemplate::new(404))
+            .mount(&unavailable)
+            .await;
+        assert!(
+            RobotsTxt::fetch(&unavailable.uri(), &reqwest::Client::new())
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        let unreachable = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::path("/robots.txt"))
+            .respond_with(wiremock::ResponseTemplate::new(503))
+            .mount(&unreachable)
+            .await;
+        assert!(matches!(
+            RobotsTxt::fetch(&unreachable.uri(), &reqwest::Client::new()).await,
+            Err(CrwError::TargetUnreachable(_))
+        ));
+
+        let slow = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::path("/robots.txt"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_delay(std::time::Duration::from_millis(200)),
+            )
+            .mount(&slow)
+            .await;
+        let short_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(10))
+            .build()
+            .unwrap();
+        assert!(matches!(
+            RobotsTxt::fetch(&slow.uri(), &short_client).await,
+            Err(CrwError::TargetUnreachable(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn fetch_caps_the_decoded_gzip_body() {
+        use flate2::{Compression, write::GzEncoder};
+        use std::io::Write;
+
+        let mut text = "User-agent: crw\nDisallow: /blocked\n".to_string();
+        text.push_str(&"x".repeat(MAX_ROBOTS_BYTES - text.len()));
+        text.push_str("\nAllow: /blocked\n");
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(text.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::path("/robots.txt"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .insert_header("content-encoding", "gzip")
+                    .set_body_bytes(compressed),
+            )
+            .mount(&server)
+            .await;
+
+        let robots = RobotsTxt::fetch(&server.uri(), &reqwest::Client::new())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!robots.is_allowed("/blocked"));
     }
 }

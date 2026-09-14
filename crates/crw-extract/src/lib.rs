@@ -1091,7 +1091,46 @@ fn walk_json_strings(value: &serde_json::Value, on_string: &mut dyn FnMut(&str))
 #[cfg(test)]
 mod private_tests {
     use super::*;
-    use crw_core::types::CapturedNetworkResponse;
+    use crw_core::types::{CapturedNetworkResponse, OutputFormat};
+
+    #[test]
+    fn extract_preserves_linked_pilcrow_in_body_prose() {
+        let formats = [OutputFormat::Markdown];
+        let data = extract(ExtractOptions {
+            raw_html: r##"<p>See <a href="#para12">¶</a> 12 for details.</p>"##,
+            content_type: Some("text/html"),
+            source_url: "https://example.com/",
+            status_code: 200,
+            rendered_with: None,
+            elapsed_ms: 0,
+            render_decision: None,
+            credit_cost: 0,
+            warnings: Vec::new(),
+            formats: &formats,
+            only_main_content: true,
+            include_tags: &[],
+            exclude_tags: &[],
+            css_selector: None,
+            xpath: None,
+            chunk_strategy: None,
+            query: None,
+            filter_mode: None,
+            top_k: None,
+            domain_selectors: None,
+            captured_responses: &[],
+            llm_fallback: None,
+            debug: false,
+            debug_sink: None,
+            normalize_tables: false,
+        })
+        .unwrap();
+
+        assert!(
+            data.markdown
+                .as_deref()
+                .is_some_and(|md| md.contains("See [¶](#para12) 12 for details."))
+        );
+    }
 
     #[test]
     fn domain_selector_matches_exact_host() {

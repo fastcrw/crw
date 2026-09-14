@@ -200,16 +200,11 @@ impl UrlFilterCfg {
     }
 }
 
-/// Mirror of `crawl::normalize_url` — kept private to this module so the
-/// filter can be exercised in unit tests without crossing module boundaries.
-/// `normalize_matches_crawl_normalize_url` drives a shared corpus through both
-/// copies so the word "mirror" is a contract rather than a comment.
+/// Build a URL dedup key without changing case-sensitive components.
 ///
-/// Folds only the case-insensitive components (scheme and authority, RFC 3986
-/// §6.2.2.1). The path and query stay byte-exact: this value is both the dedup
-/// key and the URL `map` reports back to the caller, and lowercasing a
-/// case-sensitive path produced URLs that 404 on the origin they came from.
-fn normalize(url: &str) -> String {
+/// Scheme and host are case-insensitive. Userinfo, port, path and query remain
+/// byte-exact because origins may interpret them case-sensitively.
+pub(crate) fn normalize_url(url: &str) -> String {
     let without_fragment = url.split('#').next().unwrap_or(url);
     let trimmed = without_fragment.trim_end_matches('/');
     let Some(sep) = trimmed.find("://") else {
@@ -219,7 +214,23 @@ fn normalize(url: &str) -> String {
     let authority_end = trimmed[authority_start..]
         .find(['/', '?'])
         .map_or(trimmed.len(), |i| authority_start + i);
-    let mut key = trimmed[..authority_end].to_lowercase();
+    let authority = &trimmed[authority_start..authority_end];
+    let host_start = authority.rfind('@').map_or(0, |i| i + 1);
+    let host_and_port = &authority[host_start..];
+    let host_len = if host_and_port.starts_with('[') {
+        host_and_port
+            .find(']')
+            .map_or(host_and_port.len(), |i| i + 1)
+    } else {
+        host_and_port.rfind(':').unwrap_or(host_and_port.len())
+    };
+    let host_end = authority_start + host_start + host_len;
+
+    let mut key = trimmed[..sep].to_ascii_lowercase();
+    key.push_str("://");
+    key.push_str(&trimmed[authority_start..authority_start + host_start]);
+    key.push_str(&trimmed[authority_start + host_start..host_end].to_lowercase());
+    key.push_str(&trimmed[host_end..authority_end]);
     key.push_str(&trimmed[authority_end..]);
     key
 }
@@ -251,7 +262,7 @@ fn is_gov_host(host: &str) -> bool {
 pub fn filter_and_normalize_raw(url: &str, cfg: &UrlFilterCfg) -> Option<String> {
     if cfg.coarse_strip_all || cfg.strip_tracking || cfg.drop_actions {
         if !url.contains('?') {
-            return Some(normalize(url));
+            return Some(normalize_url(url));
         }
         let parsed = match url::Url::parse(url) {
             Ok(u) => u,
@@ -260,12 +271,12 @@ pub fn filter_and_normalize_raw(url: &str, cfg: &UrlFilterCfg) -> Option<String>
                     .map_filter_dropped_total
                     .with_label_values(&["parse_error_passthrough"])
                     .inc();
-                return Some(normalize(url));
+                return Some(normalize_url(url));
             }
         };
         filter_and_normalize_parsed(&parsed, url, cfg)
     } else {
-        Some(normalize(url))
+        Some(normalize_url(url))
     }
 }
 
@@ -277,11 +288,11 @@ pub fn filter_and_normalize_parsed(
 ) -> Option<String> {
     // No query — nothing for either tier to do.
     if parsed.query().is_none() {
-        return Some(normalize(raw));
+        return Some(normalize_url(raw));
     }
     // Both tiers off and no coarse — pass through.
     if !cfg.coarse_strip_all && !cfg.strip_tracking && !cfg.drop_actions {
-        return Some(normalize(raw));
+        return Some(normalize_url(raw));
     }
 
     let host = parsed.host_str().unwrap_or("").to_ascii_lowercase();
@@ -416,7 +427,7 @@ pub fn filter_and_normalize_parsed(
     }
 
     // Tier A only, no strip configured — return URL with original query intact.
-    Some(normalize(raw))
+    Some(normalize_url(raw))
 }
 
 /// Re-emit URL with the surviving params in original order. Preserves raw
@@ -429,7 +440,7 @@ fn rebuild(parsed: &url::Url, kept: &[&str]) -> String {
         out.set_query(Some(&kept.join("&")));
     }
     out.set_fragment(None);
-    normalize(out.as_str())
+    normalize_url(out.as_str())
 }
 
 #[cfg(test)]
@@ -1308,7 +1319,7 @@ mod tests {
             &cfg,
         )
         .unwrap();
-        // `normalize()` folds only scheme and host, so the preserved query
+        // `normalize_url()` folds only scheme and host, so the preserved query
         // value keeps the case the caller wrote.
         assert!(out.contains("t=5"), "phpBB preserve missing: {out}");
         assert!(out.contains("title=X"), "wiki preserve missing: {out}");
@@ -1341,48 +1352,37 @@ mod tests {
     }
 
     #[test]
-    fn normalize_folds_scheme_and_authority_only() {
+    fn normalize_folds_only_scheme_and_host() {
         assert_eq!(
-            normalize("HTTPS://EXAMPLE.COM/Docs/Guide?Id=AbC"),
-            "https://example.com/Docs/Guide?Id=AbC"
+            normalize_url("HTTPS://User:PaSS@EXAMPLE.COM:8443/Docs/Guide?Id=AbC"),
+            "https://User:PaSS@example.com:8443/Docs/Guide?Id=AbC"
+        );
+        assert_eq!(
+            normalize_url("HTTPS://User:PaSS@[ABCD::1]:8443/Path"),
+            "https://User:PaSS@[abcd::1]:8443/Path"
+        );
+        assert_eq!(
+            normalize_url("HTTPS://BÜCHER.example/Path"),
+            "https://bücher.example/Path"
         );
     }
 
     #[test]
     fn normalize_trailing_slash_before_a_query_is_untouched() {
         assert_eq!(
-            normalize("https://example.com/a/?q=1"),
+            normalize_url("https://example.com/a/?q=1"),
             "https://example.com/a/?q=1"
         );
     }
 
-    /// `normalize` is documented as a mirror of `crawl::normalize_url`. Before
-    /// this test the two were kept in step by hand, and the only thing saying
-    /// so was a comment. Drive one corpus through both and assert they agree.
     #[test]
-    fn normalize_matches_crawl_normalize_url() {
-        for url in [
-            "https://example.com/",
-            "HTTPS://EXAMPLE.COM/Page",
-            "https://Example.Com/Path/#fragment",
-            "https://example.com/page?Q=Hello",
-            "https://example.com/a/?q=1",
-            "https://u:p@example.com:443/a/../b",
-            "https://example.com/CAFÉ",
-            "HTTPS://EXAMPLE.COM?Q=1",
-            "https://example.com",
-            "/Just/A/Path/",
-            "",
-            "   ",
-            "#section",
-            "https://example.com/path///",
-        ] {
-            assert_eq!(
-                normalize(url),
-                crate::crawl::normalize_url_for_tests(url),
-                "mirror drifted on {url:?}"
-            );
-        }
+    fn filter_preserves_case_sensitive_userinfo() {
+        let output = filter_and_normalize_raw(
+            "HTTPS://User:PaSS@EXAMPLE.COM:8443/Path?Token=AbC",
+            &UrlFilterCfg::off(),
+        )
+        .unwrap();
+        assert_eq!(output, "https://User:PaSS@example.com:8443/Path?Token=AbC");
     }
 
     #[test]
@@ -1393,8 +1393,8 @@ mod tests {
             &cfg,
         )
         .unwrap();
-        // `normalize()` folds only scheme and host (see normalize_url in
-        // crawl.rs). MediaWiki titles are case-sensitive, so preserving the
+        // `normalize_url()` folds only scheme and host. MediaWiki titles are
+        // case-sensitive, so preserving the
         // case here is what makes the returned URL resolve.
         assert!(out.contains("title=Main"), "got {out}");
         assert!(!out.contains("utm_source"));

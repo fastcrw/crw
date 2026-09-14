@@ -356,27 +356,18 @@ fn strip_data_uris(md: &str) -> String {
     DATA_URI_RE.replace_all(md, "").to_string()
 }
 
-/// Remove empty anchor links and the pilcrow (¶) headerlink sigil that
-/// HTML-to-Markdown converters carry over from header anchor links.
-///
-/// The sigil is only stripped **inside an anchor link to a fragment**, which is
-/// what a headerlink actually is. It used to be stripped document-wide, along
-/// with every " §", by two unconditional `replace` calls. That silently
-/// destroyed both characters in body prose: `See § 230 of the CDA` became
-/// `See 230 of the CDA`, and `Nach § 1 BGB` became `Nach 1 BGB`. The space
-/// went too, so nothing marked where the character had been. Section signs are
-/// load-bearing in statutory content, so that is content loss rather than
-/// cleanup, and recall is a hard product invariant.
-///
-/// A sigil that a site renders as header decoration *without* wrapping it in an
-/// anchor is therefore preserved now. The two cases are indistinguishable after
-/// conversion, so the trade is resolved in favour of not destroying content.
+/// Remove empty anchors and decorative linked pilcrows from headings.
 fn strip_anchor_artifacts(md: &str) -> String {
-    // Remove empty anchor links: [](#id), [](#id "title"), [¶](#id)
     static EMPTY_ANCHOR_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"\[¶?\]\(#[^)]*\)"#).unwrap());
+        LazyLock::new(|| Regex::new(r#"\[\]\(#[^)]*\)"#).unwrap());
+    static HEADING_PILCROW_RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?m)^(#{1,6}[^\r\n]*?)[ \t]*\[¶\]\(#[^)\r\n]*\)[ \t]*$"#).unwrap()
+    });
 
-    EMPTY_ANCHOR_RE.replace_all(md, "").into_owned()
+    let without_empty = EMPTY_ANCHOR_RE.replace_all(md, "");
+    HEADING_PILCROW_RE
+        .replace_all(&without_empty, "$1")
+        .into_owned()
 }
 
 #[cfg(test)]
@@ -442,13 +433,13 @@ mod tests {
     }
 
     #[test]
-    fn strips_empty_anchor_links() {
-        let input = "## Heading [](#heading) rest\n\nSome [¶](#foo \"title\") text";
+    fn strips_only_heading_pilcrow_links() {
+        let input = "## Heading [¶](#heading)\n\n[¶](#body)\n\nSee [¶](#para12) 12.\n\n[](#empty)";
         let result = strip_anchor_artifacts(input);
         assert!(!result.contains("[](#"));
-        assert!(!result.contains("[¶](#"));
-        assert!(result.contains("## Heading  rest"));
-        assert!(result.contains("Some  text"));
+        assert!(result.contains("## Heading\n"));
+        assert!(result.contains("[¶](#body)"));
+        assert!(result.contains("See [¶](#para12) 12."));
     }
 
     #[test]

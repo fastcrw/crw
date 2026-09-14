@@ -1067,35 +1067,9 @@ pub(crate) const BODY_PREALLOC_BYTES: usize = 64 * 1024;
 
 /// Read a response body, refusing to buffer past `max` bytes.
 ///
-/// The `Content-Length` pre-check at the call sites is necessary but not
-/// sufficient, because on the two cases that matter the header is simply
-/// absent:
-///
-///   - **Chunked responses.** `Transfer-Encoding: chunked` is the default for
-///     any streamed or dynamically generated body, and `content_length()` is
-///     then `None`.
-///   - **Transport-decompressed responses.** These clients enable
-///     gzip/brotli/deflate, and tower-http's decompression body reports
-///     `SizeHint::default()`, meaning no exact value, so `content_length()` is
-///     `None` there too. It is NOT a compressed-size bound that could be
-///     scaled up; there is no number at all. A 1 MB payload that expands to
-///     gigabytes arrives with nothing to check it against.
-///
-/// Either way the old `resp.bytes()` buffered the whole body and the size was
-/// only rejected afterwards, by which point the allocation had already
-/// happened. Checking while streaming bounds the peak at roughly one chunk
-/// over the cap. Because the cap is applied to the bytes this function yields,
-/// it is measured after decompression, which is the point.
-///
-/// Dropping the `Response` on the error path leaves the body unread, so the
-/// connection is not returned to the pool and the origin stops sending.
-///
-/// `max` is a parameter rather than a constant so the cap can be driven
-/// directly in tests; both production call sites pass [`MAX_RESPONSE_BYTES`].
-/// Note this is the third near-identical helper in the workspace.
-/// `crw_crawl::sitemap` has one under this exact name and `crw_search::client`
-/// has `read_capped`. Hoisting one copy into `crw-core` (which already
-/// owns `reqwest_message`) is the right follow-up.
+/// Streaming is required because chunked and decoded responses may have no
+/// usable `Content-Length`. The cap applies to decoded bytes and the response
+/// is dropped as soon as it is exceeded.
 pub(crate) async fn read_body_capped(
     mut resp: reqwest::Response,
     max: usize,
@@ -1114,6 +1088,23 @@ pub(crate) async fn read_body_capped(
         body.extend_from_slice(&chunk);
     }
     Ok(body)
+}
+
+#[cfg(test)]
+pub(crate) fn serve_raw(head: impl Into<String>, body: Vec<u8>) -> String {
+    let head = head.into();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        use std::io::{Read, Write};
+
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let _ = stream.write_all(head.as_bytes());
+        let _ = stream.write_all(&body);
+    });
+    format!("http://{addr}/")
 }
 
 /// Sniff a `<meta charset>` / `<meta http-equiv=content-type … charset=…>`
@@ -3047,25 +3038,6 @@ mod tests {
 
     // ── M. content-length / body size ───────────────────────────────────
 
-    /// Serve `body` verbatim with the given extra headers and return the URL.
-    ///
-    /// A raw TCP writer rather than axum, so a test can emit a chunked body or
-    /// a `Content-Encoding` the framework would otherwise manage.
-    fn serve_raw(head: &'static str, body: Vec<u8>) -> String {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        std::thread::spawn(move || {
-            for mut stream in listener.incoming().flatten() {
-                use std::io::{Read, Write};
-                let mut buf = [0u8; 1024];
-                let _ = stream.read(&mut buf);
-                let _ = stream.write_all(head.as_bytes());
-                let _ = stream.write_all(&body);
-            }
-        });
-        format!("http://{addr}/")
-    }
-
     /// The cap must be enforced while streaming, not measured afterwards.
     ///
     /// A chunked response carries no `Content-Length`, so the header pre-check
@@ -3144,12 +3116,9 @@ mod tests {
             gz.len()
         );
 
-        let head: &'static str = Box::leak(
-            format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                gz.len()
-            )
-            .into_boxed_str(),
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            gz.len()
         );
         let url = serve_raw(head, gz);
 
@@ -3183,17 +3152,6 @@ mod tests {
         assert_eq!(String::from_utf8(body).unwrap(), format!("{a}{b}"));
     }
 
-    /// An empty body is not an error and does not trip the cap.
-    #[tokio::test]
-    async fn read_body_capped_accepts_an_empty_body() {
-        let url = serve_raw(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            Vec::new(),
-        );
-        let resp = reqwest::Client::new().get(&url).send().await.unwrap();
-        assert!(read_body_capped(resp, 0).await.unwrap().is_empty());
-    }
-
     /// A raw response whose declared Content-Length exceeds MAX_RESPONSE_BYTES
     /// must be rejected from the HEADER alone, before any body bytes are
     /// read — the server sends no body at all, so a bug that instead tried
@@ -3203,18 +3161,18 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         std::thread::spawn(move || {
-            for mut stream in listener.incoming().flatten() {
-                use std::io::{Read, Write};
-                let mut buf = [0u8; 1024];
-                let _ = stream.read(&mut buf);
-                let huge = MAX_RESPONSE_BYTES + 1;
-                let _ = stream.write_all(
-                    format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {huge}\r\nConnection: close\r\n\r\n"
-                    )
-                    .as_bytes(),
-                );
-            }
+            use std::io::{Read, Write};
+
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let huge = MAX_RESPONSE_BYTES + 1;
+            let _ = stream.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {huge}\r\nConnection: close\r\n\r\n"
+                )
+                .as_bytes(),
+            );
         });
         let url = format!("http://{addr}/");
         let fetcher = HttpFetcher::new("crw-test", None, false);

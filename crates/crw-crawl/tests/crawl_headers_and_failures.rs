@@ -298,7 +298,7 @@ async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
     Mock::given(method("GET"))
         .and(path("/robots.txt"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /hide?\n"),
+            ResponseTemplate::new(200).set_body_string("User-agent: crw\nDisallow: /Hide?Token=\n"),
         )
         .mount(&server)
         .await;
@@ -307,7 +307,7 @@ async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
         .and(path("/"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_string(r#"<html><body><a href="/hide?id=1">h</a></body></html>"#)
+                .set_body_string(r#"<html><body><a href="/Hide?Token=AbC">h</a></body></html>"#)
                 .insert_header("content-type", "text/html"),
         )
         .mount(&server)
@@ -315,7 +315,7 @@ async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
 
     // Answers happily if asked. The assertion is that it is never asked.
     Mock::given(method("GET"))
-        .and(path("/hide"))
+        .and(path("/Hide"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_string("<html><body><h1>Forbidden page</h1></body></html>")
@@ -345,5 +345,33 @@ async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
         state.data.len(),
         1,
         "only the seed should have been fetched"
+    );
+}
+
+#[tokio::test]
+async fn unreachable_robots_fails_the_job_before_fetching_the_seed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let state = run_with_robots(request(format!("{}/", server.uri())), true).await;
+
+    assert_eq!(state.status, CrawlStatus::Failed);
+    assert!(!state.success);
+    assert!(
+        state
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("robots.txt unreachable"))
     );
 }

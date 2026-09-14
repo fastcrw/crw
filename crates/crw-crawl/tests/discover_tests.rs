@@ -238,10 +238,9 @@ async fn slow_site_returns_partial_results_instead_of_timing_out() {
     );
 }
 
-/// A robots.txt that hangs must not be able to eat the whole budget and take
-/// every result down with it: the robots fetch is clamped by the overall deadline.
+/// A robots.txt timeout fails closed before sitemap probes or seed crawling.
 #[tokio::test]
-async fn hanging_robots_does_not_consume_the_whole_budget() {
+async fn hanging_robots_fails_closed_within_the_overall_budget() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -252,11 +251,13 @@ async fn hanging_robots_does_not_consume_the_whole_budget() {
     Mock::given(method("GET"))
         .and(path("/sitemap.xml"))
         .respond_with(ResponseTemplate::new(404))
+        .expect(0)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/"))
         .respond_with(ResponseTemplate::new(200).set_body_string(r#"<a href="/x">x</a>"#))
+        .expect(0)
         .mount(&server)
         .await;
 
@@ -268,15 +269,20 @@ async fn hanging_robots_does_not_consume_the_whole_budget() {
         Instant::now() + Duration::from_secs(3),
         true,
     ))
-    .await
-    .expect("a hanging robots.txt must not fail the whole call");
+    .await;
 
     assert!(
         started.elapsed() < Duration::from_secs(20),
         "robots fetch must be clamped by the overall deadline, took {:?}",
         started.elapsed()
     );
-    assert!(!result.urls.is_empty(), "the base URL is always reported");
+    assert!(matches!(
+        result,
+        Err(crw_core::error::CrwError::TargetUnreachable(_))
+    ));
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].url.path(), "/robots.txt");
 }
 
 /// `max_urls` is a hard cap, not a suggestion. The base URL used to be appended
@@ -319,4 +325,74 @@ async fn seed_validation_is_bounded_by_the_overall_deadline() {
         matches!(err, crw_core::error::CrwError::Timeout(_)),
         "expected a clean Timeout from the seed budget gate, got: {err:?}"
     );
+}
+
+#[tokio::test]
+async fn unreachable_robots_stops_discovery_before_seed_or_sitemap_requests() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/sitemap.xml"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let renderer = renderer().await;
+    let result = discover_urls(opts(
+        &server.uri(),
+        &renderer,
+        Instant::now() + Duration::from_secs(10),
+        true,
+    ))
+    .await;
+    assert!(matches!(
+        result,
+        Err(crw_core::error::CrwError::TargetUnreachable(_))
+    ));
+}
+
+#[tokio::test]
+async fn disabled_robots_policy_keeps_sitemap_metadata_best_effort() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/html")
+                .set_body_string("<html><body>seed</body></html>"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let renderer = renderer().await;
+    let uri = server.uri();
+    let mut options = opts(
+        &uri,
+        &renderer,
+        Instant::now() + Duration::from_secs(10),
+        false,
+    );
+    options.use_sitemap = false;
+    options.max_depth = 0;
+    let result = discover_urls(options).await.unwrap();
+    assert!(result.urls.iter().any(|url| url == &uri));
 }

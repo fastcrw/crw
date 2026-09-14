@@ -2,11 +2,11 @@
 //!
 //! Measures the *delta* between calling `filter_and_normalize_raw` with a
 //! defaults-on config vs. a no-op baseline that only does the fragment +
-//! trailing-slash + scheme/authority fold that `url_filter::normalize` does.
+//! trailing-slash + scheme/host fold that the production normalizer does.
 //! Gate: delta ≤ 3µs/URL p50 on M-class hardware (informational; not enforced
 //! in CI).
 //!
-//! The baseline must stay a copy of `url_filter::normalize`, or the delta
+//! The baseline must stay a copy of the production normalizer, or the delta
 //! silently absorbs normalize's own cost and stops meaning what the gate says.
 //!
 //! Run with: `cargo bench -p crw-crawl --bench map_url_filter`.
@@ -24,7 +24,23 @@ fn baseline_normalize(u: &str) -> String {
     let authority_end = trimmed[authority_start..]
         .find(['/', '?'])
         .map_or(trimmed.len(), |i| authority_start + i);
-    let mut key = trimmed[..authority_end].to_lowercase();
+    let authority = &trimmed[authority_start..authority_end];
+    let host_start = authority.rfind('@').map_or(0, |i| i + 1);
+    let host_and_port = &authority[host_start..];
+    let host_len = if host_and_port.starts_with('[') {
+        host_and_port
+            .find(']')
+            .map_or(host_and_port.len(), |i| i + 1)
+    } else {
+        host_and_port.rfind(':').unwrap_or(host_and_port.len())
+    };
+    let host_end = authority_start + host_start + host_len;
+
+    let mut key = trimmed[..sep].to_ascii_lowercase();
+    key.push_str("://");
+    key.push_str(&trimmed[authority_start..authority_start + host_start]);
+    key.push_str(&trimmed[authority_start + host_start..host_end].to_lowercase());
+    key.push_str(&trimmed[host_end..authority_end]);
     key.push_str(&trimmed[authority_end..]);
     key
 }

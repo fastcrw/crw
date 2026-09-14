@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::robots::RobotsTxt;
 use crate::single::derive_target_warning;
+use crate::url_filter::normalize_url;
 
 /// Default URL discovery limit when a caller doesn't specify one.
 pub const DEFAULT_MAX_DISCOVERED_URLS: usize = 5000;
@@ -290,23 +291,16 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         .expect("reqwest client build should not fail");
 
     let robots = if respect_robots {
-        // Fail-open is the existing product decision, but it must not be
-        // silent: with the timeout above, a blackholed robots.txt now turns
-        // into "this site has no rules" after 15s instead of hanging, and an
-        // operator needs to be able to see that happen.
         match RobotsTxt::fetch(&origin, &client).await {
-            Ok(r) => r,
+            Ok(Some(robots)) => robots,
+            Ok(None) => RobotsTxt::default(),
             Err(e) => {
-                tracing::warn!(
-                    origin,
-                    error = %e,
-                    "robots.txt fetch failed; proceeding with no rules"
-                );
-                RobotsTxt::parse("")
+                send_failed(id, &state_tx, format!("robots.txt unreachable: {e}"));
+                return;
             }
         }
     } else {
-        RobotsTxt::parse("")
+        RobotsTxt::default()
     };
 
     let semaphore = Arc::new(Semaphore::new(max_concurrency));
@@ -703,6 +697,8 @@ const ROBOTS_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 
 /// Connect timeout for the `robots.txt` fetch.
 const ROBOTS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const DISCOVERY_FETCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const DISCOVERY_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 const SITEMAP_SUFFICIENT_THRESHOLD: usize = 50;
 /// Hard ceiling on the BFS crawl phase when sitemap was sufficient.
@@ -882,8 +878,8 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
         .filter(|p| !p.trim().is_empty());
     let mut discover_client_builder = reqwest::Client::builder()
         .user_agent(user_agent)
-        .timeout(ROBOTS_FETCH_TIMEOUT)
-        .connect_timeout(ROBOTS_CONNECT_TIMEOUT)
+        .timeout(DISCOVERY_FETCH_TIMEOUT)
+        .connect_timeout(DISCOVERY_CONNECT_TIMEOUT)
         .redirect(crw_core::url_safety::safe_redirect_policy());
     if let Some(ref proxy_url) = discover_proxy {
         let p = reqwest::Proxy::all(proxy_url).map_err(|e| {
@@ -918,12 +914,31 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
     // The client's own 15s timeout is longer than a short caller timeout, so it
     // is additionally clamped by the overall deadline — otherwise a slow
     // robots.txt alone could burn the whole budget and lose every result.
-    let robots = match remaining_budget(overall_deadline) {
-        Some(budget) => tokio::time::timeout(budget, RobotsTxt::fetch(&origin, &client))
-            .await
-            .unwrap_or_else(|_| Ok(RobotsTxt::parse("")))
-            .unwrap_or_else(|_| RobotsTxt::parse("")),
-        None => RobotsTxt::parse(""),
+    let robots_fetch = match remaining_budget(overall_deadline) {
+        Some(budget) => {
+            Some(tokio::time::timeout(budget, RobotsTxt::fetch(&origin, &client)).await)
+        }
+        None => None,
+    };
+    let robots = match robots_fetch {
+        Some(Ok(Ok(Some(robots)))) => robots,
+        Some(Ok(Ok(None))) => RobotsTxt::default(),
+        Some(Ok(Err(error))) => {
+            if respect_robots {
+                return Err(error);
+            }
+            tracing::warn!(error = %error, "robots.txt metadata fetch failed");
+            RobotsTxt::default()
+        }
+        Some(Err(_)) | None => {
+            if respect_robots {
+                return Err(crw_core::error::CrwError::TargetUnreachable(
+                    "robots.txt request timed out".into(),
+                ));
+            }
+            tracing::warn!("robots.txt metadata fetch timed out");
+            RobotsTxt::default()
+        }
     };
 
     if use_sitemap {
@@ -1249,54 +1264,6 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
         stripped_tracking_count,
         sitemaps,
     })
-}
-
-/// Canonical dedup key for a URL: fragment and trailing slash removed, and the
-/// case-insensitive components folded.
-///
-/// Only the scheme and authority are folded, because only those are defined
-/// case-insensitive (RFC 3986 §6.2.2.1). The path and query are compared
-/// byte-exact: most origins serve them case-sensitively, so folding them
-/// collapsed `/A` and `/a` into one entry and silently dropped one of the two
-/// pages. Because the folded value was also the value that got fetched,
-/// turned `/docs/Guide` into a request for `/docs/guide`.
-///
-/// In `enqueue_discovered_links` this is purely a key: that caller fetches the
-/// link as the page wrote it. `discover_urls` still both fetches and returns
-/// this value, so on the `/map` path it remains a URL as well. That is why
-/// the folding is the only thing that changed here and every other byte is
-/// left exactly as `trim_end_matches` found it.
-///
-/// Deliberately string-based rather than `Url::parse` + re-serialize. Going
-/// through the parser would also percent-encode non-ASCII paths, drop default
-/// ports and userinfo, apply IDNA to the host and remove dot segments. These are four
-/// silent output changes on a public `/map` response, none of them needed to
-/// fix the casing. It also keeps the sitemap fast path (`filter_and_normalize_raw`
-/// pre-screens URLs with no `?` precisely to avoid a parse) actually fast.
-/// Test-only re-export so `url_filter` can assert its mirror has not drifted.
-#[cfg(test)]
-pub(crate) fn normalize_url_for_tests(url: &str) -> String {
-    normalize_url(url)
-}
-
-fn normalize_url(url: &str) -> String {
-    let without_fragment = url.split('#').next().unwrap_or(url);
-    let trimmed = without_fragment.trim_end_matches('/');
-    let Some(sep) = trimmed.find("://") else {
-        // Relative or schemeless: nothing to fold, and lowercasing a bare path
-        // is the bug this function just stopped doing.
-        return trimmed.to_string();
-    };
-    // The authority runs from after "://" to the first '/' or '?'. Userinfo is
-    // inside it and is technically case-sensitive, but the previous behaviour
-    // folded it too, so leaving it folded is no worse than before.
-    let authority_start = sep + 3;
-    let authority_end = trimmed[authority_start..]
-        .find(['/', '?'])
-        .map_or(trimmed.len(), |i| authority_start + i);
-    let mut key = trimmed[..authority_end].to_lowercase();
-    key.push_str(&trimmed[authority_end..]);
-    key
 }
 
 #[cfg(test)]
