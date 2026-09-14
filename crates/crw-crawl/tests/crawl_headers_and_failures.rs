@@ -58,6 +58,11 @@ fn request(url: String) -> CrawlRequest {
 
 /// Drive one crawl to completion and hand back the terminal state.
 async fn run(req: CrawlRequest) -> CrawlState {
+    run_with_robots(req, false).await
+}
+
+/// As `run`, but lets a test turn robots.txt enforcement on.
+async fn run_with_robots(req: CrawlRequest, respect_robots: bool) -> CrawlState {
     let id = Uuid::new_v4();
     let (state_tx, state_rx) = tokio::sync::watch::channel(CrawlState {
         id,
@@ -74,7 +79,7 @@ async fn run(req: CrawlRequest) -> CrawlState {
         req,
         renderer: renderer().await,
         max_concurrency: 1,
-        respect_robots: false,
+        respect_robots,
         requests_per_second: 100.0,
         user_agent: "crw-test-default-ua",
         state_tx,
@@ -209,5 +214,71 @@ async fn a_healthy_page_is_neither_marked_nor_counted_blocked() {
             .as_deref()
             .unwrap_or_default()
             .contains("Real page")
+    );
+}
+
+/// `run_crawl` matched robots rules against `parsed.path()`, dropping the
+/// query. Rules keyed on a query string — the shape Hacker News uses for
+/// `/hide?`, `/vote?` and `/reply?` — therefore matched nothing and the crawl
+/// fetched exactly what the site forbade. `discover_urls` already used the
+/// query-aware check; the crawl, which is the surface that fetches at volume,
+/// did not.
+///
+/// The mock counts hits on the disallowed path, so a crawl that ignores the
+/// rule is caught by the count rather than by an absence.
+#[tokio::test]
+async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("User-agent: *\nDisallow: /hide?\n"),
+        )
+        .mount(&server)
+        .await;
+
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(r#"<html><body><a href="/hide?id=1">h</a></body></html>"#)
+                .insert_header("content-type", "text/html"),
+        )
+        .mount(&server)
+        .await;
+
+    // Answers happily if asked — the assertion is that it is never asked.
+    Mock::given(method("GET"))
+        .and(path("/hide"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><h1>Forbidden page</h1></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let mut req = request(format!("{}/", server.uri()));
+    req.max_depth = Some(1);
+    req.max_pages = Some(5);
+
+    let state = run_with_robots(req, true).await;
+
+    assert!(
+        !state.data.iter().any(|d| d
+            .markdown
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Forbidden page")),
+        "a page disallowed by a query-keyed robots rule was crawled"
+    );
+    // wiremock verifies `.expect(0)` on drop; assert here too so the failure
+    // names the rule rather than surfacing as a panic in teardown.
+    assert_eq!(
+        state.data.len(),
+        1,
+        "only the seed should have been fetched"
     );
 }

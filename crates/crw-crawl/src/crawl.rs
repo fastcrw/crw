@@ -305,8 +305,13 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
             break;
         }
 
+        // Match on path AND query. `is_allowed(parsed.path())` drops the query,
+        // which silently allows everything a site keyed its rules on — the
+        // exact failure `is_url_allowed`'s doc comment describes, and which
+        // `discover_urls` already avoids. This is the surface that fetches at
+        // volume, so it was the one that mattered.
         if let Ok(parsed) = url::Url::parse(&url)
-            && !robots.is_allowed(parsed.path())
+            && !robots.is_url_allowed(&parsed)
         {
             tracing::debug!(url, "Blocked by robots.txt");
             continue;
