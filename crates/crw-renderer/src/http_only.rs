@@ -3046,6 +3046,17 @@ mod tests {
     /// check in `build_http_fetch_result` already produced `Response too large`
     /// either way, so only the memory was ever wrong. Driving
     /// `read_body_capped` with a small cap makes the boundary itself testable.
+    /// An empty body is not an error and does not trip the cap.
+    #[tokio::test]
+    async fn read_body_capped_accepts_an_empty_body() {
+        let url = serve_raw(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            Vec::new(),
+        );
+        let resp = reqwest::Client::new().get(&url).send().await.unwrap();
+        assert!(read_body_capped(resp, 0).await.unwrap().is_empty());
+    }
+
     #[tokio::test]
     async fn read_body_capped_rejects_a_chunked_body_over_the_cap() {
         // Two 1 KiB chunks, no Content-Length.
