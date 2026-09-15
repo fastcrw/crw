@@ -85,18 +85,13 @@ impl ImpersonatedFetcher {
 }
 
 async fn read_body_capped(resp: wreq::Response, max: usize, url: &str) -> CrwResult<Vec<u8>> {
-    use futures::StreamExt;
-
-    let mut body = Vec::with_capacity(http_only::BODY_PREALLOC_BYTES.min(max));
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| CrwError::HttpError(format!("{url}: {e}")))?;
-        if chunk.len() > max.saturating_sub(body.len()) {
-            return Err(CrwError::HttpError(format!(
-                "Response too large: exceeds {max} bytes"
-            )));
-        }
-        body.extend_from_slice(&chunk);
+    let (body, truncated) = crw_core::body::read_capped(resp.bytes_stream(), max)
+        .await
+        .map_err(|e| CrwError::HttpError(format!("{url}: {e}")))?;
+    if truncated {
+        return Err(CrwError::HttpError(format!(
+            "Response too large: exceeds {max} bytes"
+        )));
     }
     Ok(body)
 }

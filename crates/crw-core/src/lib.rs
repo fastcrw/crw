@@ -16,6 +16,7 @@
 //! assert!(config.server.port > 0);
 //! ```
 
+pub mod body;
 pub mod config;
 pub mod deadline;
 pub mod error;

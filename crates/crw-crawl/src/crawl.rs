@@ -290,10 +290,12 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         .build()
         .expect("reqwest client build should not fail");
 
+    // `Ok(None)` is robots.txt absent (a 4xx), which means no rules, not a
+    // failure. `Err` is the origin itself being unreachable, and with policy
+    // enforcement on that fails the job rather than crawling unrestrained.
     let robots = if respect_robots {
         match RobotsTxt::fetch(&origin, &client).await {
-            Ok(Some(robots)) => robots,
-            Ok(None) => RobotsTxt::default(),
+            Ok(found) => found.unwrap_or_default(),
             Err(e) => {
                 send_failed(id, &state_tx, format!("robots.txt unreachable: {e}"));
                 return;
@@ -914,29 +916,21 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
     // The client's own 15s timeout is longer than a short caller timeout, so it
     // is additionally clamped by the overall deadline — otherwise a slow
     // robots.txt alone could burn the whole budget and lose every result.
-    let robots_fetch = match remaining_budget(overall_deadline) {
-        Some(budget) => {
-            Some(tokio::time::timeout(budget, RobotsTxt::fetch(&origin, &client)).await)
-        }
-        None => None,
+    let timed_out =
+        || crw_core::error::CrwError::TargetUnreachable("robots.txt request timed out".into());
+    let fetched = match remaining_budget(overall_deadline) {
+        Some(budget) => tokio::time::timeout(budget, RobotsTxt::fetch(&origin, &client))
+            .await
+            .unwrap_or_else(|_| Err(timed_out())),
+        // No budget left to spend on it at all.
+        None => Err(timed_out()),
     };
-    let robots = match robots_fetch {
-        Some(Ok(Ok(Some(robots)))) => robots,
-        Some(Ok(Ok(None))) => RobotsTxt::default(),
-        Some(Ok(Err(error))) => {
-            if respect_robots {
-                return Err(error);
-            }
-            tracing::warn!(error = %error, "robots.txt metadata fetch failed");
-            RobotsTxt::default()
-        }
-        Some(Err(_)) | None => {
-            if respect_robots {
-                return Err(crw_core::error::CrwError::TargetUnreachable(
-                    "robots.txt request timed out".into(),
-                ));
-            }
-            tracing::warn!("robots.txt metadata fetch timed out");
+    // `Ok(None)` is robots.txt absent, which is no rules rather than a failure.
+    let robots = match fetched {
+        Ok(found) => found.unwrap_or_default(),
+        Err(error) if respect_robots => return Err(error),
+        Err(error) => {
+            tracing::warn!(error = %error, "robots.txt unavailable, continuing without its rules");
             RobotsTxt::default()
         }
     };

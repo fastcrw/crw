@@ -191,15 +191,11 @@ pub async fn head_probe(url: &str, client: &reqwest::Client) -> bool {
 
 /// Stream the body and abort if it would exceed `max` bytes.
 async fn read_body_capped(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
-    use futures::stream::StreamExt;
-    let mut stream = resp.bytes_stream();
-    let mut buf: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
-        if buf.len() + chunk.len() > max {
-            return Err(format!("body exceeds {max} bytes cap"));
-        }
-        buf.extend_from_slice(&chunk);
+    let (buf, truncated) = crw_core::body::read_capped(resp.bytes_stream(), max)
+        .await
+        .map_err(|e: reqwest::Error| e.to_string())?;
+    if truncated {
+        return Err(format!("body exceeds {max} bytes cap"));
     }
     Ok(buf)
 }

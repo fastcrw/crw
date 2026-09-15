@@ -5,7 +5,6 @@
 //! every per-result field except `url`, `title`, and `engine` is treated as
 //! optional because real-world engines are uneven.
 
-use futures::StreamExt;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,20 +40,17 @@ async fn read_capped(response: reqwest::Response, cap: usize) -> Result<Vec<u8>,
             "response too large: declared {declared} bytes exceeds {cap} cap"
         )));
     }
-    let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e: reqwest::Error| {
+    let (buf, truncated) = crw_core::body::read_capped(response.bytes_stream(), cap)
+        .await
+        .map_err(|e: reqwest::Error| {
             // Same reason as the `send()` arm below (issue #90): the embedded
             // request URL can carry the backend host and its credentials.
             SearchError::Transport(crw_core::error::reqwest_message(e))
         })?;
-        if buf.len() + chunk.len() > cap {
-            return Err(SearchError::InvalidResponse(format!(
-                "response too large: exceeded {cap}-byte cap"
-            )));
-        }
-        buf.extend_from_slice(&chunk);
+    if truncated {
+        return Err(SearchError::InvalidResponse(format!(
+            "response too large: exceeded {cap}-byte cap"
+        )));
     }
     Ok(buf)
 }

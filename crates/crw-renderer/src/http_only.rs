@@ -1057,35 +1057,20 @@ fn charset_from_content_type(ct: &str) -> Option<String> {
     (!label.is_empty()).then(|| label.to_string())
 }
 
-/// Number of bytes to pre-allocate for a body read.
-///
-/// Deliberately NOT `Content-Length`: sizing the buffer from a header lets any
-/// origin make us allocate the whole cap by advertising it and then sending one
-/// byte. Growth from here to a real 50 MB body is ~10 doublings, which is not
-/// worth handing out that lever.
-pub(crate) const BODY_PREALLOC_BYTES: usize = 64 * 1024;
-
 /// Read a response body, refusing to buffer past `max` bytes.
 ///
-/// Streaming is required because chunked and decoded responses may have no
-/// usable `Content-Length`. The cap applies to decoded bytes and the response
-/// is dropped as soon as it is exceeded.
-pub(crate) async fn read_body_capped(
-    mut resp: reqwest::Response,
-    max: usize,
-) -> CrwResult<Vec<u8>> {
-    let mut body: Vec<u8> = Vec::with_capacity(BODY_PREALLOC_BYTES.min(max));
-    while let Some(chunk) = resp
-        .chunk()
+/// The `Content-Length` pre-check at the call site is necessary but not
+/// sufficient: the header is absent on a chunked response and on a
+/// transport-decompressed one, so the cap has to be applied to the decoded
+/// bytes as they arrive. See [`crw_core::body::read_capped`].
+pub(crate) async fn read_body_capped(resp: reqwest::Response, max: usize) -> CrwResult<Vec<u8>> {
+    let (body, truncated) = crw_core::body::read_capped(resp.bytes_stream(), max)
         .await
-        .map_err(|e| CrwError::HttpError(crw_core::error::reqwest_message(e)))?
-    {
-        if body.len() + chunk.len() > max {
-            return Err(CrwError::HttpError(format!(
-                "Response too large: exceeds {max} bytes"
-            )));
-        }
-        body.extend_from_slice(&chunk);
+        .map_err(|e| CrwError::HttpError(crw_core::error::reqwest_message(e)))?;
+    if truncated {
+        return Err(CrwError::HttpError(format!(
+            "Response too large: exceeds {max} bytes"
+        )));
     }
     Ok(body)
 }
@@ -3046,17 +3031,6 @@ mod tests {
     /// check in `build_http_fetch_result` already produced `Response too large`
     /// either way, so only the memory was ever wrong. Driving
     /// `read_body_capped` with a small cap makes the boundary itself testable.
-    /// An empty body is not an error and does not trip the cap.
-    #[tokio::test]
-    async fn read_body_capped_accepts_an_empty_body() {
-        let url = serve_raw(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            Vec::new(),
-        );
-        let resp = reqwest::Client::new().get(&url).send().await.unwrap();
-        assert!(read_body_capped(resp, 0).await.unwrap().is_empty());
-    }
-
     #[tokio::test]
     async fn read_body_capped_rejects_a_chunked_body_over_the_cap() {
         // Two 1 KiB chunks, no Content-Length.
@@ -3161,6 +3135,17 @@ mod tests {
         let resp = reqwest::Client::new().get(&url).send().await.unwrap();
         let body = read_body_capped(resp, 1024).await.unwrap();
         assert_eq!(String::from_utf8(body).unwrap(), format!("{a}{b}"));
+    }
+
+    /// An empty body is not an error and does not trip the cap, even at zero.
+    #[tokio::test]
+    async fn read_body_capped_accepts_an_empty_body() {
+        let url = serve_raw(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            Vec::new(),
+        );
+        let resp = reqwest::Client::new().get(&url).send().await.unwrap();
+        assert!(read_body_capped(resp, 0).await.unwrap().is_empty());
     }
 
     /// A raw response whose declared Content-Length exceeds MAX_RESPONSE_BYTES

@@ -7,12 +7,6 @@ struct Rule {
     allow: bool,
 }
 
-#[derive(Debug, Default)]
-struct Group {
-    agents: Vec<String>,
-    rules: Vec<Rule>,
-}
-
 const ROBOTS_PRODUCT_TOKEN: &str = "crw";
 const MAX_ROBOTS_BYTES: usize = 500 * 1024;
 
@@ -44,7 +38,17 @@ impl RobotsTxt {
             )));
         }
 
-        let (mut bytes, truncated) = read_decoded_prefix(resp).await?;
+        let (mut bytes, truncated) =
+            crw_core::body::read_capped(resp.bytes_stream(), MAX_ROBOTS_BYTES)
+                .await
+                .map_err(|e| {
+                    CrwError::TargetUnreachable(format!(
+                        "robots.txt body failed: {}",
+                        crw_core::error::reqwest_message(e)
+                    ))
+                })?;
+        // Only a genuine truncation gets here, so this drops a half-read final
+        // line rather than the last rule of a file that landed on the cap.
         if truncated {
             let end = bytes
                 .iter()
@@ -56,10 +60,22 @@ impl RobotsTxt {
         Ok(Some(Self::parse(&text)))
     }
 
+    /// Parse into the rules that bind us.
+    ///
+    /// Per RFC 9309 §2.2.1 a run of consecutive `User-agent:` lines heads ONE
+    /// group and the group applies if ANY of them matches, so the agents are
+    /// accumulated over the run rather than read off its last line. Per §2.2.1
+    /// a group naming our product token exactly also SUPPRESSES the `*` group,
+    /// which is why the two are collected separately and chosen between at the
+    /// end rather than merged as they are read.
     pub fn parse(text: &str) -> Self {
-        let mut groups = Vec::new();
-        let mut group = Group::default();
+        let mut exact: Vec<Rule> = Vec::new();
+        let mut wildcard: Vec<Rule> = Vec::new();
         let mut sitemaps = Vec::new();
+        // Which bucket the group currently being read writes into, and whether
+        // any exact group has been seen at all. An exact group with no rules
+        // still suppresses `*`, so this cannot be inferred from `exact`.
+        let (mut group_exact, mut group_wildcard, mut saw_exact) = (false, false, false);
         let mut in_agent_run = false;
 
         for line in text.lines() {
@@ -70,17 +86,20 @@ impl RobotsTxt {
 
             if let Some(agent) = directive_value(line, "user-agent:") {
                 if !in_agent_run {
-                    if !group.agents.is_empty() {
-                        groups.push(std::mem::take(&mut group));
-                    }
+                    (group_exact, group_wildcard) = (false, false);
                     in_agent_run = true;
                 }
-                if !agent.is_empty() {
-                    group.agents.push(agent.to_string());
+                if agent.eq_ignore_ascii_case(ROBOTS_PRODUCT_TOKEN) {
+                    (group_exact, saw_exact) = (true, true);
+                } else if agent == "*" {
+                    group_wildcard = true;
                 }
                 continue;
             }
 
+            // `Sitemap:` is a non-group record (RFC 9309 §2.2.3) and may sit
+            // anywhere, including inside a run of agent lines, so it must not
+            // close the run.
             if let Some(url) = directive_value(line, "sitemap:") {
                 if !url.is_empty() {
                     sitemaps.push(url.to_string());
@@ -88,54 +107,38 @@ impl RobotsTxt {
                 continue;
             }
 
+            // Any group-member directive closes the agent run.
             in_agent_run = false;
 
-            if group.agents.is_empty() {
+            let rule = if let Some(pattern) = directive_value(line, "disallow:") {
+                Rule {
+                    pattern: pattern.to_string(),
+                    allow: false,
+                }
+            } else if let Some(pattern) = directive_value(line, "allow:") {
+                Rule {
+                    pattern: pattern.to_string(),
+                    allow: true,
+                }
+            } else {
+                continue;
+            };
+            if rule.pattern.is_empty() {
                 continue;
             }
-
-            if let Some(path) = directive_value(line, "disallow:") {
-                if !path.is_empty() {
-                    group.rules.push(Rule {
-                        pattern: path.to_string(),
-                        allow: false,
-                    });
-                }
-            } else if let Some(path) = directive_value(line, "allow:")
-                && !path.is_empty()
-            {
-                group.rules.push(Rule {
-                    pattern: path.to_string(),
-                    allow: true,
-                });
+            // A group naming us exactly wins outright, so a group that matches
+            // both writes only to `exact`.
+            if group_exact {
+                exact.push(rule);
+            } else if group_wildcard {
+                wildcard.push(rule);
             }
         }
 
-        if !group.agents.is_empty() {
-            groups.push(group);
+        Self {
+            rules: if saw_exact { exact } else { wildcard },
+            sitemaps,
         }
-
-        let has_exact = groups.iter().any(|group| {
-            group
-                .agents
-                .iter()
-                .any(|agent| agent.eq_ignore_ascii_case(ROBOTS_PRODUCT_TOKEN))
-        });
-        let rules = groups
-            .into_iter()
-            .filter(|group| {
-                group.agents.iter().any(|agent| {
-                    if has_exact {
-                        agent.eq_ignore_ascii_case(ROBOTS_PRODUCT_TOKEN)
-                    } else {
-                        agent == "*"
-                    }
-                })
-            })
-            .flat_map(|group| group.rules)
-            .collect();
-
-        Self { rules, sitemaps }
     }
 
     /// Check if a path is allowed using specificity-based matching.
@@ -177,25 +180,6 @@ impl RobotsTxt {
         };
         self.is_allowed(&path_and_query)
     }
-}
-
-async fn read_decoded_prefix(mut response: reqwest::Response) -> CrwResult<(Vec<u8>, bool)> {
-    let mut bytes = Vec::with_capacity(MAX_ROBOTS_BYTES);
-    while bytes.len() < MAX_ROBOTS_BYTES {
-        let Some(chunk) = response.chunk().await.map_err(|error| {
-            CrwError::TargetUnreachable(format!(
-                "robots.txt body failed: {}",
-                crw_core::error::reqwest_message(error)
-            ))
-        })?
-        else {
-            break;
-        };
-        let remaining = MAX_ROBOTS_BYTES - bytes.len();
-        bytes.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
-    }
-    let truncated = bytes.len() == MAX_ROBOTS_BYTES;
-    Ok((bytes, truncated))
 }
 
 /// Effective pattern length for specificity calculation.
