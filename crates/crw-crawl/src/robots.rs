@@ -18,7 +18,16 @@ pub struct RobotsTxt {
 }
 
 impl RobotsTxt {
-    pub async fn fetch(base_url: &str, client: &reqwest::Client) -> CrwResult<Option<Self>> {
+    /// Fetch and parse an origin's `/robots.txt`.
+    ///
+    /// A 4xx is a site that simply has no robots.txt, which is no rules rather
+    /// than a problem, so it comes back as an empty rule set. A 5xx or a
+    /// transport failure comes back as an error, but only so the caller can log
+    /// which origin went dark: every caller proceeds with no rules either way.
+    /// Failing a job on an unreadable robots.txt would hand any origin that
+    /// 503s the file a way to stop a crawl outright, and the pages it never
+    /// asked us to withhold would go unfetched.
+    pub async fn fetch(base_url: &str, client: &reqwest::Client) -> CrwResult<Self> {
         let url = format!("{}/robots.txt", base_url.trim_end_matches('/'));
 
         let resp = client.get(&url).send().await.map_err(|e| {
@@ -29,7 +38,7 @@ impl RobotsTxt {
         })?;
 
         if resp.status().is_client_error() {
-            return Ok(None);
+            return Ok(Self::default());
         }
         if !resp.status().is_success() {
             return Err(CrwError::TargetUnreachable(format!(
@@ -57,7 +66,7 @@ impl RobotsTxt {
             bytes.truncate(end);
         }
         let text = String::from_utf8_lossy(&bytes);
-        Ok(Some(Self::parse(&text)))
+        Ok(Self::parse(&text))
     }
 
     /// Parse into the rules that bind us.
@@ -441,18 +450,19 @@ Allow: /path
     }
 
     #[tokio::test]
+    /// A site with no robots.txt forbids nothing; an origin that cannot serve
+    /// the file reports an error the caller logs and then ignores. Both end up
+    /// crawling, which is what the callers assert.
     async fn fetch_classifies_unavailable_and_unreachable_statuses() {
         let unavailable = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::path("/robots.txt"))
             .respond_with(wiremock::ResponseTemplate::new(404))
             .mount(&unavailable)
             .await;
-        assert!(
-            RobotsTxt::fetch(&unavailable.uri(), &reqwest::Client::new())
-                .await
-                .unwrap()
-                .is_none()
-        );
+        let absent = RobotsTxt::fetch(&unavailable.uri(), &reqwest::Client::new())
+            .await
+            .expect("a missing robots.txt is not an error");
+        assert!(absent.is_allowed("/anything"), "no file means no rules");
 
         let unreachable = wiremock::MockServer::start().await;
         wiremock::Mock::given(wiremock::matchers::path("/robots.txt"))
@@ -506,7 +516,6 @@ Allow: /path
 
         let robots = RobotsTxt::fetch(&server.uri(), &reqwest::Client::new())
             .await
-            .unwrap()
             .unwrap();
         assert!(!robots.is_allowed("/blocked"));
     }

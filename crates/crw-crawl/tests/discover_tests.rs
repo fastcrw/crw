@@ -238,9 +238,13 @@ async fn slow_site_returns_partial_results_instead_of_timing_out() {
     );
 }
 
-/// A robots.txt timeout fails closed before sitemap probes or seed crawling.
+/// A hanging robots.txt must not consume the whole budget, and must not stop
+/// discovery. It used to be handed the entire remaining deadline, so the seed
+/// and the sitemap probes got nothing left and the caller saw zero URLs; then
+/// it additionally failed the request outright. Now it gets half the budget and
+/// discovery carries on without its rules.
 #[tokio::test]
-async fn hanging_robots_fails_closed_within_the_overall_budget() {
+async fn hanging_robots_leaves_budget_for_the_seed() {
     let server = MockServer::start().await;
 
     Mock::given(method("GET"))
@@ -251,13 +255,15 @@ async fn hanging_robots_fails_closed_within_the_overall_budget() {
     Mock::given(method("GET"))
         .and(path("/sitemap.xml"))
         .respond_with(ResponseTemplate::new(404))
-        .expect(0)
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(r#"<a href="/x">x</a>"#))
-        .expect(0)
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/html")
+                .set_body_string(r#"<html><body><a href="/x">x</a></body></html>"#),
+        )
         .mount(&server)
         .await;
 
@@ -266,7 +272,7 @@ async fn hanging_robots_fails_closed_within_the_overall_budget() {
     let result = discover_urls(opts(
         &server.uri(),
         &r,
-        Instant::now() + Duration::from_secs(3),
+        Instant::now() + Duration::from_secs(8),
         true,
     ))
     .await;
@@ -276,13 +282,24 @@ async fn hanging_robots_fails_closed_within_the_overall_budget() {
         "robots fetch must be clamped by the overall deadline, took {:?}",
         started.elapsed()
     );
-    assert!(matches!(
-        result,
-        Err(crw_core::error::CrwError::TargetUnreachable(_))
-    ));
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].url.path(), "/robots.txt");
+    let urls = result
+        .expect("a hanging robots.txt must not fail discovery")
+        .urls;
+    assert!(
+        urls.iter().any(|u| u.contains(&server.uri())),
+        "the seed must survive the robots hang, got {urls:?}"
+    );
+    let paths: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| r.url.path().to_string())
+        .collect();
+    assert!(
+        paths.iter().any(|p| p != "/robots.txt"),
+        "work must happen after the robots timeout, only saw {paths:?}"
+    );
 }
 
 /// `max_urls` is a hard cap, not a suggestion. The base URL used to be appended
@@ -327,8 +344,11 @@ async fn seed_validation_is_bounded_by_the_overall_deadline() {
     );
 }
 
+/// A 5xx on robots.txt is the origin failing to serve a file, not the origin
+/// forbidding anything. Discovery proceeds to the seed and the sitemap probes
+/// with no rules, rather than returning the caller an error and zero URLs.
 #[tokio::test]
-async fn unreachable_robots_stops_discovery_before_seed_or_sitemap_requests() {
+async fn a_robots_txt_we_cannot_read_does_not_stop_discovery() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/robots.txt"))
@@ -338,29 +358,31 @@ async fn unreachable_robots_stops_discovery_before_seed_or_sitemap_requests() {
         .await;
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0)
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/html")
+                .set_body_string("<html><body>seed</body></html>"),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/sitemap.xml"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0)
+        .respond_with(ResponseTemplate::new(404))
         .mount(&server)
         .await;
 
     let renderer = renderer().await;
-    let result = discover_urls(opts(
-        &server.uri(),
+    let uri = server.uri();
+    let urls = discover_urls(opts(
+        &uri,
         &renderer,
         Instant::now() + Duration::from_secs(10),
         true,
     ))
-    .await;
-    assert!(matches!(
-        result,
-        Err(crw_core::error::CrwError::TargetUnreachable(_))
-    ));
+    .await
+    .expect("a 503 on robots.txt must not fail discovery")
+    .urls;
+    assert!(urls.iter().any(|u| u == &uri), "got {urls:?}");
 }
 
 #[tokio::test]

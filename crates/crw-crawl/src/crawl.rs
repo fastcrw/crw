@@ -290,20 +290,18 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         .build()
         .expect("reqwest client build should not fail");
 
-    // `Ok(None)` is robots.txt absent (a 4xx), which means no rules, not a
-    // failure. `Err` is the origin itself being unreachable, and with policy
-    // enforcement on that fails the job rather than crawling unrestrained.
-    let robots = if respect_robots {
-        match RobotsTxt::fetch(&origin, &client).await {
-            Ok(found) => found.unwrap_or_default(),
-            Err(e) => {
-                send_failed(id, &state_tx, format!("robots.txt unreachable: {e}"));
-                return;
-            }
-        }
-    } else {
-        RobotsTxt::default()
-    };
+    // Fails open. An unreadable robots.txt is not a licence to fail the job:
+    // the crawl proceeds with no rules, so an origin that 503s the file cannot
+    // stop a crawl outright.
+    let robots =
+        if respect_robots {
+            RobotsTxt::fetch(&origin, &client).await.unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "robots.txt unavailable, crawling without its rules");
+            RobotsTxt::default()
+        })
+        } else {
+            RobotsTxt::default()
+        };
 
     let semaphore = Arc::new(Semaphore::new(max_concurrency));
     // Key the rate limiter by eTLD+1 so subdomains under the same registered
@@ -916,23 +914,26 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
     // The client's own 15s timeout is longer than a short caller timeout, so it
     // is additionally clamped by the overall deadline — otherwise a slow
     // robots.txt alone could burn the whole budget and lose every result.
-    let timed_out =
-        || crw_core::error::CrwError::TargetUnreachable("robots.txt request timed out".into());
-    let fetched = match remaining_budget(overall_deadline) {
-        Some(budget) => tokio::time::timeout(budget, RobotsTxt::fetch(&origin, &client))
-            .await
-            .unwrap_or_else(|_| Err(timed_out())),
-        // No budget left to spend on it at all.
-        None => Err(timed_out()),
-    };
-    // `Ok(None)` is robots.txt absent, which is no rules rather than a failure.
-    let robots = match fetched {
-        Ok(found) => found.unwrap_or_default(),
-        Err(error) if respect_robots => return Err(error),
-        Err(error) => {
-            tracing::warn!(error = %error, "robots.txt unavailable, continuing without its rules");
-            RobotsTxt::default()
+    // Half the remaining budget, not all of it: a robots.txt that hangs used to
+    // be handed the whole deadline, so the seed and the sitemap probes got
+    // nothing and discovery came back with zero URLs. Half leaves the work its
+    // share. Like `run_crawl` this fails open, because an origin that cannot
+    // serve the file has not thereby forbidden anything.
+    let robots = match remaining_budget(overall_deadline) {
+        Some(budget) => {
+            match tokio::time::timeout(budget / 2, RobotsTxt::fetch(&origin, &client)).await {
+                Ok(Ok(robots)) => robots,
+                Ok(Err(error)) => {
+                    tracing::warn!(error = %error, "robots.txt unavailable, discovering without its rules");
+                    RobotsTxt::default()
+                }
+                Err(_) => {
+                    tracing::warn!("robots.txt fetch timed out, discovering without its rules");
+                    RobotsTxt::default()
+                }
+            }
         }
+        None => RobotsTxt::default(),
     };
 
     if use_sitemap {

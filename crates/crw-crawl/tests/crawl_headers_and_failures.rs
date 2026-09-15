@@ -349,7 +349,7 @@ async fn crawl_honours_a_robots_rule_keyed_on_the_query_string() {
 }
 
 #[tokio::test]
-async fn unreachable_robots_fails_the_job_before_fetching_the_seed() {
+async fn a_robots_txt_we_cannot_read_does_not_fail_the_crawl() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/robots.txt"))
@@ -359,19 +359,23 @@ async fn unreachable_robots_fails_the_job_before_fetching_the_seed() {
         .await;
     Mock::given(method("GET"))
         .and(path("/"))
-        .respond_with(ResponseTemplate::new(200))
-        .expect(0)
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("<html><body><h1>Seed page</h1></body></html>")
+                .insert_header("content-type", "text/html"),
+        )
+        .expect(1)
         .mount(&server)
         .await;
 
     let state = run_with_robots(request(format!("{}/", server.uri())), true).await;
 
-    assert_eq!(state.status, CrawlStatus::Failed);
-    assert!(!state.success);
+    assert_eq!(state.status, CrawlStatus::Completed);
+    assert!(state.success);
+    assert_eq!(state.data.len(), 1, "the seed must still be crawled");
     assert!(
-        state
-            .error
-            .as_deref()
-            .is_some_and(|error| error.contains("robots.txt unreachable"))
+        state.error.is_none(),
+        "a 503 on robots.txt is logged, not surfaced as a job error: {:?}",
+        state.error
     );
 }
