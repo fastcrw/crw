@@ -90,6 +90,15 @@ pub fn needs_js_rendering(html: &str) -> bool {
     false
 }
 
+/// Above this much visible text a page is a page, not an interstitial.
+///
+/// Block shells are short by nature: a challenge, a deny notice, a rate-limit
+/// stub. This is the bound `looks_like_generic_bot_wall` uses to stop a real
+/// article tripping its phrase list, and `crw_crawl::classify_block` reuses it
+/// when it must judge content from html rather than markdown, so the two cannot
+/// drift apart.
+pub const WALL_VISIBLE_TEXT_MAX: usize = 600;
+
 /// Detect generic anti-bot interstitials (non-Cloudflare): tiny pages whose
 /// visible body text consists of a "verifying you're human" / "security check"
 /// message. Matched only on visible body text so a JS bundle containing one
@@ -128,7 +137,7 @@ pub fn looks_like_generic_bot_wall(html: &str, truncated: bool) -> bool {
         return false;
     };
     let body_text = visible_text_from_stripped_html(&body_stripped);
-    if body_text.chars().filter(|c| !c.is_whitespace()).count() > 600 {
+    if body_text.chars().filter(|c| !c.is_whitespace()).count() > WALL_VISIBLE_TEXT_MAX {
         return false;
     }
 
@@ -506,6 +515,42 @@ fn visible_text_from_stripped_html(stripped: &str) -> String {
         }
     }
     text
+}
+
+/// Non-whitespace visible-text length of an HTML document.
+///
+/// For callers that hold the html but not the extracted markdown.
+/// `crw_crawl::classify_block` needs it because `markdown: None` there means
+/// "markdown was never extracted" (the caller asked only for rawHtml / links /
+/// a screenshot), not "the page is empty", and its substantial-content guard
+/// has to mean the same thing for every requested format.
+///
+/// Deliberately NOT `extract_body_text_len`, whose missing-`<body>` fallback is
+/// the optimistic `1000` ("probably has content"). That fallback is right where
+/// it is used (deciding whether a page looks like a wall, where guessing
+/// "content" is the safe direction) and exactly wrong here, where the same guess
+/// would wave through a body-less 403 shell, an empty response and a JSON deny
+/// stub — three shapes the block classifier must keep flagging. Measure what is
+/// actually there instead: scripts and styles removed, tags stripped, whitespace
+/// not counted.
+pub fn visible_text_len(html: &str) -> usize {
+    // Same 80 KB bail as every other entry point here. Past it the answer is
+    // foregone (no interstitial is 80 KB of text) and the two full copies this
+    // would allocate sit on the scrape hot path.
+    if html.len() > 80_000 {
+        return usize::MAX;
+    }
+    // `strip_tag_blocks` documents that its input is already lowercased, and every
+    // other caller lowercases first. Skipping it would leave the inline JS and CSS
+    // of an uppercase-tag shell (legacy WAF and origin error templates still emit
+    // `<SCRIPT>`) counted as visible text, inflating the count past the bound in
+    // exactly the unsafe direction.
+    let lower = html.to_lowercase();
+    let without_scripts = strip_tag_blocks(&strip_tag_blocks(&lower, "script"), "style");
+    visible_text_from_stripped_html(&without_scripts)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .count()
 }
 
 /// Rough estimate of non-whitespace text length inside `<body>` of a
@@ -2309,6 +2354,31 @@ mod tests {
     #[test]
     fn strip_tag_blocks_empty_input() {
         assert_eq!(strip_tag_blocks("", "script"), "");
+    }
+
+    #[test]
+    fn visible_text_len_counts_non_whitespace_and_ignores_scripts() {
+        let html =
+            "<html><body><p>hello world</p><script>var x = 'aaaaaaaaaa';</script></body></html>";
+        // "helloworld" = 10 non-whitespace chars; the script must not be counted.
+        assert_eq!(visible_text_len(html), 10);
+    }
+
+    #[test]
+    fn visible_text_len_strips_uppercase_script_tags_too() {
+        // `strip_tag_blocks` needs lowercased input; legacy WAF and origin error
+        // templates still emit uppercase tags, and counting their inline JS would
+        // inflate the measure past WALL_VISIBLE_TEXT_MAX in the unsafe direction.
+        let padding = "z".repeat(5000);
+        let html =
+            format!("<HTML><BODY><P>deny</P><SCRIPT>var a='{padding}';</SCRIPT></BODY></HTML>");
+        assert_eq!(visible_text_len(&html), 4, "only 'deny' is visible text");
+    }
+
+    #[test]
+    fn visible_text_len_bails_above_the_scan_cap() {
+        let huge = format!("<html><body>{}</body></html>", "a".repeat(80_001));
+        assert_eq!(visible_text_len(&huge), usize::MAX);
     }
 
     #[test]

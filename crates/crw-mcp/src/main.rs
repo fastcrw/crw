@@ -452,16 +452,30 @@ async fn parse_response(resp: reqwest::Response) -> Result<Value, String> {
     // which a model reports as "the page was empty" and then acts on. Surfacing
     // it as an error instead puts the real reason in the model's context, where
     // it can pick another URL or tell the user.
-    if parsed.get("success").and_then(Value::as_bool) == Some(false) {
+    //
+    // Narrowed to the codes that carry NO readable body. `/v1/scrape` keeps the
+    // page in the envelope on its `http_error` branch on purpose ("the caller
+    // can still read the error page"), and collapsing that to an error string
+    // threw away both the body and `metadata.statusCode` the model used to get
+    // for an ordinary 404. `anti_bot` and `no_usable_content` are the branches
+    // that call `clear_body()`, so there is genuinely nothing left to return.
+    // Keyed on the CODE, not on a body probe. An earlier shape here asked whether
+    // `data.markdown` was absent, but `ScrapeData` skips `None` fields when it
+    // serializes, so for `formats:["html"]` or `["links"]` there is simply no
+    // `markdown` key and every envelope read as empty — which put the
+    // `http_error` body straight back in the bin this narrowing exists to keep it
+    // out of. `anti_bot` and `no_usable_content` are exactly the branches that
+    // call `clear_body()`, so the code alone is the honest discriminator; a
+    // missing/unknown code keeps the old fail-closed behaviour.
+    const NO_CONTENT_CODES: [&str; 2] = ["anti_bot", "no_usable_content"];
+    let failed = parsed.get("success").and_then(Value::as_bool) == Some(false);
+    let code_str = parsed.get("errorCode").and_then(Value::as_str);
+    if failed && code_str.is_none_or(|c| NO_CONTENT_CODES.contains(&c)) {
         let reason = parsed
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("the request did not succeed");
-        let code = parsed
-            .get("errorCode")
-            .and_then(Value::as_str)
-            .map(|c| format!(" [{c}]"))
-            .unwrap_or_default();
+        let code = code_str.map(|c| format!(" [{c}]")).unwrap_or_default();
         return Err(format!("{reason}{code}"));
     }
 
