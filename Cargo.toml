@@ -84,7 +84,7 @@ regex = "1"
 # 0.1.6's 97.72%, better on 23 of 29 documents, and every page of 1412.6980 now
 # comes back at 97-100%. The raw character count drops slightly only because
 # 1.17.0 rejoins hyphenated line breaks and stops duplicating table rows.
-pdf-inspector = "=1.17.0"
+pdf-inspector = "=1.19.0"
 
 # Diffing (change-tracking / monitor). Myers diff over lines; the parse-diff
 # AST and the unified text surface are both derived from its op stream.
