@@ -90,7 +90,7 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
             // short-circuit would turn every small 404 into no_usable_content
             // with its body cleared, when today the caller can read the error
             // page"). Checking `block` alone here would throw away a 404's body
-            // and its `metadata.statusCode` — the same regression the proxy
+            // and its `metadata.statusCode`, the same regression the proxy
             // guard was just narrowed to avoid, reintroduced on this backend.
             if data.http_error().is_none()
                 && let Some(block) = &data.block
