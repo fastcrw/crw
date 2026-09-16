@@ -530,7 +530,7 @@ fn visible_text_from_stripped_html(stripped: &str) -> String {
 /// it is used (deciding whether a page looks like a wall, where guessing
 /// "content" is the safe direction) and exactly wrong here, where the same guess
 /// would wave through a body-less 403 shell, an empty response and a JSON deny
-/// stub — three shapes the block classifier must keep flagging. Measure what is
+/// stub: three shapes the block classifier must keep flagging. Measure what is
 /// actually there instead: scripts and styles removed, tags stripped, whitespace
 /// not counted.
 pub fn visible_text_len(html: &str) -> usize {

@@ -462,7 +462,7 @@ async fn parse_response(resp: reqwest::Response) -> Result<Value, String> {
     // Keyed on the CODE, not on a body probe. An earlier shape here asked whether
     // `data.markdown` was absent, but `ScrapeData` skips `None` fields when it
     // serializes, so for `formats:["html"]` or `["links"]` there is simply no
-    // `markdown` key and every envelope read as empty — which put the
+    // `markdown` key and every envelope read as empty, which put the
     // `http_error` body straight back in the bin this narrowing exists to keep it
     // out of. `anti_bot` and `no_usable_content` are exactly the branches that
     // call `clear_body()`, so the code alone is the honest discriminator; a

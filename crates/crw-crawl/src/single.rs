@@ -1762,7 +1762,7 @@ pub(crate) fn classify_block(
     }
     // The substantial-content guard: real content overrules a soft-block status.
     //
-    // `markdown: None` does NOT mean the page is empty — it means markdown was
+    // `markdown: None` does NOT mean the page is empty. It means markdown was
     // never EXTRACTED, which is the normal case when the caller asked only for
     // `rawHtml`, `links` or a screenshot. Reading it as 0 made every such request
     // fall through to `antibot::classify`, whose catch-all answers GenericBlock
@@ -1790,8 +1790,8 @@ pub(crate) fn classify_block(
     if !r.signal.is_blocked() {
         return None;
     }
-    // `markdown: None` means markdown was never EXTRACTED — the normal case when
-    // the caller asked only for `rawHtml`, `links` or a screenshot — not that the
+    // `markdown: None` means markdown was never EXTRACTED, the normal case when
+    // the caller asked only for `rawHtml`, `links` or a screenshot, not that the
     // page is empty. Reading it as zero content made every such request fall
     // through to the status-derived bucket, which answers GenericBlock for ANY 4xx
     // carrying an HTML body. Measured live against a pre-change engine on
@@ -1799,7 +1799,7 @@ pub(crate) fn classify_block(
     //   formats:["markdown"] -> success:true, 65,209 chars
     //   formats:["rawHtml"]  -> success:false, anti_bot, empty body
     //
-    // So weigh the page's own visible text instead — but ONLY against the two
+    // So weigh the page's own visible text instead, but ONLY against the two
     // verdicts that are shape/status heuristics. Every NAMED vendor arm inside
     // `classify` (Akamai, PerimeterX, DataDome, Imperva, Sucuri, Kasada, Google
     // unusual-traffic, and the unconditional 429 / 521 arms) fires at any page
@@ -3773,7 +3773,7 @@ mod tests {
     fn classify_block_named_vendor_wall_survives_boilerplate_without_markdown() {
         // The invariant the visible-text bar risks. A deny notice rendered inside
         // a site's normal header/nav/footer easily clears WALL_VISIBLE_TEXT_MAX,
-        // so the bar must NOT be allowed to overrule a named vendor arm — only the
+        // so the bar must NOT be allowed to overrule a named vendor arm, only the
         // shape/status heuristics (GenericBlock / StructuralFailure).
         let chrome = "site navigation home about contact ".repeat(40); // >600 chars
         for (marker, want_vendor) in [
