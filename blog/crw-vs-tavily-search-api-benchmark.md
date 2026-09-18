@@ -30,7 +30,7 @@ CRW is the only provider in this comparison that covers **both** search and scra
 | --- | --- | --- |
 | **Search latency** | Lower, more predictable | Parallel engine aggregation; full distribution on /benchmarks |
 | **Scrape latency** | Lower (no Chromium in path) | Lightweight Rust renderer; full distribution on /benchmarks |
-| **JS rendering** | Yes — via LightPanda | Lightweight Rust-based browser, not heavy Chromium |
+| **JS rendering** | Yes — via LightPanda | Lightweight Zig-based browser, not heavy Chromium |
 | **Search + Scrape** | Single API call | `scrapeOptions` fetches full content from search results |
 | **Self-hosting** | Single small static binary | AGPL-3.0 Rust binary — run on your infra for free |
 | **Pricing** | Lower cost per request | CRW Standard $69/mo for 100K credits; Tavily Researcher $100/mo for 12K searches |
@@ -63,7 +63,7 @@ We scraped 101 URLs spanning frameworks (React, Vue, Svelte, Angular), languages
 CRW's speed advantage comes from architectural decisions, not tricks:
 
 - **Single-binary Rust core:** a small static binary with no headless-browser memory baseline. No JVM, no Python runtime, no Node.js overhead. Just fast compiled code handling your requests.
-- **LightPanda renderer:** A Rust-based browser engine that handles JavaScript rendering at a fraction of Chromium's resource cost. This is why CRW's scrape latency stays low where a full-Chromium pipeline pays a render cost on every request.
+- **LightPanda renderer:** A headless browser built from scratch in Zig that handles JavaScript rendering at a fraction of Chromium's resource cost. This is why CRW's scrape latency stays low where a full-Chromium pipeline pays a render cost on every request.
 - **Multi-engine aggregation:** CRW's search queries multiple engines simultaneously — the fastest response wins. This is why search latency is so consistent.
 - **Minimal processing overhead:** Results are normalized and scored at the edge with minimal transformation. No AI post-processing on the hot path.
 
@@ -140,7 +140,7 @@ Pretty close. CRW's API is Firecrawl-compatible: same endpoint patterns (`POST /
 
 ### How does CRW handle JS-heavy pages?
 
-CRW uses LightPanda, a lightweight Rust-based browser engine that renders JavaScript without the resource overhead of Chromium. This keeps scrape latency low — it gets the benefits of JS rendering without the weight of a full browser.
+CRW uses LightPanda, a headless browser built from scratch in Zig, which renders JavaScript without the resource overhead of Chromium. This keeps scrape latency low — it gets the benefits of JS rendering without the weight of a full browser.
 
 ### How does pricing compare?
 

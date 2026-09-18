@@ -25,7 +25,7 @@
 <p>The cost is RAM and CPU per page. A full Chromium instance is typically several hundred MB resident — this is why headless-browser-first scrapers are expensive at scale.</p>
 
 <h2>How fastCRW does it</h2>
-<p>fastCRW auto-detects whether a page needs a browser. Static pages go through the HTTP fast path; pages that require JavaScript route to a headless renderer. Instead of full Chromium, the default browser path is <a href="/js-rendering/">LightPanda</a>, a Rust-native headless browser, keeping the whole binary at ~14 MB RAM idle. Full Chromium is still available when a page needs it. Set <code>"renderer": "lightpanda"</code> or <code>"chromium"</code> on <code>POST /v1/scrape</code> — see <a href="/scraping/">the scrape endpoint reference</a> for the request body. <code>waitFor</code> takes a millisecond budget for browser renderers.</p>
+<p>fastCRW auto-detects whether a page needs a browser. Static pages go through the HTTP fast path; pages that require JavaScript route to a headless renderer. Instead of full Chromium, the default browser path is <a href="/js-rendering/">LightPanda</a>, a headless browser built from scratch in Zig, keeping the whole binary at ~14 MB RAM idle. Full Chromium is still available when a page needs it. Set <code>"renderer": "lightpanda"</code> or <code>"chromium"</code> on <code>POST /v1/scrape</code> — see <a href="/scraping/">the scrape endpoint reference</a> for the request body. <code>waitFor</code> takes a millisecond budget for browser renderers.</p>
 
 <h2>Frequently asked</h2>
 <dl>

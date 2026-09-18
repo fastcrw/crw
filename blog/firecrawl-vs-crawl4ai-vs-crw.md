@@ -615,7 +615,7 @@ Your actual numbers will vary based on request volume, concurrency, and provider
 
 ### Does CRW support JavaScript rendering?
 
-Partially. CRW uses lol-html as its primary parser, which is fast and memory-efficient but cannot execute JavaScript. For JavaScript-rendered pages, CRW falls back to LightPanda — a newer Rust-based browser engine. LightPanda handles many common SPA patterns (React, Vue with SSR, Next.js static exports), but it's less mature than Playwright and may fail on complex client-side applications that rely on dynamic routing, WebSockets, or uncommon browser APIs.
+Partially. CRW uses lol-html as its primary parser, which is fast and memory-efficient but cannot execute JavaScript. For JavaScript-rendered pages, CRW falls back to LightPanda — a newer headless browser built from scratch in Zig, not a Chromium fork. LightPanda handles many common SPA patterns (React, Vue with SSR, Next.js static exports), but it's less mature than Playwright and may fail on complex client-side applications that rely on dynamic routing, WebSockets, or uncommon browser APIs.
 
 In practice: if you're scraping documentation sites, marketing pages, blogs, news articles, or e-commerce product pages, CRW handles the vast majority without issues. If you're scraping complex dashboards, web apps, or sites that require authentication flows with JavaScript-driven redirects, Firecrawl or Crawl4AI will be more reliable today.
 
