@@ -16,7 +16,7 @@ exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]
-version = "0.35.1"
+version = "0.36.0"
 edition = "2024"
 license = "AGPL-3.0"
 repository = "https://github.com/us/crw"
@@ -151,15 +151,15 @@ insta = { version = "1", features = ["json"] }
 # and layer their own `features` / `optional` on top. `path` is resolved
 # relative to THIS (root) manifest. Only crates that are depended upon by
 # another crate appear here; leaf binaries (crw-mcp, crw-cli) just consume.
-crw-mcp-proto = { path = "crates/crw-mcp-proto", version = "0.35.1" }
-crw-core = { path = "crates/crw-core", version = "0.35.1" }
-crw-extract = { path = "crates/crw-extract", version = "0.35.1" }
-crw-renderer = { path = "crates/crw-renderer", version = "0.35.1" }
-crw-search = { path = "crates/crw-search", version = "0.35.1" }
-crw-diff = { path = "crates/crw-diff", version = "0.35.1" }
-crw-crawl = { path = "crates/crw-crawl", version = "0.35.1" }
-crw-server = { path = "crates/crw-server", version = "0.35.1" }
-crw-browse = { path = "crates/crw-browse", version = "0.35.1" }
+crw-mcp-proto = { path = "crates/crw-mcp-proto", version = "0.36.0" }
+crw-core = { path = "crates/crw-core", version = "0.36.0" }
+crw-extract = { path = "crates/crw-extract", version = "0.36.0" }
+crw-renderer = { path = "crates/crw-renderer", version = "0.36.0" }
+crw-search = { path = "crates/crw-search", version = "0.36.0" }
+crw-diff = { path = "crates/crw-diff", version = "0.36.0" }
+crw-crawl = { path = "crates/crw-crawl", version = "0.36.0" }
+crw-server = { path = "crates/crw-server", version = "0.36.0" }
+crw-browse = { path = "crates/crw-browse", version = "0.36.0" }
 
 [profile.release]
 lto = true

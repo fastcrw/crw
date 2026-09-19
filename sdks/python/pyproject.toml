@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "crw"
-version = "0.35.1"
+version = "0.36.0"
 description = "Python SDK for CRW web scraper — scrape, crawl, and map any website from Python"
 readme = "README.md"
 requires-python = ">=3.10"

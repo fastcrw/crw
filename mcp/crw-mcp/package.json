@@ -1,6 +1,6 @@
 {
   "name": "crw-mcp",
-  "version": "0.35.1",
+  "version": "0.36.0",
   "description": "MCP server for CRW web scraper — scrape, crawl, map, extract, search, and PDF-parse tools for AI agents",
   "license": "AGPL-3.0",
   "author": "fastCRW <hello@fastcrw.com>",
@@ -38,9 +38,9 @@
     "skills/SKILL.md"
   ],
   "optionalDependencies": {
-    "crw-mcp-darwin-x64": "0.35.1",
-    "crw-mcp-darwin-arm64": "0.35.1",
-    "crw-mcp-linux-x64": "0.35.1",
-    "crw-mcp-linux-arm64": "0.35.1"
+    "crw-mcp-darwin-x64": "0.36.0",
+    "crw-mcp-darwin-arm64": "0.36.0",
+    "crw-mcp-linux-x64": "0.36.0",
+    "crw-mcp-linux-arm64": "0.36.0"
   }
 }

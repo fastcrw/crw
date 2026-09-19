@@ -1,6 +1,6 @@
 {
   "name": "crw-sdk",
-  "version": "0.35.1",
+  "version": "0.36.0",
   "description": "TypeScript/JavaScript SDK for CRW — scrape, crawl, map, search, parse, and extract any website",
   "license": "MIT",
   "author": "fastCRW <hello@fastcrw.com>",
