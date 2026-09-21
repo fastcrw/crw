@@ -1594,6 +1594,21 @@ async fn enrich_with_scrape(
 }
 
 fn apply_scrape_to_result(slot: &mut SearchResult, data: ScrapeData, formats: &[OutputFormat]) {
+    // A blocked page is not enrichment. `scrape_url` reports a wall as a verdict
+    // on the document rather than an `Err`, and `clear_body()` runs in the scrape
+    // ROUTE, not here, so without this the interstitial ("Checking your browser",
+    // a CloudFront deny page) lands in `slot.markdown` as if it were the result.
+    // Downstream that is worse than an empty slot: the SaaS counts a result
+    // successful on body presence alone, so the caller is billed for it, and
+    // answer synthesis takes the wall text as evidence.
+    //
+    // Same shape as the `Err(msg)` arm in the caller: name the reason, leave the
+    // body unset.
+    if let Some(block) = &data.block {
+        slot.error = Some(block.message());
+        slot.metadata = Some(data.metadata);
+        return;
+    }
     if formats.contains(&OutputFormat::Markdown) {
         slot.markdown = data.markdown;
     }
@@ -1617,6 +1632,27 @@ mod tests {
     use super::*;
     use crw_core::types::SearchSource;
 
+    fn blank_slot(url: &str) -> SearchResult {
+        SearchResult {
+            url: url.to_string(),
+            title: String::new(),
+            description: String::new(),
+            snippet: String::new(),
+            position: 1,
+            score: None,
+            published_date: None,
+            category: None,
+            markdown: None,
+            html: None,
+            raw_html: None,
+            links: None,
+            metadata: None,
+            summary: None,
+            error: None,
+            truncated: None,
+        }
+    }
+
     fn scrape_opts(timeout: Option<u64>) -> SearchScrapeOptions {
         SearchScrapeOptions {
             formats: vec![OutputFormat::Markdown],
@@ -1624,6 +1660,48 @@ mod tests {
             country: None,
             timeout,
         }
+    }
+
+    #[test]
+    fn blocked_enrichment_reports_the_reason_and_ships_no_body() {
+        // A wall reaches `apply_scrape_to_result` as `Ok(data)` carrying a block
+        // verdict, because `clear_body()` runs in the scrape route and not here.
+        // Copying its markdown into the slot makes the interstitial look like the
+        // page: the SaaS counts a result successful on body presence alone, so it
+        // bills, and answer synthesis reads the wall as evidence.
+        let mut slot = blank_slot("https://example.com/walled");
+        let data = ScrapeData {
+            markdown: Some("Checking your browser before you access...".to_string()),
+            block: Some(crw_core::types::BlockOutcome {
+                vendor: "generic_block".to_string(),
+                reason: "anti-bot wall that no renderer tier could clear".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        apply_scrape_to_result(&mut slot, data, &[OutputFormat::Markdown]);
+
+        assert!(
+            slot.markdown.is_none(),
+            "wall text must not become the body"
+        );
+        let err = slot.error.expect("a blocked slot names its reason");
+        assert!(err.contains("anti-bot"), "got {err}");
+    }
+
+    #[test]
+    fn unblocked_enrichment_still_fills_the_body() {
+        // The guard above must not swallow a real page.
+        let mut slot = blank_slot("https://example.com/real");
+        let data = ScrapeData {
+            markdown: Some("# A real page".to_string()),
+            ..Default::default()
+        };
+
+        apply_scrape_to_result(&mut slot, data, &[OutputFormat::Markdown]);
+
+        assert_eq!(slot.markdown.as_deref(), Some("# A real page"));
+        assert!(slot.error.is_none());
     }
 
     #[test]

@@ -74,6 +74,29 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
             )
             .await
             .map_err(|e| format!("{e}"))?;
+            // Mirror the HTTP route's block contract. `routes/scrape.rs` turns a
+            // block verdict into `success: false` + `anti_bot` with the body
+            // cleared, and `crw-mcp`'s PROXY backend turns that envelope into a
+            // tool error. This arm serializes `ScrapeData` straight to JSON, so
+            // it carries no `success` field for that guard to read, and the
+            // agent was handed the wall as `isError: false` with the wall text
+            // still sitting in `markdown`. `embedded` is the DEFAULT feature
+            // (`crw-mcp/Cargo.toml`), so that was the shape `npx crw-mcp` shipped.
+            //
+            // Order matters, and it is the route's order: `routes/scrape.rs`
+            // tests `http_error()` BEFORE the block branch, and `http_error()`
+            // yields `Some` precisely when the block vendor is
+            // `structural_failure`. That is deliberate there ("letting it
+            // short-circuit would turn every small 404 into no_usable_content
+            // with its body cleared, when today the caller can read the error
+            // page"). Checking `block` alone here would throw away a 404's body
+            // and its `metadata.statusCode`, the same regression the proxy
+            // guard was just narrowed to avoid, reintroduced on this backend.
+            if data.http_error().is_none()
+                && let Some(block) = &data.block
+            {
+                return Err(block.message());
+            }
             serde_json::to_value(&data).map_err(|e| format!("serialize error: {e}"))
         }
         "crw_crawl" => {

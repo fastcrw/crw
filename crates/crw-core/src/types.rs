@@ -5079,6 +5079,25 @@ pub struct FetchResult {
     /// camoufox / lightpanda paths (they never capture). The `data:` URL
     /// prefix is added in `single.rs`, not here.
     pub screenshot: Option<String>,
+    /// A wall verdict the renderer already reached, carried forward as data.
+    ///
+    /// Set in exactly one situation: the JS ladder was spent and the body that
+    /// would otherwise be handed back as a fallback is itself an anti-bot wall
+    /// (`detector::looks_like_generic_bot_wall`). That predicate is much
+    /// narrower than `classify_block` and is deliberately not run on every
+    /// page, so the verdict has to travel rather than be recomputed at the
+    /// scrape choke.
+    ///
+    /// It used to be raised as `CrwError::HttpError`, which the server maps to
+    /// 502. That reported a target refusing us as our own gateway failing: the
+    /// caller saw "Bad Gateway", the SaaS booked `upstream_5xx`, and the
+    /// watchdog paged for a platform incident that was not happening. Carrying
+    /// it lets `crw_crawl::single` stamp it at the shared choke, where every
+    /// other wall already becomes `success: false` + `anti_bot` at HTTP 200.
+    ///
+    /// `None` on every path that existed before, and on every renderer: only
+    /// the fallback arms in `crw_renderer::Renderer::fetch` ever set it.
+    pub block: Option<BlockOutcome>,
 }
 
 /// A single XHR/fetch response captured via CDP Network domain.

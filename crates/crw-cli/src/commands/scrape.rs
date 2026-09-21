@@ -456,6 +456,36 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
     // through the whole fetch + parse pipeline.
     drop(keep_alive_guards);
 
+    // A blocked page is not output. The CLI decided success on the transport
+    // alone, which was survivable only while an unclearable wall came back as a
+    // transport error; now that the verdict travels on the document, that same
+    // check would print an empty body and exit 0, and `--output` would write a
+    // zero-byte file over whatever was there.
+    //
+    // Placed before every format branch below for exactly that reason. The
+    // message is the one `/v1/scrape` puts in its `error` field, so the CLI and
+    // the API say the same thing about the same page.
+    //
+    // Scoped to the block classes that leave nothing to print, and only when the
+    // caller did not ask for an artifact the API still returns:
+    //
+    //  - `structural_failure` and `parked_domain` were already reaching the CLI
+    //    before this change and printed normally. They are not what this change
+    //    is about, and failing on them would silently turn a working
+    //    `crw <parked-domain> > out.md` into an empty file and exit 1.
+    //
+    // No screenshot carve-out: this path runs `scrape_url` locally and the CLI's
+    // own `Format` enum never maps to `OutputFormat::Screenshot`, so `data.screenshot`
+    // is always `None` here. A guard for it would be dead code claiming a parity
+    // with `/v1/scrape` that this code path does not have.
+    if let Some(block) = &data.block
+        && block.vendor != crw_core::types::STRUCTURAL_FAILURE_VENDOR
+        && block.vendor != crw_core::types::PARKED_DOMAIN_VENDOR
+    {
+        eprintln!("error: {}", block.message());
+        return Err(CmdError::code_only(1));
+    }
+
     // AI output paths short-circuit `--format`. The backend populates
     // `data.summary` / `data.json` when those OutputFormats are requested.
     if want_summary {

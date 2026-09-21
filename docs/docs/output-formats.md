@@ -211,7 +211,7 @@ The exact shape of `data` depends on what you requested. Do not assume every fie
 | `llmUsage` | `object / null` | Set on any LLM-touching request — see [LLM Usage](#llm-usage-object) |
 | `chunks` | `ChunkResult[] / null` | `chunkStrategy` provided |
 | `warnings` | `string[]` | Per-feature non-fatal notices (truncation, summary failure, etc.) — always an array |
-| `warning` | `string / null` | Target returned error status, anti-bot detected, etc. |
+| `warning` | `string / null` | Target returned error status, render degraded, etc. An anti-bot wall is not reported here: it sets `success: false` with `error_code: "anti_bot"` |
 | `renderDecision` | `object / null` | Renderer routing decision (kind, chosen renderer, failover chain). Present when routing metadata is available. |
 | `creditCost` | `number` | Renderer credit cost for this request (omitted when 0). Every engine renderer currently costs 1 credit per successful page. LLM feature costs are tracked separately by the SaaS billing layer and are not included in this field. |
 | `metadata` | `object` | Always |

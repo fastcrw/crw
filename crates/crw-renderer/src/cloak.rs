@@ -306,6 +306,7 @@ impl PageFetcher for CloakRenderer {
                         deadline_exceeded: deadline.remaining().is_zero(),
                         captured_responses: Vec::new(),
                         screenshot: None,
+                        block: None,
                     });
                 }
                 Ok((status, body)) => {

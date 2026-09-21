@@ -2,8 +2,9 @@ use crw_core::Deadline;
 use crw_core::config::{BUILTIN_UA_POOL, ExtractionConfig, LlmConfig};
 use crw_core::error::CrwResult;
 use crw_core::types::{
-    BlockOutcome, ChangeTrackingMode, FetchResult, OutputFormat, RequestedRenderer, ScrapeData,
-    ScrapeRequest, resolve_pinned_renderer, resolve_render_js,
+    BlockOutcome, ChangeTrackingMode, FetchResult, OutputFormat, RequestedRenderer,
+    STRUCTURAL_FAILURE_VENDOR, ScrapeData, ScrapeRequest, resolve_pinned_renderer,
+    resolve_render_js,
 };
 use crw_renderer::FallbackRenderer;
 use crw_renderer::http_only::HttpFetcher;
@@ -753,6 +754,21 @@ async fn scrape_url_inner(
                             // browser tier hardcodes it to `None`, and it is read
                             // later for `data.content_type`.
                             fetch_result.html = std::mem::take(&mut js_fetch.html);
+                            // And for the same reason, the wall verdict. This is
+                            // an assignment, not a merge, which is the point: it
+                            // carries a verdict the escalation reached AND clears
+                            // one the discarded tier left behind, so a wall we
+                            // just escaped cannot be stamped onto the page that
+                            // escaped it.
+                            //
+                            // Deliberately inside the `accept` branch only. The
+                            // reject arm below is the case where the HTTP tier
+                            // produced substantial good markdown and the JS
+                            // ladder got walled; carrying the verdict there would
+                            // block a page we can serve, which is a recall
+                            // regression and the exact failure this whole change
+                            // exists to avoid.
+                            fetch_result.block = js_fetch.block.take();
                             // Replace the original "Target returned 4xx" with the JS
                             // fetch's warning (which is None for a clean 2xx render),
                             // so a successful escalation doesn't leak the original
@@ -797,7 +813,19 @@ async fn scrape_url_inner(
     // and stamp a typed verdict onto ScrapeData so v1/v2/crawl/batch inherit one
     // decision. Runs before the summary-mode markdown strip below (~L620) so the
     // recovered markdown is still populated for the anti-over-trigger guard.
-    data.block = classify_block(
+    //
+    // Two possible sources, one verdict. `classify_block` reads the body and can
+    // NAME the vendor (cloudflare, datadome, ...), which the SaaS routing
+    // registry learns cloak-needing hosts from, so a named verdict always wins.
+    // Its `structural_failure` verdict does not: that means "we fetched a page
+    // and there was nothing usable in it", a weaker claim than the renderer's
+    // own "this is a wall no tier could clear", and it would route the page to
+    // the `http_error` branch of `routes/scrape.rs` instead of `anti_bot`.
+    //
+    // `fetch_result.block` is set only by the fallback arms of
+    // `crw_renderer::Renderer::fetch`, for a body that is itself an anti-bot
+    // wall. It used to be raised as an error that the server mapped to 502.
+    let classified = classify_block(
         fetch_result.status_code,
         fetch_result.content_type.as_deref(),
         &fetch_result.html,
@@ -807,6 +835,11 @@ async fn scrape_url_inner(
         &fetch_result.url,
         fetch_result.final_url.as_deref(),
     );
+    data.block = match (classified, fetch_result.block.clone()) {
+        (Some(c), Some(carried)) if c.vendor == STRUCTURAL_FAILURE_VENDOR => Some(carried),
+        (Some(c), _) => Some(c),
+        (None, carried) => carried,
+    };
     // Surface redirect mismatch as warning. Helps detect cases like
     // northernair.ca/history.htm silently 302'ing to the homepage — extraction
     // looks "successful" but the user got the wrong page.
@@ -1715,11 +1748,61 @@ pub(crate) fn classify_block(
             reason: "parked domain / placeholder page".to_string(),
         });
     }
-    if markdown.map(|m| m.trim().len()).unwrap_or(0) >= threshold {
+    // The substantial-content guard: real content overrules a soft-block status.
+    //
+    // `markdown: None` does NOT mean the page is empty. It means markdown was
+    // never EXTRACTED, which is the normal case when the caller asked only for
+    // `rawHtml`, `links` or a screenshot. Reading it as 0 made every such request
+    // fall through to `antibot::classify`, whose catch-all answers GenericBlock
+    // for ANY 4xx carrying an HTML body, so the same page was condemned purely by
+    // which format was requested. Measured live against a pre-change engine on
+    // `stackoverflow.com/questions/tagged/rust` (HTTP 403, serves the real page):
+    //   formats:["markdown"] -> success:true, 65,209 chars
+    //   formats:["rawHtml"]  -> success:false, anti_bot, empty body
+    //
+    // So when there is no markdown to weigh, weigh the page's own visible text,
+    // the same measure the wall heuristics use. This only ever suppresses the
+    // status-derived generic bucket: every strong-marker vendor arm above already
+    // ran, and a wall the renderer ladder itself condemned arrives as a carried
+    // verdict that wins the merge in `scrape_url_inner` regardless of this call.
+    // Substantial MARKDOWN stays authoritative over every verdict below, vendor
+    // arms included: an accepted JS escalation guarantees markdown >= threshold,
+    // so a stale block-shell `html` cannot mislabel a page we really extracted.
+    // Unchanged behaviour whenever markdown exists.
+    if let Some(md) = markdown
+        && md.trim().len() >= threshold
+    {
         return None;
     }
     let r = crw_extract::antibot::classify(Some(status), html);
     if !r.signal.is_blocked() {
+        return None;
+    }
+    // `markdown: None` means markdown was never EXTRACTED, the normal case when
+    // the caller asked only for `rawHtml`, `links` or a screenshot, not that the
+    // page is empty. Reading it as zero content made every such request fall
+    // through to the status-derived bucket, which answers GenericBlock for ANY 4xx
+    // carrying an HTML body. Measured live against a pre-change engine on
+    // `stackoverflow.com/questions/tagged/rust` (HTTP 403, serves the real page):
+    //   formats:["markdown"] -> success:true, 65,209 chars
+    //   formats:["rawHtml"]  -> success:false, anti_bot, empty body
+    //
+    // So weigh the page's own visible text instead, but ONLY against the two
+    // verdicts that are shape/status heuristics. Every NAMED vendor arm inside
+    // `classify` (Akamai, PerimeterX, DataDome, Imperva, Sucuri, Kasada, Google
+    // unusual-traffic, and the unconditional 429 / 521 arms) fires at any page
+    // size by design, and a deny notice rendered inside a site's normal
+    // header-nav-footer template clears 600 characters easily. Gating those on a
+    // content bar would silently un-catch them for every non-markdown request.
+    if markdown.is_none()
+        && matches!(
+            r.signal,
+            crw_extract::antibot::AntibotSignal::GenericBlock
+                | crw_extract::antibot::AntibotSignal::StructuralFailure
+        )
+        && crw_renderer::detector::visible_text_len(html)
+            > crw_renderer::detector::WALL_VISIBLE_TEXT_MAX
+    {
         return None;
     }
     if screenshot_present && r.signal == crw_extract::antibot::AntibotSignal::StructuralFailure {
@@ -2758,6 +2841,7 @@ mod tests {
             deadline_exceeded: false,
             captured_responses: Vec::new(),
             screenshot: None,
+            block: None,
         }
     }
 
@@ -3671,6 +3755,94 @@ mod tests {
         )
         .expect("429 must always be flagged as rate limited");
         assert_eq!(b.vendor, "rate_limited");
+    }
+
+    #[test]
+    fn classify_block_named_vendor_wall_survives_boilerplate_without_markdown() {
+        // The invariant the visible-text bar risks. A deny notice rendered inside
+        // a site's normal header/nav/footer easily clears WALL_VISIBLE_TEXT_MAX,
+        // so the bar must NOT be allowed to overrule a named vendor arm, only the
+        // shape/status heuristics (GenericBlock / StructuralFailure).
+        let chrome = "site navigation home about contact ".repeat(40); // >600 chars
+        for (marker, want_vendor) in [
+            ("window._pxAppId = 'PXbd4Ss3Lg';", "perimeterx"),
+            ("captcha-delivery.com", "datadome"),
+            ("_Incapsula_Resource", "imperva"),
+        ] {
+            let html =
+                format!("<html><body><p>{chrome}</p><script>{marker}</script></body></html>");
+            let b = classify_block(
+                403,
+                Some("text/html"),
+                &html,
+                None,
+                false,
+                THRESH,
+                "https://example.com/",
+                None,
+            )
+            .unwrap_or_else(|| panic!("{want_vendor} wall must still be flagged"));
+            assert_eq!(b.vendor, want_vendor, "marker {marker}");
+        }
+    }
+
+    #[test]
+    fn classify_block_429_still_flagged_without_markdown_on_a_full_page() {
+        // `classify`'s 429 arm is unconditional and size-independent by design.
+        let chrome = "site navigation home about contact ".repeat(40);
+        let html = format!("<html><body><p>{chrome}</p><p>Too many requests</p></body></html>");
+        let b = classify_block(
+            429,
+            Some("text/html"),
+            &html,
+            None,
+            false,
+            THRESH,
+            "https://example.com/",
+            None,
+        )
+        .expect("429 must always be flagged");
+        assert_eq!(b.vendor, "rate_limited");
+    }
+
+    #[test]
+    fn classify_block_403_serving_a_real_page_is_not_a_block_without_markdown() {
+        // Regression pin, measured live before the fix against
+        // stackoverflow.com/questions/tagged/rust (HTTP 403, serves the real page):
+        //   formats:["markdown"] -> success:true, 65,209 chars
+        //   formats:["rawHtml"]  -> success:false, anti_bot, empty body
+        // `markdown: None` means markdown was never EXTRACTED, not that the page
+        // is empty, so a caller asking only for rawHtml/links must not have their
+        // page condemned by the status-derived generic bucket.
+        let article = format!("<html><body><p>{}</p></body></html>", "word ".repeat(400));
+        assert!(
+            classify_block(
+                403,
+                Some("text/html"),
+                &article,
+                None,
+                false,
+                THRESH,
+                "https://example.com/",
+                None,
+            )
+            .is_none(),
+            "a 403 that still served a full article is not a block"
+        );
+        // ...and the same page WITH markdown was already fine, both before and now.
+        assert!(
+            classify_block(
+                403,
+                Some("text/html"),
+                &article,
+                Some(&"word ".repeat(400)),
+                false,
+                THRESH,
+                "https://example.com/",
+                None,
+            )
+            .is_none()
+        );
     }
 
     #[test]

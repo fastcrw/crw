@@ -2184,6 +2184,7 @@ impl CdpRenderer {
             deadline_exceeded: deadline.remaining().is_zero(),
             captured_responses,
             screenshot,
+            block: None,
         })
     }
 
@@ -2374,6 +2375,7 @@ impl CdpRenderer {
             deadline_exceeded: deadline.remaining().is_zero(),
             captured_responses,
             screenshot,
+            block: None,
         })
     }
 

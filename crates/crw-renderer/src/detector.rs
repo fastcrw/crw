@@ -90,6 +90,15 @@ pub fn needs_js_rendering(html: &str) -> bool {
     false
 }
 
+/// Above this much visible text a page is a page, not an interstitial.
+///
+/// Block shells are short by nature: a challenge, a deny notice, a rate-limit
+/// stub. This is the bound `looks_like_generic_bot_wall` uses to stop a real
+/// article tripping its phrase list, and `crw_crawl::classify_block` reuses it
+/// when it must judge content from html rather than markdown, so the two cannot
+/// drift apart.
+pub const WALL_VISIBLE_TEXT_MAX: usize = 600;
+
 /// Detect generic anti-bot interstitials (non-Cloudflare): tiny pages whose
 /// visible body text consists of a "verifying you're human" / "security check"
 /// message. Matched only on visible body text so a JS bundle containing one
@@ -128,7 +137,7 @@ pub fn looks_like_generic_bot_wall(html: &str, truncated: bool) -> bool {
         return false;
     };
     let body_text = visible_text_from_stripped_html(&body_stripped);
-    if body_text.chars().filter(|c| !c.is_whitespace()).count() > 600 {
+    if body_text.chars().filter(|c| !c.is_whitespace()).count() > WALL_VISIBLE_TEXT_MAX {
         return false;
     }
 
@@ -508,6 +517,42 @@ fn visible_text_from_stripped_html(stripped: &str) -> String {
     text
 }
 
+/// Non-whitespace visible-text length of an HTML document.
+///
+/// For callers that hold the html but not the extracted markdown.
+/// `crw_crawl::classify_block` needs it because `markdown: None` there means
+/// "markdown was never extracted" (the caller asked only for rawHtml / links /
+/// a screenshot), not "the page is empty", and its substantial-content guard
+/// has to mean the same thing for every requested format.
+///
+/// Deliberately NOT `extract_body_text_len`, whose missing-`<body>` fallback is
+/// the optimistic `1000` ("probably has content"). That fallback is right where
+/// it is used (deciding whether a page looks like a wall, where guessing
+/// "content" is the safe direction) and exactly wrong here, where the same guess
+/// would wave through a body-less 403 shell, an empty response and a JSON deny
+/// stub: three shapes the block classifier must keep flagging. Measure what is
+/// actually there instead: scripts and styles removed, tags stripped, whitespace
+/// not counted.
+pub fn visible_text_len(html: &str) -> usize {
+    // Same 80 KB bail as every other entry point here. Past it the answer is
+    // foregone (no interstitial is 80 KB of text) and the two full copies this
+    // would allocate sit on the scrape hot path.
+    if html.len() > 80_000 {
+        return usize::MAX;
+    }
+    // `strip_tag_blocks` documents that its input is already lowercased, and every
+    // other caller lowercases first. Skipping it would leave the inline JS and CSS
+    // of an uppercase-tag shell (legacy WAF and origin error templates still emit
+    // `<SCRIPT>`) counted as visible text, inflating the count past the bound in
+    // exactly the unsafe direction.
+    let lower = html.to_lowercase();
+    let without_scripts = strip_tag_blocks(&strip_tag_blocks(&lower, "script"), "style");
+    visible_text_from_stripped_html(&without_scripts)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .count()
+}
+
 /// Rough estimate of non-whitespace text length inside `<body>` of a
 /// lowercased HTML document. Returns `1000` as a "probably has content"
 /// fallback if no `<body>` is found.
@@ -618,6 +663,26 @@ pub fn looks_like_cloudflare_challenge(html: &str) -> bool {
     ];
     let weak_hits = weak.iter().filter(|m| lower.contains(*m)).count();
     weak_hits >= 2
+}
+
+/// Cloudflare's hard block page (error 1020 / WAF deny), as distinct from the
+/// managed challenge the solver exists for.
+///
+/// There is no Turnstile widget and no challenge orchestrator on this page, so a
+/// cold solve against it is guaranteed to fail. It costs a full solve budget
+/// (measured on prod at a p50 of 25.5s per attempt) and, worse, reading it as a
+/// challenge sets `route_to_cloak`, which suppresses the chrome_proxy arm: the
+/// one tier that CAN recover an IP-reputation block like this one, behind a
+/// residential exit.
+///
+/// The pair is the structural marker `crw_crawl::single::classify_block`
+/// already trusts for this vendor, plus the page's own block heading. BOTH are
+/// required on purpose: a support article, a blog post or a code sample that
+/// merely mentions "error 1020" or "you are unable to access" sits comfortably
+/// under the weak-marker size cap below and must not trip this. Case-sensitive
+/// and un-lowercased, matching the `classify_block` arm it mirrors.
+pub fn looks_like_cloudflare_firewall_block(html: &str) -> bool {
+    html.contains(r#"<span class="cf-error-code">"#) && html.contains("you have been blocked")
 }
 
 /// Returns true when the `cf-mitigated` response header indicates the
@@ -1055,6 +1120,55 @@ mod tests {
                 .repeat(6)
         );
         assert!(!looks_like_generic_bot_wall(&html, false));
+    }
+
+    /// The 1020 page is a deny, not a challenge. It carries no widget and no
+    /// orchestrator, so the solver has nothing to solve.
+    #[test]
+    fn cloudflare_1020_is_a_firewall_block() {
+        let html = concat!(
+            r#"<html><head><title>Attention Required! | Cloudflare</title></head>"#,
+            r#"<body><h1>Sorry, you have been blocked</h1>"#,
+            r#"<p>You are unable to access example.com</p>"#,
+            r#"<span class="cf-error-code">1020</span>"#,
+            r#"<p>Performance &amp; security by Cloudflare</p></body></html>"#,
+        );
+        assert!(looks_like_cloudflare_firewall_block(html));
+        // Precondition for the veto being worth anything: without it, this page
+        // reads as a solvable challenge on the two weak markers below.
+        assert!(
+            looks_like_cloudflare_challenge(html),
+            "if this ever stops being true the veto at the route_to_cloak site is dead code"
+        );
+    }
+
+    /// The half that must never be vetoed: a genuine managed challenge always
+    /// carries a STRONG marker, and it is not a firewall block.
+    #[test]
+    fn managed_challenge_is_not_a_firewall_block() {
+        let html = concat!(
+            r#"<html><head><title>Just a moment...</title></head><body>"#,
+            r#"<script>window._cf_chl_opt={cvId:"3"};</script>"#,
+            r#"<p>Checking your browser before accessing the site</p>"#,
+            r#"<p>Performance &amp; security by Cloudflare</p></body></html>"#,
+        );
+        assert!(!looks_like_cloudflare_firewall_block(html));
+        assert!(looks_like_cloudflare_challenge(html));
+    }
+
+    /// Both halves of the pair are required. Prose that names the error code,
+    /// or a support page that explains being blocked, must not veto a real
+    /// challenge on one string alone.
+    #[test]
+    fn prose_about_being_blocked_is_not_a_firewall_block() {
+        let heading_only = r#"<html><body><article><h1>Why you have been blocked</h1>
+            <p>Cloudflare error 1020 means a firewall rule matched your request.</p>
+            </article></body></html>"#;
+        assert!(!looks_like_cloudflare_firewall_block(heading_only));
+
+        let span_only = r#"<html><body><span class="cf-error-code">1020</span>
+            <p>A docs page quoting the markup of an error page.</p></body></html>"#;
+        assert!(!looks_like_cloudflare_firewall_block(span_only));
     }
 
     #[test]
@@ -2240,6 +2354,31 @@ mod tests {
     #[test]
     fn strip_tag_blocks_empty_input() {
         assert_eq!(strip_tag_blocks("", "script"), "");
+    }
+
+    #[test]
+    fn visible_text_len_counts_non_whitespace_and_ignores_scripts() {
+        let html =
+            "<html><body><p>hello world</p><script>var x = 'aaaaaaaaaa';</script></body></html>";
+        // "helloworld" = 10 non-whitespace chars; the script must not be counted.
+        assert_eq!(visible_text_len(html), 10);
+    }
+
+    #[test]
+    fn visible_text_len_strips_uppercase_script_tags_too() {
+        // `strip_tag_blocks` needs lowercased input; legacy WAF and origin error
+        // templates still emit uppercase tags, and counting their inline JS would
+        // inflate the measure past WALL_VISIBLE_TEXT_MAX in the unsafe direction.
+        let padding = "z".repeat(5000);
+        let html =
+            format!("<HTML><BODY><P>deny</P><SCRIPT>var a='{padding}';</SCRIPT></BODY></HTML>");
+        assert_eq!(visible_text_len(&html), 4, "only 'deny' is visible text");
+    }
+
+    #[test]
+    fn visible_text_len_bails_above_the_scan_cap() {
+        let huge = format!("<html><body>{}</body></html>", "a".repeat(80_001));
+        assert_eq!(visible_text_len(&huge), usize::MAX);
     }
 
     #[test]

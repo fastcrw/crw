@@ -522,6 +522,59 @@ fn is_origin_navigation_failure(e: &CrwError) -> bool {
 /// customer workloads that drive this code are full of the latter. The HTTP
 /// tier sees the same failure independently and reports `TargetUnreachable`, so
 /// a genuine resolver fault is not invisible.
+/// A ladder result that is nothing but a wall loses to a usable fallback body.
+///
+/// While the wall verdict was an error this preference was automatic: the ladder
+/// "failed", and the fallback arm substituted the HTTP body whenever that body
+/// was not itself a wall. Now that the verdict travels as data the preference
+/// has to be stated, or a wall every tier already rejected would displace a page
+/// we can actually serve. That is a recall regression, and recall is the one
+/// thing this change may not cost.
+///
+/// Demoting re-enters the existing substitution arm unchanged, so the fallback
+/// keeps its warning, its timing and its metric. `may_substitute` is false for a
+/// screenshot request or a hard renderer pin, where there is no substitution to
+/// prefer and the caller is better served by the verdict itself.
+fn demote_wall_to_ladder_failure(
+    js: CrwResult<FetchResult>,
+    fallback: &FetchResult,
+    may_substitute: bool,
+) -> CrwResult<FetchResult> {
+    match js {
+        Ok(r)
+            if may_substitute
+                && r.block.is_some()
+                && !detector::looks_like_generic_bot_wall(&fallback.html, fallback.truncated) =>
+        {
+            Err(CrwError::RendererError(
+                r.block
+                    .map(|b| b.reason)
+                    .unwrap_or_else(|| "anti-bot wall".to_string()),
+            ))
+        }
+        other => other,
+    }
+}
+
+/// The verdict for a fallback body that is itself an anti-bot wall.
+///
+/// Both fallback arms in [`Renderer::fetch`] reach this conclusion about a
+/// different variable, and both used to express it as
+/// `Err(CrwError::HttpError(..))`, which `crw-server` maps to 502. A target
+/// refusing us is not our gateway failing, so the verdict now travels on the
+/// `FetchResult` and `crw_crawl::single` stamps it at the shared scrape choke.
+///
+/// `generic_block` is load-bearing rather than cosmetic: `ScrapeData::http_error()`
+/// yields to any NON-structural block, so this vendor is what routes a wall
+/// served with a 4xx into the `anti_bot` branch of `routes/scrape.rs` instead of
+/// its `http_error` branch.
+fn unclearable_wall_verdict() -> crw_core::types::BlockOutcome {
+    crw_core::types::BlockOutcome {
+        vendor: "generic_block".to_string(),
+        reason: "anti-bot wall that no renderer tier could clear".to_string(),
+    }
+}
+
 /// Did the cloak tier reject a body on CONTENT grounds rather than fail?
 ///
 /// `cloak.rs` answers `Err` for two different things. A transport failure
@@ -2303,7 +2356,7 @@ impl FallbackRenderer {
                     // debug and because the request is billed either way.
                     let is_auth_blocked = is_soft_block_status(http_result.status_code);
                     let started_at = std::time::Instant::now();
-                    match self
+                    let js_outcome = self
                         .fetch_with_js(
                             url,
                             headers,
@@ -2312,30 +2365,50 @@ impl FallbackRenderer {
                             cloak_attempted,
                             deadline,
                         )
-                        .await
-                    {
+                        .await;
+                    // A ladder result that is nothing but a wall must not
+                    // displace a usable HTTP body. This is the preference the
+                    // old error carried implicitly; see the helper.
+                    let js_outcome = demote_wall_to_ladder_failure(
+                        js_outcome,
+                        &http_result,
+                        !screenshot_requested() && !is_hard_pinned,
+                    );
+                    match js_outcome {
                         Ok(js_result) => Ok(js_result),
                         // A capture has no HTTP substitute (the caller asked for
                         // pixels), and an explicit renderer pin is a caller
                         // contract that forbids silent substitution. Both fail
                         // closed, matching the no-renderer arm directly above.
-                        // The HTTP shell substitutes for a failed ladder so the
-                        // caller gets content instead of nothing. But when that
-                        // shell IS the wall the ladder just refused to clear,
-                        // returning it hands back exactly what every tier
-                        // rejected, as a billed success. Fail instead; a shell
-                        // that is not a wall still substitutes as before.
-                        Err(e)
-                            if screenshot_requested()
-                                || is_hard_pinned
-                                || detector::looks_like_generic_bot_wall(
-                                    &http_result.html,
-                                    http_result.truncated,
-                                ) =>
-                        {
-                            Err(e)
-                        }
+                        Err(e) if screenshot_requested() || is_hard_pinned => Err(e),
                         Err(e) => {
+                            // The HTTP shell substitutes for a failed ladder so
+                            // the caller gets content instead of nothing. But
+                            // when that shell IS the wall the ladder just
+                            // refused to clear, returning it as content hands
+                            // back exactly what every tier rejected.
+                            //
+                            // That used to `Err(e)` out of the guard above, which
+                            // was right about the body and wrong about the
+                            // status: `CrwError::HttpError` maps to 502, so a
+                            // target refusing us was reported as our own gateway
+                            // failing. The caller saw "Bad Gateway", the SaaS
+                            // booked `upstream_5xx`, and the watchdog paged for a
+                            // platform incident that was not happening.
+                            //
+                            // Carry the verdict instead and keep every other
+                            // decision on this path untouched: the shell still
+                            // travels, and `crw_crawl::single` stamps it at the
+                            // shared choke, so the request ends as
+                            // `success: false` + `anti_bot` with no credit, like
+                            // every other wall. A shell that is not a wall still
+                            // substitutes exactly as before.
+                            if detector::looks_like_generic_bot_wall(
+                                &http_result.html,
+                                http_result.truncated,
+                            ) {
+                                http_result.block = Some(unclearable_wall_verdict());
+                            }
                             if is_auth_blocked {
                                 tracing::error!(
                                     url,
@@ -2614,7 +2687,7 @@ impl FallbackRenderer {
                             "HTTP 2xx but body is thin, escalating to JS renderer"
                         );
                     }
-                    match self
+                    let js_outcome = self
                         .fetch_with_js(
                             url,
                             headers,
@@ -2623,22 +2696,23 @@ impl FallbackRenderer {
                             cloak_attempted,
                             deadline,
                         )
-                        .await
-                    {
+                        .await;
+                    // Same preference as the sibling arm above.
+                    let js_outcome =
+                        demote_wall_to_ladder_failure(js_outcome, &result, !is_hard_pinned);
+                    match js_outcome {
                         Ok(js_result) => Ok(js_result),
-                        Err(e)
-                            if is_hard_pinned
-                                || detector::looks_like_generic_bot_wall(
-                                    &result.html,
-                                    result.truncated,
-                                ) =>
-                        {
-                            // Pinned: the caller's contract forbids substitution.
-                            // Wall: see the sibling arm — the shell is the very
-                            // thing the ladder rejected, so it is not a fallback.
-                            Err(e)
-                        }
+                        // Pinned: the caller's contract forbids substitution.
+                        Err(e) if is_hard_pinned => Err(e),
                         Err(e) => {
+                            // The shell is the very thing the ladder rejected, so
+                            // it is not a fallback. See the sibling arm above for
+                            // why that verdict now travels as data instead of as
+                            // a `CrwError::HttpError` the server turns into 502.
+                            if detector::looks_like_generic_bot_wall(&result.html, result.truncated)
+                            {
+                                result.block = Some(unclearable_wall_verdict());
+                            }
                             // For `is_auth_blocked` (4xx/5xx soft-block status codes), the
                             // HTTP body is almost certainly an error shell — falling back
                             // to it silently misleads the caller. For `needs_js` /
@@ -3915,9 +3989,18 @@ impl FallbackRenderer {
         // is a cfg-const that folds to `false` in a lean build → chrome_proxy
         // firing is byte-identical there.
         #[cfg(feature = "cloak")]
+        // The firewall-block veto is scoped to THIS decision on purpose.
+        // `looks_like_cloudflare_challenge` has a dozen other callers that use it
+        // as an "is this body still bad" accept gate, where a 1020 must keep
+        // reading as bad; changing it there would let a block page ship as
+        // content. The only decision it gets wrong is this one: whether to spend
+        // a Turnstile solve, which a 1020 can never satisfy.
         let saw_cf_challenge = thin_result
             .as_ref()
-            .map(|r| detector::looks_like_cloudflare_challenge(&r.html))
+            .map(|r| {
+                detector::looks_like_cloudflare_challenge(&r.html)
+                    && !detector::looks_like_cloudflare_firewall_block(&r.html)
+            })
             .unwrap_or(false);
         let route_to_cloak = {
             #[cfg(feature = "cloak")]
@@ -4417,12 +4500,21 @@ impl FallbackRenderer {
             // pins that shape. A genuinely thin but real page still ships too,
             // because returning the best available body is the point of this
             // tail; the recall invariant depends on that staying true.
+            //
+            // The verdict travels as DATA now, not as an error. It used to be
+            // `CrwError::HttpError`, which `crw-server` maps to 502, so a target
+            // refusing us was reported as our own gateway failing: the caller saw
+            // "Bad Gateway", the SaaS booked `upstream_5xx`, and the watchdog
+            // paged for a platform incident that was not happening.
+            //
+            // Returning `Ok` here does NOT mean the wall wins over a better body.
+            // Every caller that has a fallback body demotes a walled ladder
+            // result back to a ladder failure first (see
+            // `demote_wall_to_ladder_failure`), which is the same preference the
+            // error carried implicitly. Callers with no fallback, where the HTTP
+            // tier failed outright, now get the verdict instead of a 502.
             if detector::looks_like_generic_bot_wall(&result.html, result.truncated) {
-                return Err(CrwError::HttpError(format!(
-                    "blocked by an anti-bot wall that none of the {} renderer tier(s) \
-                     attempted could clear",
-                    chain.len().max(1),
-                )));
+                result.block = Some(unclearable_wall_verdict());
             }
             Ok(result)
         } else {
@@ -4987,6 +5079,7 @@ mod tests {
                 deadline_exceeded: false,
                 captured_responses: Vec::new(),
                 screenshot: None,
+                block: None,
             })
         }
 
@@ -5060,6 +5153,7 @@ mod tests {
                 deadline_exceeded: false,
                 captured_responses: Vec::new(),
                 screenshot: None,
+                block: None,
             })
         }
         fn name(&self) -> &str {
@@ -6845,10 +6939,53 @@ mod tests {
                 tdl(),
             )
             .await;
+        let out = out.expect("a wall is a verdict about the page, not a transport failure");
+        assert_eq!(
+            out.block.as_ref().map(|b| b.vendor.as_str()),
+            Some("generic_block"),
+            "the wall must come back carrying its verdict, not as content: {:?}",
+            (out.rendered_with.as_deref(), out.html.len())
+        );
+    }
+
+    /// The same substitution, with a shell that is NOT a wall. This is the
+    /// recall half of the pair: the HTTP body is real content the ladder simply
+    /// failed to improve on, and it must still be handed back clean, with no
+    /// verdict stamped on it. Getting this wrong turns every failed escalation
+    /// into a block.
+    #[tokio::test]
+    async fn http_shell_fallback_still_substitutes_a_real_page() {
+        let wall = "<html><body><h1>Security Check</h1>\
+                    <p>Checking your browser before accessing the site</p></body></html>";
+        let real = "<html><body><article><h1>Real page</h1><p>\
+                    Enough prose here that nothing could mistake this for an \
+                    interstitial shell of any kind whatsoever.</p></article></body></html>";
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(wall.to_string()),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![lp]);
+        r.http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::Ok(real.to_string()),
+        });
+
+        let out = r
+            .fetch(
+                "https://example.com",
+                &HashMap::new(),
+                Some(true),
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .expect("a real HTTP body must still substitute for a failed ladder");
+        assert!(out.html.contains("Real page"));
         assert!(
-            out.is_err(),
-            "the wall must not come back through the HTTP shell: {:?}",
-            out.ok().map(|r| (r.rendered_with, r.html.len()))
+            out.block.is_none(),
+            "a real page must not carry a wall verdict: {:?}",
+            out.block
         );
     }
 
@@ -6886,19 +7023,22 @@ mod tests {
             )
             .await;
 
-        match out {
-            Err(CrwError::HttpError(msg)) => {
-                assert!(
-                    msg.contains("anti-bot wall"),
-                    "expected the wall to be named, got: {msg}"
-                );
-            }
-            Ok(r) => panic!(
-                "a wall no tier could clear must not ship as a success: rendered_with={:?} html={:?}",
-                r.rendered_with, r.html
-            ),
-            Err(e) => panic!("expected HttpError naming the wall, got {e:?}"),
-        }
+        // The judgement is unchanged: a wall no tier could clear is not content.
+        // Only its carrier moved. It used to be `CrwError::HttpError`, which the
+        // server maps to 502 and which told the caller our gateway had broken
+        // when in fact the target refused us. It now rides on the result, so the
+        // scrape choke can turn it into `success: false` + `anti_bot` at 200.
+        let out = out.expect("a wall is a verdict about the page, not a transport failure");
+        let block = out
+            .block
+            .as_ref()
+            .expect("a wall no tier could clear must carry its verdict");
+        assert_eq!(block.vendor, "generic_block");
+        assert!(
+            block.reason.contains("anti-bot wall"),
+            "expected the wall to be named, got: {}",
+            block.reason
+        );
     }
 
     /// The other half of the same gate: a page that is merely thin, with no
@@ -7627,6 +7767,7 @@ mod tests {
                 deadline_exceeded: false,
                 captured_responses: Vec::new(),
                 screenshot: None,
+                block: None,
             })
         }
         fn name(&self) -> &str {
@@ -7949,6 +8090,7 @@ mod tests {
                 deadline_exceeded: false,
                 captured_responses: Vec::new(),
                 screenshot: None,
+                block: None,
             })
         }
         fn name(&self) -> &str {
@@ -8833,6 +8975,7 @@ mod tests {
             deadline_exceeded: false,
             captured_responses: Vec::new(),
             screenshot: None,
+            block: None,
         }
     }
 
