@@ -90,6 +90,60 @@ proxy = "http://user:pass@gate.smartproxy.com:7000"
 # proxy = "socks5://user:pass@proxy:1080"
 ```
 
+## Escalate only on a block
+
+`proxy_list` and `proxy` are always-on: every request egresses through the pool.
+If most of your traffic passes fine on your own IP and you only want the proxy
+for the requests that get walled, configure an escalation proxy instead and leave
+`proxy_list` / `proxy` unset.
+
+**HTTP path.** Set one environment variable:
+
+```bash
+CRW_HTTP_RATELIMIT_PROXY_URL="http://user:pass@gateway:port"
+```
+
+The fetch goes out direct. It is retried once through this proxy when the
+response is a `429`, carries a vendor challenge header (`cf-mitigated:
+challenge|block`, `x-amzn-waf-action: challenge|captcha`), or returns a body that
+classifies as a block wall rather than a usable page, which covers a Cloudflare
+interstitial served as a `200`.
+
+A per-host egress latch sits on top: once a host has hard-blocked your direct
+egress, later URLs on that host start on the proxy rather than repaying the
+direct-then-blocked discovery cost on every URL. The latch only *prefers* the
+proxy. A direct rescue attempt still runs, so a falsely latched host whose proxy
+exit is worse than your own IP can still succeed. It stays inert when the
+remaining request budget cannot afford both a proxy attempt and that rescue.
+
+**JS path.** Turn the residential `chrome_proxy` tier into a recovery arm:
+
+```toml
+[renderer]
+auto_egress_escalation = true
+
+[renderer.chrome_proxy]
+ws_url = "ws://chrome-proxy:9222"
+```
+
+Off by default, and inert without a configured `chrome_proxy` tier. With it on,
+`chrome_proxy` is held out of the normal ladder and fires only after the ordinary
+ladder returns a hard block (`403`, `429`, `503`, `401`, `520`-`530`, or a bot-wall
+interstitial), and only if the remaining deadline can absorb a full attempt and
+its circuit breaker is closed. Best result wins, so a recovery attempt never
+replaces usable content with an empty one.
+
+The arm is deliberately suppressed on fingerprint-vendor walls (a Cloudflare
+managed challenge, DataDome, PerimeterX, Kasada, Akamai, Imperva). A different
+exit IP does not clear those, so firing a slow residential attempt at one only
+burns the deadline. IP-reputation blocks (`429`, an IP-ban `403`, a generic bot
+wall, Cloudflare error 1020) are what a fresh exit recovers, and those do fire it.
+
+Each layer makes a single proxy attempt per request. Running everything through
+the proxy ladder was benchmarked first and came out net-negative on both axes
+(scrape success down ~2pp, p90 up ~69%), which is why recovery is bounded to one
+attempt behind a block signal.
+
 ## Coverage
 
 | Path | Rotates? | Notes |
