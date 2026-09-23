@@ -383,3 +383,68 @@ impl ServerHandler for CrwBrowse {
             )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    /// Boolean subschemas (`"items": true`) are valid JSON Schema but
+    /// llama.cpp's grammar builder rejects the whole request over them.
+    /// `additionalProperties: true` is exempt: llama.cpp accepts it.
+    fn assert_no_bool_subschema(v: &Value, path: &str) {
+        let children: Vec<(String, &Value)> = match v {
+            Value::Object(o) => o.iter().map(|(k, c)| (k.clone(), c)).collect(),
+            Value::Array(a) => a
+                .iter()
+                .enumerate()
+                .map(|(i, c)| (i.to_string(), c))
+                .collect(),
+            _ => return,
+        };
+        for (key, child) in children {
+            let child_path = format!("{path}/{key}");
+            let schemas: Vec<&Value> = match (key.as_str(), child) {
+                ("items" | "not" | "contains" | "additionalItems", s) => vec![s],
+                (
+                    "properties" | "$defs" | "definitions" | "patternProperties",
+                    Value::Object(m),
+                ) => m.values().collect(),
+                ("anyOf" | "oneOf" | "allOf" | "prefixItems", Value::Array(a)) => {
+                    a.iter().collect()
+                }
+                _ => vec![],
+            };
+            for s in schemas {
+                assert!(s.is_object(), "{child_path} holds a boolean schema");
+            }
+            assert_no_bool_subschema(child, &child_path);
+        }
+    }
+
+    #[test]
+    fn tool_input_schemas_have_no_boolean_subschemas() {
+        let tools = CrwBrowse::tool_router().list_all();
+        assert!(!tools.is_empty());
+        for tool in tools {
+            let schema = Value::Object((*tool.input_schema).clone());
+            assert_no_bool_subschema(&schema, &tool.name);
+        }
+    }
+
+    #[test]
+    fn script_actions_schema_constrains_act() {
+        let tools = CrwBrowse::tool_router().list_all();
+        let script = tools
+            .iter()
+            .find(|t| t.name == "script")
+            .expect("script tool");
+        let items = &script.input_schema["properties"]["actions"]["items"];
+        assert_eq!(items["required"], serde_json::json!(["act"]));
+        assert_eq!(items["additionalProperties"], serde_json::json!(true));
+        assert_eq!(
+            items["properties"]["act"]["enum"],
+            serde_json::json!(crate::tools::script::ACTS)
+        );
+    }
+}

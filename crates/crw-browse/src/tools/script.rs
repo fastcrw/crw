@@ -33,12 +33,45 @@ use crate::tools::{
 /// can pin a session.
 const MAX_ACTIONS: usize = 50;
 
+/// `act` values accepted by [`dispatch`].
+pub(crate) const ACTS: [&str; 12] = [
+    "goto",
+    "tree",
+    "evaluate",
+    "text",
+    "html",
+    "storage",
+    "click",
+    "fill",
+    "type_text",
+    "wait",
+    "console",
+    "network",
+];
+
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct ScriptInput {
-    /// Ordered list of actions to execute. Each action is a free-form JSON
-    /// object with at least an `act` discriminator naming the tool to call;
-    /// remaining fields are forwarded to that tool's input.
+    /// Ordered list of actions to execute. Each action is a JSON object
+    /// with an `act` discriminator naming the tool to call; remaining
+    /// fields are forwarded to that tool's input.
+    #[schemars(schema_with = "actions_schema")]
     pub actions: Vec<Value>,
+}
+
+/// Explicit item schema: `Vec<Value>` would derive `"items": true`, a boolean
+/// schema that llama.cpp's grammar builder rejects. `additionalProperties`
+/// must stay `true`, grammar-constrained backends forbid unlisted keys
+/// otherwise and the per-tool fields could not be forwarded.
+fn actions_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": { "act": { "type": "string", "enum": ACTS } },
+            "required": ["act"],
+            "additionalProperties": true
+        }
+    })
 }
 
 #[derive(Debug, Serialize)]
