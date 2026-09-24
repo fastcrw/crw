@@ -39,7 +39,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
-jsonschema = "0.54"
+jsonschema = "0.56"
 sxd-xpath = "0.4"
 sxd-document = "0.3"
 sxd_html = "0.1"
