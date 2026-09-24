@@ -45,10 +45,45 @@ pub struct V2SearchData {
     pub images: Option<Vec<ImageResult>>,
 }
 
+/// Firecrawl v2 `sources` / `categories` accept `[{ "type": "web" }]` as well
+/// as `["web"]`. Rewrite object entries to their `type` string. A source's
+/// `tbs` / `lang` is lifted to the top level when the body has none there, so
+/// the filter is not silently dropped. Entries without a string `type` are
+/// left as-is and fail deserialization with a clear error.
+// ponytail: the engine runs one query, so a lifted per-source `tbs` / `lang`
+// applies to every source, and `filter` / `country` / `location` are dropped
+// (unsupported at the top level too). Per-source options need per-source queries.
+fn flatten_typed_entries(v: &mut Value, key: &str) {
+    let Some(Value::Array(arr)) = v.get_mut(key) else {
+        return;
+    };
+    let mut lifted = serde_json::Map::new();
+    for entry in arr.iter_mut() {
+        let Value::Object(m) = entry else { continue };
+        let Some(t) = m.get("type").and_then(Value::as_str).map(str::to_string) else {
+            continue;
+        };
+        for field in ["tbs", "lang"] {
+            if let Some(val) = m.get(field) {
+                lifted.entry(field).or_insert_with(|| val.clone());
+            }
+        }
+        *entry = Value::String(t);
+    }
+    if let Some(obj) = v.as_object_mut() {
+        for (field, val) in lifted {
+            obj.entry(field).or_insert(val);
+        }
+    }
+}
+
 /// v2 `scrapeOptions.formats` may be objects; the v1 `SearchRequest` only
 /// accepts string formats. Rewrite the formats array to strings (lifting a
 /// `json` schema to `jsonSchema`) before deserializing into `SearchRequest`.
+/// Object-form `sources` / `categories` are flattened the same way.
 fn normalize_search_body(mut v: Value) -> Value {
+    flatten_typed_entries(&mut v, "sources");
+    flatten_typed_entries(&mut v, "categories");
     if let Some(opts) = v.get_mut("scrapeOptions").and_then(Value::as_object_mut)
         && let Some(Value::Array(arr)) = opts.get("formats").cloned()
     {
@@ -122,6 +157,7 @@ pub async fn search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crw_core::types::{SearchCategory, SearchSource, SearchTimeFilter};
 
     fn usage(input: u32, output: u32) -> LlmUsage {
         LlmUsage {
@@ -175,5 +211,32 @@ mod tests {
             wire.get("llmUsage").is_none(),
             "a search with no LLM leg must not grow the key"
         );
+    }
+
+    #[test]
+    fn v2_search_accepts_object_form_sources_and_categories() {
+        // Firecrawl v2 clients (e.g. Oh My Pi) send `sources: [{type: "web"}]`;
+        // that used to fail with `unknown variant 'type'`.
+        let body = serde_json::json!({
+            "query": "q",
+            "sources": [{"type": "web", "tbs": "qdr:w"}, "news"],
+            "categories": [{"type": "github"}],
+        });
+        let req: SearchRequest = serde_json::from_value(normalize_search_body(body)).unwrap();
+        assert_eq!(
+            req.sources,
+            Some(vec![SearchSource::Web, SearchSource::News])
+        );
+        assert_eq!(req.categories, Some(vec![SearchCategory::Github]));
+        assert_eq!(req.tbs, Some(SearchTimeFilter::Week));
+
+        // A top-level `tbs` wins over a per-source one.
+        let body = serde_json::json!({
+            "query": "q",
+            "tbs": "qdr:d",
+            "sources": [{"type": "web", "tbs": "qdr:y"}],
+        });
+        let req: SearchRequest = serde_json::from_value(normalize_search_body(body)).unwrap();
+        assert_eq!(req.tbs, Some(SearchTimeFilter::Day));
     }
 }
