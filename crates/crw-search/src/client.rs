@@ -108,8 +108,10 @@ pub struct SearxngResult {
     /// ISO-formatted publish date for news results.
     #[serde(default, rename = "publishedDate")]
     pub published_date: Option<String>,
-    /// Image URL — populated for image-template results.
-    #[serde(default)]
+    /// Image URL — populated for image-template results. SearXNG sends `""`
+    /// on rows that have none (e.g. the `github` engine), read here as `None`
+    /// so those rows are not bucketed as images.
+    #[serde(default, deserialize_with = "empty_as_none")]
     pub img_src: Option<String>,
     /// Thumbnail URL — populated for image / video results.
     #[serde(default)]
@@ -118,6 +120,10 @@ pub struct SearxngResult {
     pub img_format: Option<String>,
     #[serde(default)]
     pub resolution: Option<String>,
+}
+
+fn empty_as_none<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.filter(|s| !s.trim().is_empty()))
 }
 
 /// Top-level SearXNG `format=json` response envelope.
@@ -346,6 +352,18 @@ mod tests {
     }
 
     // --- SearxngResult / SearxngResponse deserialization ---
+
+    #[test]
+    fn empty_img_src_reads_as_no_image() {
+        // The github engine sends `img_src: ""`; as `Some("")` its rows were
+        // bucketed as images and dropped from `sources: ["web"]`.
+        let v = serde_json::json!({"url": "https://github.com/a/b", "img_src": ""});
+        let r: SearxngResult = serde_json::from_value(v).unwrap();
+        assert!(r.img_src.is_none());
+        let v = serde_json::json!({"url": "https://a.com/", "img_src": "https://a.com/x.png"});
+        let r: SearxngResult = serde_json::from_value(v).unwrap();
+        assert_eq!(r.img_src.as_deref(), Some("https://a.com/x.png"));
+    }
 
     #[test]
     fn searxng_result_deserializes_with_only_the_three_load_bearing_fields() {

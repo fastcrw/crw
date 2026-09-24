@@ -7,7 +7,7 @@
 //! [`SearchRequest`]: crw_core::types::SearchRequest
 
 use crw_core::config::SearchConfig;
-use crw_core::types::{SearchCategory, SearchRequest};
+use crw_core::types::{SearchCategory, SearchRequest, SearchSource};
 
 /// Owned representation of the SearXNG query parameters we send. The client
 /// constructs the URL-encoded form from these fields; this struct stays
@@ -106,11 +106,15 @@ pub fn map_to_searxng_params(req: &SearchRequest, config: &SearchConfig) -> Sear
 
     // `categories` is the union of the `sources`-derived buckets and any
     // passthrough category names, de-duplicated while preserving order.
+    // SearXNG unions `engines` with every engine of each category, so when a
+    // curated category (github / research) already picked the engines, the
+    // Web source's `general` would pull in all general engines and bury them.
     let mut category_names: Vec<String> = req
         .sources
         .as_ref()
         .map(|srcs| {
             srcs.iter()
+                .filter(|s| engines.is_empty() || **s != SearchSource::Web)
                 .map(|s| s.searxng_category().to_string())
                 .collect()
         })
@@ -155,7 +159,7 @@ pub fn map_to_searxng_params(req: &SearchRequest, config: &SearchConfig) -> Sear
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crw_core::types::{SearchSource, SearchTimeFilter};
+    use crw_core::types::SearchTimeFilter;
 
     fn cfg() -> SearchConfig {
         SearchConfig::default()
@@ -266,6 +270,23 @@ mod tests {
         assert_eq!(p.categories.as_deref(), Some("science"));
         assert!(p.engines.is_none());
         assert_eq!(p.q, "crispr");
+    }
+
+    #[test]
+    fn curated_engines_are_not_diluted_by_the_web_source() {
+        // `sources: ["web"]` + `categories: ["github"]` used to also send
+        // `categories=general`, and SearXNG's general engines outranked GitHub.
+        let mut r = req("rust web framework");
+        r.sources = Some(vec![SearchSource::Web]);
+        r.categories = Some(vec![SearchCategory::Github]);
+        let p = map_to_searxng_params(&r, &cfg());
+        assert_eq!(p.engines.as_deref(), Some("github"));
+        assert!(p.categories.is_none());
+
+        // Other buckets keep their category.
+        r.sources = Some(vec![SearchSource::Web, SearchSource::News]);
+        let p = map_to_searxng_params(&r, &cfg());
+        assert_eq!(p.categories.as_deref(), Some("news"));
     }
 
     #[test]
