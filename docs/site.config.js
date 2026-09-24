@@ -12,7 +12,7 @@ export default {
     { label: "Docs", href: "/introduction" },
     { label: "API", href: "/rest-api" },
     { label: "MCP", href: "/mcp" },
-    { label: "GitHub", href: "https://github.com/us/crw", external: true },
+    { label: "GitHub", href: "https://github.com/fastcrw/crw", external: true },
   ],
 
   navTabs: [
@@ -51,7 +51,7 @@ export default {
   quickLinks: [
     { title: "Playground", href: "https://fastcrw.com/playground", icon: "play", external: true },
     { title: "Get API Key", href: "https://fastcrw.com/register", icon: "key", external: true },
-    { title: "GitHub", href: "https://github.com/us/crw", icon: "github", external: true },
+    { title: "GitHub", href: "https://github.com/fastcrw/crw", icon: "github", external: true },
     { title: "Changelog", href: "/changelog", icon: "list" },
   ],
 
@@ -155,16 +155,16 @@ export default {
         { label: "Changelog", href: "/changelog" },
       ]},
       { title: "Community", links: [
-        { label: "GitHub", href: "https://github.com/us/crw", external: true },
-        { label: "Issues", href: "https://github.com/us/crw/issues", external: true },
+        { label: "GitHub", href: "https://github.com/fastcrw/crw", external: true },
+        { label: "Issues", href: "https://github.com/fastcrw/crw/issues", external: true },
         { label: "Discord", href: "https://discord.gg/KNQBfFVc9J", external: true },
       ]},
       { title: "Legal", links: [
-        { label: "License (AGPL-3.0)", href: "https://github.com/us/crw/blob/main/LICENSE", external: true },
+        { label: "License (AGPL-3.0)", href: "https://github.com/fastcrw/crw/blob/main/LICENSE", external: true },
       ]},
     ],
     socials: [
-      { icon: "github", href: "https://github.com/us/crw" },
+      { icon: "github", href: "https://github.com/fastcrw/crw" },
       { icon: "discord", href: "https://discord.gg/KNQBfFVc9J" },
     ],
   },

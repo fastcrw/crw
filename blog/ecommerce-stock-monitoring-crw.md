@@ -21,7 +21,7 @@ A restock monitor that watches product pages and notifies you the moment a sold-
 
 ## Prerequisites
 
-- CRW running: `docker run -p 3000:3000 ghcr.io/us/crw:latest`
+- CRW running: `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`
 - Python 3.10+ and an OpenAI API key (used by CRW for extraction)
 
 ```
@@ -263,7 +263,7 @@ Now an alert that failed to deliver is a row with `delivered=0` you can re-send 
 - See [Build an AI Price Tracker](/blog/ai-price-tracker) to add price-history to the same monitor
 - Read [Competitor Monitoring with CRW](/blog/competitor-monitoring-crw)
 
-Self-host CRW from [GitHub](https://github.com/us/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping.
+Self-host CRW from [GitHub](https://github.com/fastcrw/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping.
 
 ## FAQ
 

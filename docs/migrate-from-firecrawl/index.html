@@ -158,7 +158,7 @@ print(json.dumps(
     <p>The <code>crw</code> CLI projects directly to the title/url/snippet
       schema with <code>--json --fields</code> — no <code>jq</code> reshape
       needed:</p>
-<pre><code class="language-bash"># Install: brew install us/crw/crw  (or: cargo install crw-cli)
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
 crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
 
 # Available fields: title, url, description, snippet, position, score, category
@@ -189,9 +189,9 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
     <p>
       <code>pip install crw</code> ·
       <code>npx crw-mcp</code> ·
-      <code>brew install us/crw/crw</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
       <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
-      <code>docker run -p 3000:3000 ghcr.io/us/crw:latest</code>
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
     </p>
 
     <h2>Resources</h2>
@@ -202,8 +202,8 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
       <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
       <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
       <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
-      <li><a href="https://github.com/us/homebrew-crw">CLI (Homebrew tap)</a></li>
-      <li><a href="https://github.com/us/crw">GitHub</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
     </ul>
   </section>
   <style>
@@ -247,9 +247,9 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
         </button>
       </div>
       <div class="navbar-right">
-        <a href="https://github.com/us/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          <span>us/crw</span>
+          <span>fastcrw/crw</span>
         </a>
         <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
         <a href="https://fastcrw.com/register?ref=docs-migrate-from-firecrawl-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
@@ -495,7 +495,7 @@ const result = await client.scrape(&quot;https://example.com/product&quot;, {
 console.log(result.json);</code></pre></div>
     </div><hr>
 <h2 id="behavioral-differences-to-validate">Behavioral differences to validate</h2>
-<p>The following table lists the gaps documented in <a href="https://github.com/us/crw/blob/main/COMPATIBILITY-firecrawl.md">the capability matrix</a>. Validate each that applies to your workload <strong>before</strong> switching production traffic.</p>
+<p>The following table lists the gaps documented in <a href="https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md">the capability matrix</a>. Validate each that applies to your workload <strong>before</strong> switching production traffic.</p>
 <table>
 <thead>
 <tr>
@@ -631,7 +631,7 @@ print(&quot;All checks passed — safe to promote to production.&quot;)</code></
 <li>Fire-engine proprietary anti-bot layer</li>
 </ul>
 <p>Bring-your-own-proxy IS supported on a self-hosted instance: set a pool in <code>[proxy]</code>, or pass <code>proxy</code> on the scrape body. See <a href="/docs/proxies">Proxies</a>.</p>
-<p>For any capability not in the matrix above, check <a href="https://github.com/us/crw/blob/main/COMPATIBILITY-firecrawl.md">the capability matrix</a> which is the authoritative reference.</p>
+<p>For any capability not in the matrix above, check <a href="https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md">the capability matrix</a> which is the authoritative reference.</p>
 </article>
     </main>
 
@@ -648,7 +648,7 @@ print(&quot;All checks passed — safe to promote to production.&quot;)</code></
         <div class="toc-cta-title">Ready to scrape?</div>
         <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
         <a href="https://fastcrw.com/register?ref=docs-migrate-from-firecrawl-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
-        <a href="https://github.com/us/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
       </div>
     </aside>
   </div>
@@ -663,7 +663,7 @@ print(&quot;All checks passed — safe to promote to production.&quot;)</code></
             <span>CRW</span>
           </div>
           <div class="footer-tagline">The base layer for agentic web intelligence.</div>
-          <div class="footer-socials"><a href="https://github.com/us/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Product</div>
@@ -677,15 +677,15 @@ print(&quot;All checks passed — safe to promote to production.&quot;)</code></
         <div class="footer-col">
           <div class="footer-col-title">Community</div>
           <div class="footer-col-links">
-            <a href="https://github.com/us/crw" target="_blank" rel="noopener">GitHub</a>
-            <a href="https://github.com/us/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
             <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
           </div>
         </div>
         <div class="footer-col">
           <div class="footer-col-title">Legal</div>
           <div class="footer-col-links">
-            <a href="https://github.com/us/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
           </div>
         </div>
       </div>

@@ -8,7 +8,7 @@ const os = require("os");
 const https = require("https");
 
 const VERSION = require("../package.json").version;
-const REPO = "us/crw";
+const REPO = "fastcrw/crw";
 
 // Each platform has a prebuilt npm package (fast path, installed via
 // optionalDependencies) AND a matching GitHub release asset (fallback path,

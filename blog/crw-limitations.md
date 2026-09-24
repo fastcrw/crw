@@ -253,17 +253,17 @@ If your use case falls in this set, CRW's limitations are unlikely to be blockin
 
 ## How We Prioritize the Roadmap
 
-GitHub issues drive our priority decisions. If a specific limitation is blocking your use case, [open an issue](https://github.com/us/crw/issues) with your use case description. Limitations with multiple real-world users asking for them get prioritized. The roadmap reflects what developers are actually trying to do with CRW, not what sounds impressive in a feature list.
+GitHub issues drive our priority decisions. If a specific limitation is blocking your use case, [open an issue](https://github.com/fastcrw/crw/issues) with your use case description. Limitations with multiple real-world users asking for them get prioritized. The roadmap reflects what developers are actually trying to do with CRW, not what sounds impressive in a feature list.
 
 ## Try CRW
 
 ### Open-Source Path
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+[GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Hosted Path — fastCRW
 

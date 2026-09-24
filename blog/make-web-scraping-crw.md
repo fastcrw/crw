@@ -17,7 +17,7 @@ CRW's Firecrawl-compatible REST API makes it easy to integrate with Make.com's H
 ## Prerequisites
 
 - A [Make.com](https://www.make.com) account (free tier works for testing)
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) cloud API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) cloud API key
 - A destination for your scraped data (Google Sheets, Airtable, Slack, etc.)
 
 ## Step 1: Create a New Scenario
@@ -204,7 +204,7 @@ You have two options for running CRW with Make.com:
 
 ### Self-Hosted CRW
 
-- Run CRW on your own server: `docker run -p 3000:3000 ghcr.io/us/crw:latest`
+- Run CRW on your own server: `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`
 - No API key required, no per-request costs
 - Your Make.com scenario must be able to reach your server (use a tunnel like ngrok for local testing)
 - Best for high-volume scraping or when data privacy is critical
@@ -222,4 +222,4 @@ Make.com + CRW is a powerful combination for no-code web scraping automation. Yo
 
 For more advanced use cases, check out our guides on [building RAG pipelines with CRW](/blog/rag-pipeline-with-crw) and [using CRW's MCP server with AI agents](/blog/mcp-web-scraping).
 
-Ready to get started? [Self-host CRW](https://github.com/us/crw) for free or sign up for [fastCRW](https://fastcrw.com) to get a cloud API key in seconds.
+Ready to get started? [Self-host CRW](https://github.com/fastcrw/crw) for free or sign up for [fastCRW](https://fastcrw.com) to get a cloud API key in seconds.

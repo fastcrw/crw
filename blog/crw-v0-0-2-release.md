@@ -154,17 +154,17 @@ This downloads LightPanda (the lightweight headless browser) and creates `config
 
 ```
 # Docker
-docker pull ghcr.io/us/crw:0.0.2
+docker pull ghcr.io/fastcrw/crw:0.0.2
 
 # Cargo
 cargo install crw-server
 
 # Binary
-curl -L https://github.com/us/crw/releases/download/v0.0.2/crw-linux-x86_64 -o crw
+curl -L https://github.com/fastcrw/crw/releases/download/v0.0.2/crw-linux-x86_64 -o crw
 ```
 
 v0.0.2 is backward-compatible with v0.0.1. All new fields are optional — existing API calls work without changes. See the [documentation](https://docs.fastcrw.com) for full API reference.
 
 ## What's Next
 
-v0.0.3+ focuses on rendering reliability and coverage: better success/failure semantics for 4xx pages, improved CDP lifecycle handling, and crawl parameter normalization. Follow the [GitHub repository](https://github.com/us/crw) for updates.
+v0.0.3+ focuses on rendering reliability and coverage: better success/failure semantics for 4xx pages, improved CDP lifecycle handling, and crawl parameter normalization. Follow the [GitHub repository](https://github.com/fastcrw/crw) for updates.

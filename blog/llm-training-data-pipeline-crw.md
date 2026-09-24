@@ -22,7 +22,7 @@ A dataset pipeline that crawls target sites with CRW, cleans the text, drops low
 
 ## Prerequisites
 
-- CRW running: `docker run -p 3000:3000 ghcr.io/us/crw:latest`
+- CRW running: `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`
 - Python 3.10+
 
 ```
@@ -258,7 +258,7 @@ The source-concentration line is the one that saves you. If one domain is 80% of
 - See [Crawl an Entire Website to Markdown](/blog/crawl-entire-website-sitemap-crw) for the collection layer
 - Read [Scrape-to-RAG With LlamaIndex](/blog/scrape-to-rag-pipeline-llamaindex) for the RAG variant
 
-Self-host CRW from [GitHub](https://github.com/us/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping.
+Self-host CRW from [GitHub](https://github.com/fastcrw/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping.
 
 ## FAQ
 

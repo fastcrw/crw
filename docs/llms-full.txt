@@ -612,7 +612,7 @@ Use crw-browse when:
 
 Install:
   cargo install crw-browse
-  # Or prebuilt binary from https://github.com/us/crw/releases/tag/v0.4.0
+  # Or prebuilt binary from https://github.com/fastcrw/crw/releases/tag/v0.4.0
 
 Register alongside crw-mcp (it uses stdio transport, self-hosted, no cloud account needed):
   claude mcp add crw-browse -- crw-browse
@@ -924,7 +924,7 @@ Docs home:          https://docs.fastcrw.com
 API playground:     https://fastcrw.com/playground
 Agent skill:        https://docs.fastcrw.com/agent-onboarding/SKILL.md
 OpenAPI contract:   https://docs.fastcrw.com/openapi.json
-GitHub:             https://github.com/us/crw
+GitHub:             https://github.com/fastcrw/crw
 MCP Registry:       https://registry.modelcontextprotocol.io/?q=crw
 PyPI (crw):         https://pypi.org/project/crw/
 npm (crw-sdk):      https://www.npmjs.com/package/crw-sdk

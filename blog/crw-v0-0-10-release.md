@@ -127,7 +127,7 @@ Topic chunking sometimes produces chunks that contain only a heading with no bod
 
 ```
 # Docker
-docker pull ghcr.io/us/crw:0.0.10
+docker pull ghcr.io/fastcrw/crw:0.0.10
 
 # Cargo
 cargo install crw-server

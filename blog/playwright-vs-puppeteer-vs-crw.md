@@ -250,7 +250,7 @@ For teams building AI agents that need web access, the MCP (Model Context Protoc
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "ghcr.io/us/crw:latest", "crw-mcp"]
+      "args": ["run", "--rm", "-i", "ghcr.io/fastcrw/crw:latest", "crw-mcp"]
     }
   }
 }
@@ -311,10 +311,10 @@ Because CRW exposes a Firecrawl-compatible REST API, it's easy to build a routin
 CRW is AGPL-3.0 licensed. Run it on your own infrastructure at zero cost:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[View the source on GitHub](https://github.com/us/crw) · [Read the docs](https://us.github.io/crw)
+[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://us.github.io/crw)
 
 ### Hosted Path — Use fastCRW
 

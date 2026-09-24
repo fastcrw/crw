@@ -152,7 +152,7 @@ Crawl is the right tool for genuine site-scale ingestion and nothing else. Used 
 ## Sources
 
 - Firecrawl crawl docs: [docs.firecrawl.dev](https://docs.firecrawl.dev)
-- fastCRW repo: [github.com/us/crw](https://github.com/us/crw)
+- fastCRW repo: [github.com/fastcrw/crw](https://github.com/fastcrw/crw)
 
 Related: [Firecrawl /map deep dive](/blog/firecrawl-map-endpoint-deep-dive) · [Firecrawl credits & rate limits](/blog/firecrawl-credits-rate-limits)
 

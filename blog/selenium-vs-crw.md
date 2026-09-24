@@ -112,7 +112,7 @@ FROM selenium/standalone-chrome:latest
 Compare with CRW:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 # Includes: single Rust binary, nothing else
 ```
 
@@ -292,7 +292,7 @@ For teams ready to move from Selenium to CRW, the migration is typically straigh
 ### Step 1: Start CRW
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=my-secret ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=my-secret ghcr.io/fastcrw/crw:latest
 ```
 
 ### Step 2: Replace Selenium calls with CRW API calls
@@ -350,10 +350,10 @@ The web scraping landscape has evolved. In 2015, running a headless browser was 
 CRW is AGPL-3.0 licensed. Run it on your own infrastructure at zero cost:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[View the source on GitHub](https://github.com/us/crw) · [Read the docs](https://us.github.io/crw)
+[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://us.github.io/crw)
 
 ### Hosted Path — Use fastCRW
 

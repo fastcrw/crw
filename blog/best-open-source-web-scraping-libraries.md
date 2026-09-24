@@ -10,7 +10,7 @@
 
 ## Short Answer
 
-**Short answer:** For AI agents and RAG pipelines, **[fastCRW](https://github.com/us/crw)** (Rust) is the most production-ready open-source web scraping library in 2026 — single small static binary, no browser baseline, built-in MCP server, Firecrawl-compatible REST API, and 63.74% truth-recall on Firecrawl's public 1,000-URL scrape-content dataset (819 labeled URLs, `diagnose_3way.py`, 2026-05-08). For Python-native research and ML pipelines, [Crawl4AI](https://github.com/unclecode/crawl4ai) is the right pick. For classic multi-page crawls in Python, [Scrapy](https://scrapy.org/) still wins. The full 8-library breakdown follows.
+**Short answer:** For AI agents and RAG pipelines, **[fastCRW](https://github.com/fastcrw/crw)** (Rust) is the most production-ready open-source web scraping library in 2026 — single small static binary, no browser baseline, built-in MCP server, Firecrawl-compatible REST API, and 63.74% truth-recall on Firecrawl's public 1,000-URL scrape-content dataset (819 labeled URLs, `diagnose_3way.py`, 2026-05-08). For Python-native research and ML pipelines, [Crawl4AI](https://github.com/unclecode/crawl4ai) is the right pick. For classic multi-page crawls in Python, [Scrapy](https://scrapy.org/) still wins. The full 8-library breakdown follows.
 
 ## What Counts as a "Web Scraping Library" in 2026?
 
@@ -27,7 +27,7 @@ If your only goal is "fetch this static HTML page and pull out three fields", yo
 
 | Library | Language | License | Browser? | MCP / AI surface | Primary use case |
 | --- | --- | --- | --- | --- | --- |
-| **[fastCRW](https://github.com/us/crw)** | Rust | AGPL-3.0 | No (LightPanda fallback) | ✅ Built-in MCP + Firecrawl-compatible REST | AI agents, RAG, lightweight self-host |
+| **[fastCRW](https://github.com/fastcrw/crw)** | Rust | AGPL-3.0 | No (LightPanda fallback) | ✅ Built-in MCP + Firecrawl-compatible REST | AI agents, RAG, lightweight self-host |
 | [Scrapy](https://scrapy.org) | Python | BSD-3 | No | ❌ | Multi-page crawls with pipelines & throttling |
 | [BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/) | Python | MIT | No (parser only) | ❌ | HTML parsing inside scripts |
 | [Playwright](https://playwright.dev) | Node / Python / .NET / Java | Apache-2.0 | Yes (Chromium, Firefox, WebKit) | ❌ | JS-heavy SPAs, auth flows |
@@ -40,9 +40,9 @@ If your only goal is "fetch this static HTML page and pull out three fields", yo
 
 ### 1. fastCRW (Rust)
 
-**Repository:** [github.com/us/crw](https://github.com/us/crw) · **Language:** Rust · **License:** AGPL-3.0 (commercial license available)
+**Repository:** [github.com/fastcrw/crw](https://github.com/fastcrw/crw) · **Language:** Rust · **License:** AGPL-3.0 (commercial license available)
 
-[fastCRW](https://github.com/us/crw) is a Rust-native web scraping engine that ships as a single small static binary and exposes the Firecrawl REST surface (`/v1/scrape`, `/v1/crawl`, `/v1/map`, `/v1/extract`, `/v1/search`) plus a built-in MCP server. Internally it uses `lol-html` (a streaming Rust HTML parser) on HTML-primary pages and falls back to LightPanda only when JavaScript rendering is required — so there is no headless-browser memory baseline.
+[fastCRW](https://github.com/fastcrw/crw) is a Rust-native web scraping engine that ships as a single small static binary and exposes the Firecrawl REST surface (`/v1/scrape`, `/v1/crawl`, `/v1/map`, `/v1/extract`, `/v1/search`) plus a built-in MCP server. Internally it uses `lol-html` (a streaming Rust HTML parser) on HTML-primary pages and falls back to LightPanda only when JavaScript rendering is required — so there is no headless-browser memory baseline.
 
 **Primary use case:** AI agents and RAG pipelines that need clean markdown, MCP, and a small operational footprint. Also the right pick for any team that wants a Firecrawl-compatible API they can self-host on a $5 VPS.
 
@@ -51,7 +51,7 @@ If your only goal is "fetch this static HTML page and pull out three fields", yo
 **Quickstart:**
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 
 curl http://localhost:3000/v1/scrape \
   -H "Content-Type: application/json" \
@@ -275,10 +275,10 @@ If AGPL-3.0 is a concern for embedding the fastCRW engine in a closed-source pro
 ### Self-host (free, AGPL-3.0)
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-Single small static binary. Works on the cheapest VPS tier. No Redis, no Playwright, no Python environment. [GitHub repo](https://github.com/us/crw) · [Documentation](https://us.github.io/crw).
+Single small static binary. Works on the cheapest VPS tier. No Redis, no Playwright, no Python environment. [GitHub repo](https://github.com/fastcrw/crw) · [Documentation](https://us.github.io/crw).
 
 ### Hosted via fastCRW
 

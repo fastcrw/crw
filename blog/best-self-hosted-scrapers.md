@@ -65,7 +65,7 @@ The following commands are enough to get each tool running locally or on a fresh
 
 ```
 # Pull and start — no other services needed
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 
 # Test it
 curl https://api.fastcrw.com/v1/scrape   -H "Authorization: Bearer crw_live_YOUR_API_KEY"   -H "Content-Type: application/json"   -d '{"url": "https://example.com", "formats": ["markdown"]}'
@@ -156,7 +156,7 @@ CRW is fully stateless. There is no shared queue, no session store, no cache tha
 version: "3.8"
 services:
   crw:
-    image: ghcr.io/us/crw:latest
+    image: ghcr.io/fastcrw/crw:latest
     environment:
       CRW_API_KEY: ${CRW_API_KEY}
     deploy:
@@ -264,7 +264,7 @@ print(documents[0].page_content[:500])
 ### CRW — Easiest
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 One command. No other services required for basic scraping. Works on the smallest viable VM. The entire operational surface is one Docker container.
@@ -330,10 +330,10 @@ Also see: [CRW vs Firecrawl: detailed comparison](/blog/firecrawl-vs-crawl4ai-vs
 ### Open-Source Path — Self-Host CRW for Free
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Hosted Path — fastCRW Cloud
 

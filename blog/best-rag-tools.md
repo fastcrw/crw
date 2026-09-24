@@ -46,7 +46,7 @@ This guide focuses on the best tools for each of these jobs, with emphasis on we
 
 ### 1. CRW / fastCRW — Web Scraping for RAG
 
-[CRW](https://github.com/us/crw) is a Rust-based web scraping API that converts websites into clean markdown — the most important input format for RAG pipelines. It implements the Firecrawl REST API, so it plugs into existing LangChain and LlamaIndex integrations with a URL change.
+[CRW](https://github.com/fastcrw/crw) is a Rust-based web scraping API that converts websites into clean markdown — the most important input format for RAG pipelines. It implements the Firecrawl REST API, so it plugs into existing LangChain and LlamaIndex integrations with a URL change.
 
 **Why CRW is ideal for RAG web ingestion:**
 
@@ -313,10 +313,10 @@ Self-hosting CRW and using open-source tools for parsing and storage cuts ingest
 ### Start with CRW for Web Scraping
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. Works with LangChain and LlamaIndex out of the box. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. Works with LangChain and LlamaIndex out of the box. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Or Use fastCRW Cloud
 

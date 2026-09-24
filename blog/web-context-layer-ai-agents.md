@@ -58,7 +58,7 @@ Here's a CRW MCP configuration for Claude Desktop. One JSON block, and the agent
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "ghcr.io/us/crw:latest", "crw-mcp"]
+      "args": ["run", "--rm", "-i", "ghcr.io/fastcrw/crw:latest", "crw-mcp"]
     }
   }
 }
@@ -211,10 +211,10 @@ The teams building the most capable AI agents today are already treating web acc
 CRW is AGPL-3.0 licensed. Add web context to your AI agents at zero infrastructure cost:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[View the source on GitHub](https://github.com/us/crw) · [Read the docs](https://us.github.io/crw)
+[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://us.github.io/crw)
 
 ### Hosted Path — Use fastCRW
 

@@ -30,7 +30,7 @@ docker run -d \
   --name crw \
   --restart unless-stopped \
   -p 3000:3000 \
-  ghcr.io/us/crw:latest
+  ghcr.io/fastcrw/crw:latest
 ```
 
 That's it. CRW is now running. Test it:
@@ -51,7 +51,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -e CRW_API_KEY=your-secret-key \
-  ghcr.io/us/crw:latest
+  ghcr.io/fastcrw/crw:latest
 ```
 
 Now all requests require the `Authorization: Bearer your-secret-key` header. Requests without it return 401.
@@ -85,7 +85,7 @@ For a more maintainable setup:
 version: "3.8"
 services:
   crw:
-    image: ghcr.io/us/crw:latest
+    image: ghcr.io/fastcrw/crw:latest
     restart: unless-stopped
     ports:
       - "3000:3000"

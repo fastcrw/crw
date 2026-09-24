@@ -235,10 +235,10 @@ Self-hosting isn't free — there's engineering time and operational overhead. B
 CRW is AGPL-3.0 licensed. Run it on your own infrastructure at zero software cost:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[View the source on GitHub](https://github.com/us/crw) · [Read the docs](https://us.github.io/crw)
+[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://us.github.io/crw)
 
 ### Hosted Path — Use fastCRW
 

@@ -20,7 +20,7 @@ GitHub release.
 Report privately through either channel:
 
 - **GitHub Private Vulnerability Reporting** (preferred): open a report from the
-  [Security tab](https://github.com/us/crw/security/advisories/new) of this
+  [Security tab](https://github.com/fastcrw/crw/security/advisories/new) of this
   repository. This routes straight to the maintainers and keeps the details private.
 - **Email**: **security@fastcrw.com**
 
@@ -85,17 +85,17 @@ To check a download yourself (requires cosign v3 or newer for step 2):
 
 ```sh
 # 1. Integrity: the archive matches what the release records.
-curl -fsSLO https://github.com/us/crw/releases/download/vX.Y.Z/SHA256SUMS
+curl -fsSLO https://github.com/fastcrw/crw/releases/download/vX.Y.Z/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 # macOS has no sha256sum; check just the file you downloaded:
 #   shasum -a 256 crw-darwin-arm64.tar.gz
 #   grep crw-darwin-arm64.tar.gz SHA256SUMS
 
 # 2. Authenticity: the checksums were produced by our release workflow.
-curl -fsSLO https://github.com/us/crw/releases/download/vX.Y.Z/SHA256SUMS.sigstore.json
+curl -fsSLO https://github.com/fastcrw/crw/releases/download/vX.Y.Z/SHA256SUMS.sigstore.json
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/us/crw/\.github/workflows/release\.yml@refs/(tags/v.*|heads/main)$' \
+  --certificate-identity-regexp '^https://github\.com/(us|fastcrw)/crw/\.github/workflows/release\.yml@refs/(tags/v.*|heads/main)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 ```

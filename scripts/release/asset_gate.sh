@@ -88,7 +88,7 @@ done
 # the first release instead of eleven later, and it exercises the identity
 # regexp published in SECURITY.md.
 cosign verify-blob --bundle "$work/SHA256SUMS.sigstore.json" \
-  --certificate-identity-regexp '^https://github\.com/us/crw/\.github/workflows/release\.yml@refs/(tags/v.*|heads/main)$' \
+  --certificate-identity-regexp '^https://github\.com/(us|fastcrw)/crw/\.github/workflows/release\.yml@refs/(tags/v.*|heads/main)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   "$work/SHA256SUMS"
 

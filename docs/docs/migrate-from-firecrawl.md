@@ -286,7 +286,7 @@ console.log(result.json);
 
 ## Behavioral differences to validate
 
-The following table lists the gaps documented in [the capability matrix](https://github.com/us/crw/blob/main/COMPATIBILITY-firecrawl.md). Validate each that applies to your workload **before** switching production traffic.
+The following table lists the gaps documented in [the capability matrix](https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md). Validate each that applies to your workload **before** switching production traffic.
 
 | Feature | Firecrawl | fastCRW | Action required |
 |---|---|---|---|
@@ -403,4 +403,4 @@ The following Firecrawl Cloud capabilities have no equivalent in fastCRW and are
 
 Bring-your-own-proxy IS supported on a self-hosted instance: set a pool in `[proxy]`, or pass `proxy` on the scrape body. See [Proxies](/docs/proxies).
 
-For any capability not in the matrix above, check [the capability matrix](https://github.com/us/crw/blob/main/COMPATIBILITY-firecrawl.md) which is the authoritative reference.
+For any capability not in the matrix above, check [the capability matrix](https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md) which is the authoritative reference.

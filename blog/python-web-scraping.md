@@ -446,7 +446,7 @@ def scrape_with_retry(url: str, session: requests.Session | None = None) -> dict
 
 |  | Self-Hosted CRW | fastCRW Cloud |
 | --- | --- | --- |
-| Setup | `docker run -p 3000:3000 ghcr.io/us/crw:latest` | Sign up at [fastcrw.com](https://fastcrw.com) |
+| Setup | `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest` | Sign up at [fastcrw.com](https://fastcrw.com) |
 | Cost | Free (your infrastructure) | Pay per request |
 | API URL | `http://localhost:3000` | `https://api.fastcrw.com` |
 | Proxy rotation | Not included | Built-in |
@@ -458,4 +458,4 @@ Python web scraping has evolved. While requests + Beautiful Soup and Scrapy rema
 
 For RAG and AI applications, see our [RAG pipeline guide](/blog/rag-pipeline-with-crw). For a comparison with other scraping APIs, check [CRW vs. Firecrawl](/blog/firecrawl-vs-crawl4ai-vs-crw).
 
-Get started: [self-host CRW](https://github.com/us/crw) or try [fastCRW cloud](https://fastcrw.com).
+Get started: [self-host CRW](https://github.com/fastcrw/crw) or try [fastCRW cloud](https://fastcrw.com).

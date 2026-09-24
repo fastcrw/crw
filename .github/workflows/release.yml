@@ -553,7 +553,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_PAT }}
         run: |
           set -euo pipefail
-          gh api repos/us/apt-crw/dispatches \
+          gh api repos/fastcrw/apt-crw/dispatches \
             -f event_type=crw-release \
             -f "client_payload[version]=${{ needs.release-context.outputs.version }}" \
             -f "client_payload[correlation_id]=${{ needs.release-context.outputs.correlation_id }}"
@@ -570,7 +570,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_PAT }}
         run: |
           set -euo pipefail
-          gh api repos/us/homebrew-crw/dispatches \
+          gh api repos/fastcrw/homebrew-crw/dispatches \
             -f event_type=crw-release \
             -f "client_payload[version]=${{ needs.release-context.outputs.version }}" \
             -f "client_payload[correlation_id]=${{ needs.release-context.outputs.correlation_id }}"

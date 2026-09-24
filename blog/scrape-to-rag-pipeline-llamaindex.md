@@ -23,7 +23,7 @@ We'll crawl a site with CRW, chunk the markdown, embed it with OpenAI, store vec
 
 ## Prerequisites
 
-- CRW running locally: `docker run -p 3000:3000 ghcr.io/us/crw:latest`
+- CRW running locally: `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`
 - Python 3.10+ and an OpenAI API key
 
 ```
@@ -285,7 +285,7 @@ This keeps the expensive index in memory once and answers each request in millis
 - Read [How to Build a RAG Pipeline with CRW](/blog/rag-pipeline-with-crw) for a LangChain variant
 - See [Website to Markdown with CRW](/blog/website-to-markdown) for extraction options
 
-Self-host CRW from [GitHub](https://github.com/us/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping.
+Self-host CRW from [GitHub](https://github.com/fastcrw/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping.
 
 ## FAQ
 

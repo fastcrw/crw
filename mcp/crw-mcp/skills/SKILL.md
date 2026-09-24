@@ -6,7 +6,7 @@ metadata:
   author: us
   version: "0.3.0"
   homepage: https://fastcrw.com
-  repository: https://github.com/us/crw
+  repository: https://github.com/fastcrw/crw
 allowed-tools: Bash(crw:*) Bash(curl:*) Read
 ---
 
@@ -196,6 +196,6 @@ Available fields: `title`, `url`, `description`, `snippet`, `position`,
 
 - Cloud API: https://fastcrw.com — 1000 one-time lifetime free credits (never resets, not monthly)
 - Docs: https://docs.fastcrw.com
-- GitHub: https://github.com/us/crw
+- GitHub: https://github.com/fastcrw/crw
 - Native API: `/v1/scrape`, `/v1/crawl`, `/v1/map`, and `/v1/search` are the recommended routes for new CRW integrations
 - Firecrawl migration: `/v2/*` is a compatibility layer, not the default API for new builds

@@ -1,10 +1,10 @@
 # crw-crawl
 
-Async BFS web crawler with rate limiting and robots.txt support for the [CRW](https://github.com/us/crw) web scraper.
+Async BFS web crawler with rate limiting and robots.txt support for the [CRW](https://github.com/fastcrw/crw) web scraper.
 
 [![crates.io](https://img.shields.io/crates/v/crw-crawl.svg)](https://crates.io/crates/crw-crawl)
 [![docs.rs](https://docs.rs/crw-crawl/badge.svg)](https://docs.rs/crw-crawl)
-[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/us/crw/blob/main/LICENSE)
+[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/fastcrw/crw/blob/main/LICENSE)
 
 ## Overview
 
@@ -168,7 +168,7 @@ jitter_factor = 0.2         # ±20% randomized delay between requests
 
 ## Part of CRW
 
-This crate is part of the [CRW](https://github.com/us/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
+This crate is part of the [CRW](https://github.com/fastcrw/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
 
 This crate (`crw-crawl`) is the async BFS crawler with robots.txt & sitemap
 support. For the full crate table and dependency graph, see
@@ -176,4 +176,4 @@ support. For the full crate table and dependency graph, see
 
 ## License
 
-AGPL-3.0 — see [LICENSE](https://github.com/us/crw/blob/main/LICENSE).
+AGPL-3.0 — see [LICENSE](https://github.com/fastcrw/crw/blob/main/LICENSE).

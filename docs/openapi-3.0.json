@@ -3,13 +3,13 @@
   "info": {
     "title": "CRW REST API",
     "version": "0.23.0",
-    "description": "Firecrawl-compatible web scraping, crawling, mapping, search, and extraction API. Hosted at https://api.fastcrw.com; self-host with `docker run -p 3000:3000 ghcr.io/us/crw:latest`.",
+    "description": "Firecrawl-compatible web scraping, crawling, mapping, search, and extraction API. Hosted at https://api.fastcrw.com; self-host with `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`.",
     "license": {
       "name": "AGPL-3.0",
       "url": "https://opensource.org/licenses/AGPL-3.0"
     },
     "contact": {
-      "url": "https://github.com/us/crw"
+      "url": "https://github.com/fastcrw/crw"
     }
   },
   "servers": [

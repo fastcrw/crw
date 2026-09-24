@@ -1,4 +1,4 @@
-<p align="right"><a href="https://github.com/us/crw/blob/main/README.zh-CN.md">中文文档 (README.zh-CN.md)</a></p>
+<p align="right"><a href="https://github.com/fastcrw/crw/blob/main/README.zh-CN.md">中文文档 (README.zh-CN.md)</a></p>
 
 <div class="page-intro">
   <div class="page-kicker">Get Started</div>
@@ -123,7 +123,7 @@ Public 3-way run on [Firecrawl scrape-content-dataset-v1](https://huggingface.co
 | Thrown errors (3000 requests) | 0 | 0 | 0 |
 | Dependencies | single binary | Python + Playwright | Node + Redis + PG + RabbitMQ |
 
-CRW leads on every axis — top truth-recall and fastest median — with **0 thrown errors** across all 3,000 requests, and it uniquely recovers **34 URLs the other two miss** (70% more than crawl4ai and Firecrawl combined). The 63.74% denominator is **819 labeled/matchable URLs**, not 3,000 requests, not 1,000. **Two modes, one binary, one config toggle:** *recall mode* maximizes truth-recall; *fast mode* (LightPanda-only) trades recall for lower latency. Full result: [`bench/server-runs/RESULT_3WAY_1000_FULL.md`](https://github.com/us/crw/blob/main/bench/server-runs/RESULT_3WAY_1000_FULL.md).
+CRW leads on every axis — top truth-recall and fastest median — with **0 thrown errors** across all 3,000 requests, and it uniquely recovers **34 URLs the other two miss** (70% more than crawl4ai and Firecrawl combined). The 63.74% denominator is **819 labeled/matchable URLs**, not 3,000 requests, not 1,000. **Two modes, one binary, one config toggle:** *recall mode* maximizes truth-recall; *fast mode* (LightPanda-only) trades recall for lower latency. Full result: [`bench/server-runs/RESULT_3WAY_1000_FULL.md`](https://github.com/fastcrw/crw/blob/main/bench/server-runs/RESULT_3WAY_1000_FULL.md).
 
 ## What to read next
 

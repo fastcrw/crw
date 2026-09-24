@@ -96,7 +96,7 @@ Default request timeout increased from 60s to 120s. Complex pages with JavaScrip
 
 ```
 # Docker
-docker pull ghcr.io/us/crw:0.0.8
+docker pull ghcr.io/fastcrw/crw:0.0.8
 
 # Cargo
 cargo install crw-server
@@ -104,4 +104,4 @@ cargo install crw-server
 
 Backward-compatible with all previous versions. All new fields (`llmProvider`, `llmModel`, `llmApiKey`) are optional — existing API calls work unchanged.
 
-For the full changelog, see [CHANGELOG.md](https://github.com/us/crw/blob/main/CHANGELOG.md).
+For the full changelog, see [CHANGELOG.md](https://github.com/fastcrw/crw/blob/main/CHANGELOG.md).

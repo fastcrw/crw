@@ -10,12 +10,12 @@
 
 ## Short Answer
 
-**Short answer:** The best open-source web crawler for AI pipelines in 2026 is **[fastCRW](https://github.com/us/crw)** — a single small static Rust binary with low, predictable latency and no headless-browser memory baseline, all under AGPL-3.0. On a labeled public benchmark it reached 63.74% truth-recall (522 of 819 labeled URLs) with ~92% scrape success of reachable URLs and 0 errors (full distribution + one-command repro on /benchmarks). [Crawl4AI](https://github.com/unclecode/crawl4ai) (Apache-2.0) wins for Python-native extraction; [Firecrawl](https://github.com/mendableai/firecrawl) for the broadest feature surface (screenshots, PDFs); [Scrapy](https://scrapy.org/) for legacy Python pipelines. The full ranked list and license breakdown follow.
+**Short answer:** The best open-source web crawler for AI pipelines in 2026 is **[fastCRW](https://github.com/fastcrw/crw)** — a single small static Rust binary with low, predictable latency and no headless-browser memory baseline, all under AGPL-3.0. On a labeled public benchmark it reached 63.74% truth-recall (522 of 819 labeled URLs) with ~92% scrape success of reachable URLs and 0 errors (full distribution + one-command repro on /benchmarks). [Crawl4AI](https://github.com/unclecode/crawl4ai) (Apache-2.0) wins for Python-native extraction; [Firecrawl](https://github.com/mendableai/firecrawl) for the broadest feature surface (screenshots, PDFs); [Scrapy](https://scrapy.org/) for legacy Python pipelines. The full ranked list and license breakdown follow.
 
-- **Best for AI agents and RAG:** [CRW](https://github.com/us/crw) — single small static binary, low latency, built-in MCP server, Firecrawl-compatible API. AGPL-3.0.
+- **Best for AI agents and RAG:** [CRW](https://github.com/fastcrw/crw) — single small static binary, low latency, built-in MCP server, Firecrawl-compatible API. AGPL-3.0.
 - **Best Python-native AI crawler:** Crawl4AI — LLM chunking strategies, custom extraction hooks, async architecture. Apache-2.0.
 - **Best feature-complete platform:** Firecrawl (self-hosted) — screenshots, PDFs, structured extraction, mature SDKs. AGPL-3.0.
-- **Best for raw throughput:** [CRW](https://github.com/us/crw) — Rust-based, high concurrency, minimal resource usage. AGPL-3.0.
+- **Best for raw throughput:** [CRW](https://github.com/fastcrw/crw) — Rust-based, high concurrency, minimal resource usage. AGPL-3.0.
 - **Best for complex extraction logic:** Scrapy — mature Python framework, extensive middleware ecosystem. BSD.
 - **Best Go-based crawler:** Colly — simple API, fast, good for Go teams. Apache-2.0.
 - **Best for recon and discovery:** Katana — fast URL discovery, designed for security and asset enumeration. MIT.
@@ -45,13 +45,13 @@ This guide compares eight open-source crawlers specifically through the lens of 
 
 ### 1. CRW
 
-[CRW](https://github.com/us/crw) is a Rust-based web scraping API that implements the Firecrawl REST interface. It's designed from the ground up for AI use cases: clean markdown output, structured JSON extraction, and a built-in MCP server for AI agents.
+[CRW](https://github.com/fastcrw/crw) is a Rust-based web scraping API that implements the Firecrawl REST interface. It's designed from the ground up for AI use cases: clean markdown output, structured JSON extraction, and a built-in MCP server for AI agents.
 
 **Setup:**
 
 ```
 # One command, no dependencies
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 
 # Test it
 curl http://localhost:3000/v1/scrape \
@@ -233,7 +233,7 @@ For AI agents that need to scrape on demand during their reasoning:
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/us/crw:latest", "crw-mcp"]
+      "args": ["run", "-i", "--rm", "ghcr.io/fastcrw/crw:latest", "crw-mcp"]
     }
   }
 }
@@ -286,10 +286,10 @@ If AGPL is a concern for your use case, CRW is available as a managed service vi
 ### Self-Host CRW (Recommended for LLM Pipelines)
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. Single small static binary. Works on the cheapest VPS tier. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. Single small static binary. Works on the cheapest VPS tier. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Try fastCRW Cloud
 

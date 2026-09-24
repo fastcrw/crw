@@ -300,7 +300,7 @@ npx -y crw-mcp
 claude mcp add crw -- npx -y crw-mcp
 ```
 
-CRW is open-source (AGPL-3.0): [github.com/us/crw](https://github.com/us/crw)
+CRW is open-source (AGPL-3.0): [github.com/fastcrw/crw](https://github.com/fastcrw/crw)
 
 For managed hosting with a global proxy network and JS rendering: [fastcrw.com](https://fastcrw.com)
 

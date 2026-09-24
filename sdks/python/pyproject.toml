@@ -34,8 +34,8 @@ crewai = ["crewai>=0.100.0"]
 [project.urls]
 Homepage = "https://fastcrw.com"
 Documentation = "https://docs.fastcrw.com"
-Repository = "https://github.com/us/crw"
-Issues = "https://github.com/us/crw/issues"
+Repository = "https://github.com/fastcrw/crw"
+Issues = "https://github.com/fastcrw/crw/issues"
 
 [project.scripts]
 crw-mcp = "crw.__main__:main"

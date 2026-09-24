@@ -41,7 +41,7 @@ Crawl4AI has genuine strengths — Python-native extraction hooks, LLM chunking 
 
 ## 1. CRW — Best API-First Crawl4AI Alternative
 
-[CRW](https://github.com/us/crw) is a Rust-based scraping API that provides the API-first experience Crawl4AI's REST mode aims for, but purpose-built from the ground up. It implements Firecrawl's REST interface, so existing Firecrawl tooling works out of the box.
+[CRW](https://github.com/fastcrw/crw) is a Rust-based scraping API that provides the API-first experience Crawl4AI's REST mode aims for, but purpose-built from the ground up. It implements Firecrawl's REST interface, so existing Firecrawl tooling works out of the box.
 
 ### Why CRW Over Crawl4AI
 
@@ -191,10 +191,10 @@ CRW. As a single static Rust binary with no Chromium bundle, it has a far smalle
 ### Self-Host CRW for Free
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Try fastCRW Cloud
 

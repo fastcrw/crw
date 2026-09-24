@@ -194,7 +194,7 @@ The LLM dispatch is in the open-source engine. `cargo install crw` (or pull the 
 - [DeepSeek + scrape summary tutorial](/blog/deepseek-web-scraping-byok-tutorial)
 - [Build a Perplexity-style answer engine in 50 lines](/blog/build-perplexity-search-answer-engine)
 - [CRW vs Tavily vs Exa vs Perplexity](/blog/crw-vs-tavily-exa-perplexity-search-answer-api)
-- [GitHub (open-source core)](https://github.com/us/crw)
+- [GitHub (open-source core)](https://github.com/fastcrw/crw)
 
 ## FAQ
 

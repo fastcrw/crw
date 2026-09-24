@@ -5,8 +5,8 @@ Run crw with Docker Compose for the easiest setup with JS rendering included.
 ## Pre-built Image
 
 ```bash
-docker pull ghcr.io/us/crw:0.16.0
-docker run -p 3000:3000 ghcr.io/us/crw:0.16.0
+docker pull ghcr.io/fastcrw/crw:0.16.0
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:0.16.0
 ```
 
 Available tags: `latest`, `0.16` (tracks the current minor), `0.16.0` (pinned).
@@ -20,7 +20,7 @@ Use a pinned tag in production — `latest` rolls forward on every release.
 ## Docker Compose
 
 ```bash
-git clone https://github.com/us/crw.git
+git clone https://github.com/fastcrw/crw.git
 cd crw
 docker compose up
 ```

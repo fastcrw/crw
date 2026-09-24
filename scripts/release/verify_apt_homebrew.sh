@@ -23,10 +23,10 @@ v="${1:?version required}"
 
 apt_ok() {
   # contents API returns 200 if the committed .deb exists on the default branch.
-  gh api "repos/us/apt-crw/contents/pool/crw_${v}_amd64.deb" >/dev/null 2>&1
+  gh api "repos/fastcrw/apt-crw/contents/pool/crw_${v}_amd64.deb" >/dev/null 2>&1
 }
 brew_ok() {
-  gh api "repos/us/homebrew-crw/contents/Formula/crw.rb" 2>/dev/null \
+  gh api "repos/fastcrw/homebrew-crw/contents/Formula/crw.rb" 2>/dev/null \
     | jq -r .content | base64 -d 2>/dev/null | grep -q "version \"$v\""
 }
 

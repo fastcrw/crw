@@ -66,7 +66,7 @@ Chrome runs as a sidecar container in Docker Compose:
 ```
 services:
   crw:
-    image: ghcr.io/us/crw:0.0.11
+    image: ghcr.io/fastcrw/crw:0.0.11
     ports:
       - "3000:3000"
     environment:
@@ -102,7 +102,7 @@ docker compose pull
 docker compose up -d
 
 # Docker (without Chrome failover)
-docker pull ghcr.io/us/crw:0.0.11
+docker pull ghcr.io/fastcrw/crw:0.0.11
 
 # Cargo
 cargo install crw-server
@@ -112,4 +112,4 @@ If you're not using Docker Compose, Chrome failover won't be available — CRW w
 
 ## What's Next
 
-v0.0.11 significantly improves CRW's ability to handle protected sites. The next focus areas are screenshot support (returning rendered page images alongside markdown) and PDF/DOCX parsing for document extraction workflows. Follow the [GitHub repository](https://github.com/us/crw) for updates.
+v0.0.11 significantly improves CRW's ability to handle protected sites. The next focus areas are screenshot support (returning rendered page images alongside markdown) and PDF/DOCX parsing for document extraction workflows. Follow the [GitHub repository](https://github.com/fastcrw/crw) for updates.

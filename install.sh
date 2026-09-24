@@ -17,7 +17,7 @@ set -eu
 
 main() {
 
-REPO="us/crw"
+REPO="fastcrw/crw"
 INSTALL_DIR="${CRW_INSTALL_DIR:-/usr/local/bin}"
 BINARY="${CRW_BINARY:-crw}"
 

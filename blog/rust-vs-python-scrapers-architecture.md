@@ -75,7 +75,7 @@ Rust vs Python for scrapers isn't a speed race on the network-bound part — it'
 docker compose up   # ~10MB download, no Chromium resident, AGPL-3.0
 ```
 
-Managed Cloud: one-time lifetime 1000 free credits, no card. [fastcrw.com](https://fastcrw.com) · [GitHub](https://github.com/us/crw)
+Managed Cloud: one-time lifetime 1000 free credits, no card. [fastcrw.com](https://fastcrw.com) · [GitHub](https://github.com/fastcrw/crw)
 
 Related: [Scraping latency explained](/blog/scraping-latency-explained) · [Fastest web scraping API](/blog/fastest-web-scraping-api) · [Web scraping in Rust](/blog/web-scraping-in-rust)
 

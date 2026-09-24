@@ -251,7 +251,7 @@ def render():
 
 <line x1="{PAD}" y1="718" x2="{right}" y2="718" stroke="{SPOKE}" stroke-width="1"/>
 {_text(PAD, 740, "Firecrawl's own public 1,000-URL dataset, 819 labeled URLs, all three tools run through the same matcher (diagnose_3way.py), 2026-05-08.", CAP, 11.5)}
-{_text(right, 740, "github.com/us/crw", CAP, 11.5, 400, "end", MONO)}
+{_text(right, 740, "github.com/fastcrw/crw", CAP, 11.5, 400, "end", MONO)}
 </svg>
 """
 

@@ -150,4 +150,4 @@ Search is available right now in the [playground](/playground) — no API key ne
 - [Search endpoint docs](https://docs.fastcrw.com/search)
 - [SDK examples](https://docs.fastcrw.com/sdk-examples)
 - [Credit costs](https://docs.fastcrw.com/credit-costs)
-- [GitHub (open-source core)](https://github.com/us/crw)
+- [GitHub (open-source core)](https://github.com/fastcrw/crw)

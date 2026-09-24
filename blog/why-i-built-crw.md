@@ -204,7 +204,7 @@ CRW is the right tool when you want a **lightweight, self-hosted, Firecrawl-comp
 CRW is AGPL-3.0 licensed. Run it anywhere:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or install the CLI directly:
@@ -213,7 +213,7 @@ Or install the CLI directly:
 cargo install crw
 ```
 
-Source code: [github.com/us/crw](https://github.com/us/crw) · [Documentation](https://us.github.io/crw)
+Source code: [github.com/fastcrw/crw](https://github.com/fastcrw/crw) · [Documentation](https://us.github.io/crw)
 
 ### Hosted Path — fastCRW
 
@@ -243,7 +243,7 @@ CRW is the open-source Rust scraping engine licensed under AGPL-3.0. You can sel
 
 ### Can I contribute to CRW?
 
-Yes — pull requests are welcome on [GitHub](https://github.com/us/crw). The most useful contributions right now are: additional test coverage for edge-case HTML documents, improved markdown conversion fidelity for specific page types (tables, code blocks, nested lists), and documentation improvements. Open an issue before starting a large feature so we can align on scope.
+Yes — pull requests are welcome on [GitHub](https://github.com/fastcrw/crw). The most useful contributions right now are: additional test coverage for edge-case HTML documents, improved markdown conversion fidelity for specific page types (tables, code blocks, nested lists), and documentation improvements. Open an issue before starting a large feature so we can align on scope.
 
 ### How does CRW make money?
 

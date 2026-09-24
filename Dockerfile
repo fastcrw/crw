@@ -154,7 +154,7 @@ COPY config.docker.toml /app/config.docker.toml
 
 WORKDIR /app
 
-LABEL io.modelcontextprotocol.server.name="io.github.us/crw"
+LABEL io.modelcontextprotocol.server.name="io.github.fastcrw/crw"
 
 EXPOSE 3000
 

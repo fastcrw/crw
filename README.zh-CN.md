@@ -96,7 +96,7 @@ crw setup
 项目需要 Rust 1.85 或更高版本：
 
 ```bash
-git clone https://github.com/us/crw
+git clone https://github.com/fastcrw/crw
 cd crw
 make check-fast
 ```

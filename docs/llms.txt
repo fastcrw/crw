@@ -1,6 +1,6 @@
 # CRW Documentation
 
-> CRW is a high-performance web scraper for agents and developer workflows. Start with one `scrape` request, then branch into `crawl`, `map`, `search`, extraction, or MCP as needed. Source: https://github.com/us/crw
+> CRW is a high-performance web scraper for agents and developer workflows. Start with one `scrape` request, then branch into `crawl`, `map`, `search`, extraction, or MCP as needed. Source: https://github.com/fastcrw/crw
 
 ## Full context (single-fetch)
 - **All routes, MCP tools, patterns, formats, errors in one file**: https://docs.fastcrw.com/llms-full.txt
@@ -41,43 +41,43 @@
 - [LLM BYOK extraction explained](https://docs.fastcrw.com/glossary/web-extraction-apis/llm-byok-extraction-explained/)
 
 ## Get Started
-- [Introduction](https://raw.githubusercontent.com/us/crw/main/docs/docs/introduction.md): The fastest way to understand what CRW does and where to start
-- [中文文档 (README.zh-CN.md)](https://github.com/us/crw/blob/main/README.zh-CN.md): Chinese README — same content, fully translated
-- [Quick Start](https://raw.githubusercontent.com/us/crw/main/docs/docs/quick-start.md): Make your first successful request in under a minute
-- [Authentication](https://raw.githubusercontent.com/us/crw/main/docs/docs/authentication.md): Hosted API keys and self-hosted Bearer auth
-- [API Playground](https://raw.githubusercontent.com/us/crw/main/docs/docs/playground.md): Interactive testing before you write code
-- [Installation](https://raw.githubusercontent.com/us/crw/main/docs/docs/installation.md): Package-level install options
+- [Introduction](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/introduction.md): The fastest way to understand what CRW does and where to start
+- [中文文档 (README.zh-CN.md)](https://github.com/fastcrw/crw/blob/main/README.zh-CN.md): Chinese README — same content, fully translated
+- [Quick Start](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/quick-start.md): Make your first successful request in under a minute
+- [Authentication](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/authentication.md): Hosted API keys and self-hosted Bearer auth
+- [API Playground](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/playground.md): Interactive testing before you write code
+- [Installation](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/installation.md): Package-level install options
 
 ## Core APIs
-- [REST API](https://raw.githubusercontent.com/us/crw/main/docs/docs/rest-api.md): Route map and endpoint chooser
-- [Scrape](https://raw.githubusercontent.com/us/crw/main/docs/docs/scraping.md): `POST /v1/scrape` for single-page extraction
-- [Crawl](https://raw.githubusercontent.com/us/crw/main/docs/docs/crawling.md): `POST /v1/crawl` plus `GET /v1/crawl/{id}` for async multi-page jobs
-- [Search](https://raw.githubusercontent.com/us/crw/main/docs/docs/search.md): Hosted search-first workflow when you do not know the URLs yet
-- [Map](https://raw.githubusercontent.com/us/crw/main/docs/docs/map.md): `POST /v1/map` for URL discovery without full scraping
-- [Extract](https://raw.githubusercontent.com/us/crw/main/docs/docs/extract.md): Structured JSON extraction through `scrape` using `formats: ["json"]`
+- [REST API](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/rest-api.md): Route map and endpoint chooser
+- [Scrape](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/scraping.md): `POST /v1/scrape` for single-page extraction
+- [Crawl](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/crawling.md): `POST /v1/crawl` plus `GET /v1/crawl/{id}` for async multi-page jobs
+- [Search](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/search.md): Hosted search-first workflow when you do not know the URLs yet
+- [Map](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/map.md): `POST /v1/map` for URL discovery without full scraping
+- [Extract](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/extract.md): Structured JSON extraction through `scrape` using `formats: ["json"]`
 
 ## Integrations
-- [MCP Server](https://raw.githubusercontent.com/us/crw/main/docs/docs/mcp.md): Built-in MCP server for Claude, Codex, Cursor, and other hosts
-- [MCP Client Setup](https://raw.githubusercontent.com/us/crw/main/docs/docs/mcp-clients.md): Copy-paste setup for Claude Code, Claude Desktop, OpenAI Codex CLI, Cursor, Windsurf, Cline, Continue, and Gemini CLI
-- [crw-browse](https://raw.githubusercontent.com/us/crw/main/docs/docs/crw-browse.md): Separate browser-automation MCP server (`command: crw-browse`) for real stateful browser control (click, navigate, accessibility tree); self-hosted, v0.4.0+
-- [SDK Examples](https://raw.githubusercontent.com/us/crw/main/docs/docs/sdk-examples.md): Copy-paste examples in multiple languages
-- [Framework Integrations](https://raw.githubusercontent.com/us/crw/main/docs/docs/integrations.md): CrewAI, LangChain, n8n, OpenClaw, and related integrations
-- [Agent Onboarding](https://raw.githubusercontent.com/us/crw/main/docs/docs/agent-onboarding.md): Machine-readable guidance for tool-using agents
+- [MCP Server](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/mcp.md): Built-in MCP server for Claude, Codex, Cursor, and other hosts
+- [MCP Client Setup](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/mcp-clients.md): Copy-paste setup for Claude Code, Claude Desktop, OpenAI Codex CLI, Cursor, Windsurf, Cline, Continue, and Gemini CLI
+- [crw-browse](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/crw-browse.md): Separate browser-automation MCP server (`command: crw-browse`) for real stateful browser control (click, navigate, accessibility tree); self-hosted, v0.4.0+
+- [SDK Examples](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/sdk-examples.md): Copy-paste examples in multiple languages
+- [Framework Integrations](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/integrations.md): CrewAI, LangChain, n8n, OpenClaw, and related integrations
+- [Agent Onboarding](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/agent-onboarding.md): Machine-readable guidance for tool-using agents
 
 ## Deploy
-- [Self-Hosting](https://raw.githubusercontent.com/us/crw/main/docs/docs/self-hosting.md): Local and private deployment path
-- [Docker](https://raw.githubusercontent.com/us/crw/main/docs/docs/docker.md): Container and compose guidance
-- [Configuration](https://raw.githubusercontent.com/us/crw/main/docs/docs/configuration.md): TOML config and env var mapping
-- [Self-Hosting Hardening](https://raw.githubusercontent.com/us/crw/main/docs/docs/self-hosting-hardening.md): Production security guidance
-- [JS Rendering](https://raw.githubusercontent.com/us/crw/main/docs/docs/js-rendering.md): Browser-backed rendering guidance
+- [Self-Hosting](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/self-hosting.md): Local and private deployment path
+- [Docker](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/docker.md): Container and compose guidance
+- [Configuration](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/configuration.md): TOML config and env var mapping
+- [Self-Hosting Hardening](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/self-hosting-hardening.md): Production security guidance
+- [JS Rendering](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/js-rendering.md): Browser-backed rendering guidance
 
 ## Reference
-- [Response Shapes](https://raw.githubusercontent.com/us/crw/main/docs/docs/response-shapes.md): Common API envelopes in one place
-- [Output Formats](https://raw.githubusercontent.com/us/crw/main/docs/docs/output-formats.md): `markdown`, `html`, `rawHtml`, `plainText`, `links`, `json`
-- [Error Codes](https://raw.githubusercontent.com/us/crw/main/docs/docs/error-codes.md): Failure semantics and machine-readable codes
-- [Rate Limits](https://raw.githubusercontent.com/us/crw/main/docs/docs/rate-limits.md): Hosted throttling guidance
-- [Credit Costs](https://raw.githubusercontent.com/us/crw/main/docs/docs/credit-costs.md): Hosted billing behavior
-- [Compatibility](https://raw.githubusercontent.com/us/crw/main/docs/docs/compatibility.md): Firecrawl compatibility notes
-- [Changelog](https://raw.githubusercontent.com/us/crw/main/docs/docs/changelog.md): Release notes
-- [Architecture](https://raw.githubusercontent.com/us/crw/main/docs/docs/architecture.md): Internal design overview
-- [Crates](https://raw.githubusercontent.com/us/crw/main/docs/docs/crates.md): Rust workspace breakdown
+- [Response Shapes](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/response-shapes.md): Common API envelopes in one place
+- [Output Formats](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/output-formats.md): `markdown`, `html`, `rawHtml`, `plainText`, `links`, `json`
+- [Error Codes](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/error-codes.md): Failure semantics and machine-readable codes
+- [Rate Limits](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/rate-limits.md): Hosted throttling guidance
+- [Credit Costs](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/credit-costs.md): Hosted billing behavior
+- [Compatibility](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/compatibility.md): Firecrawl compatibility notes
+- [Changelog](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/changelog.md): Release notes
+- [Architecture](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/architecture.md): Internal design overview
+- [Crates](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/crates.md): Rust workspace breakdown

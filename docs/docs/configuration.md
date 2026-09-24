@@ -229,5 +229,5 @@ docker run -p 3000:3000 \
   -e CRW_SERVER__PORT=3000 \
   -e CRW_RENDERER__MODE=lightpanda \
   -e CRW_EXTRACTION__LLM__API_KEY=sk-... \
-  ghcr.io/us/crw:latest
+  ghcr.io/fastcrw/crw:latest
 ```

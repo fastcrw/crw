@@ -62,13 +62,13 @@ Apify has real strengths — the Actor marketplace, managed infrastructure, and 
 
 ## 1. fastCRW — Best for AI Agent Scraping
 
-[fastCRW](https://github.com/us/crw) is a Rust-based scraping and search server that takes the opposite approach from Apify. Instead of a full platform with marketplaces and cloud runtimes, fastCRW gives you a single statically-linked binary with a tiny idle footprint and fast cold start that turns URLs into clean markdown with low, local-first latency — see the full latency distribution and one-command repro on our [public benchmark](/benchmarks).
+[fastCRW](https://github.com/fastcrw/crw) is a Rust-based scraping and search server that takes the opposite approach from Apify. Instead of a full platform with marketplaces and cloud runtimes, fastCRW gives you a single statically-linked binary with a tiny idle footprint and fast cold start that turns URLs into clean markdown with low, local-first latency — see the full latency distribution and one-command repro on our [public benchmark](/benchmarks).
 
 ### Why fastCRW Over Apify
 
 - **Purpose-built for AI:** Built-in MCP server (`crw_search`, `crw_scrape`, `crw_crawl`, `crw_map`, `crw_check_crawl_status`), markdown output optimized for LLMs, structured JSON extraction via `/v1/scrape` with `formats: ["json"]`. Designed for the use case most AI teams need.
 - **Self-host for free:** One Docker command, tiny idle footprint, runs on a $5/month VPS. No per-request fees, no compute metering.
-- **Firecrawl-compatible on overlap surface:** If you're moving off Apify but already had a Firecrawl-shaped client (LangChain's `FirecrawlLoader`, the official `firecrawl` Rust/JS SDKs), fastCRW accepts the same calls after a base-URL swap plus minor field-name and error-envelope adjustments. See the [compatibility matrix](https://github.com/us/crw/blob/main/COMPATIBILITY-firecrawl.md) for row-level diff.
+- **Firecrawl-compatible on overlap surface:** If you're moving off Apify but already had a Firecrawl-shaped client (LangChain's `FirecrawlLoader`, the official `firecrawl` Rust/JS SDKs), fastCRW accepts the same calls after a base-URL swap plus minor field-name and error-envelope adjustments. See the [compatibility matrix](https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md) for row-level diff.
 - **No vendor lock-in:** Standard REST API. Your client code works with fastCRW, Firecrawl, or any compatible service.
 - **Low local-first latency:** Runs next to your own workloads instead of going through Apify's cloud runtime — see the full latency distribution on our [public benchmark](/benchmarks).
 
@@ -254,7 +254,7 @@ The break-even point is low. If you're scraping more than a few hundred pages pe
 docker compose up
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Try fastCRW Cloud
 
@@ -271,9 +271,9 @@ Don't want to manage servers? [fastCRW](https://fastcrw.com) is the managed vers
 - Octoparse: [octoparse.com](https://www.octoparse.com/)
 - Zyte: [zyte.com](https://www.zyte.com/)
 - fastCRW benchmark methodology and raw data: [benchmarks/firecrawl-dataset](/benchmarks/firecrawl-dataset)
-- fastCRW ↔ Firecrawl capability matrix (overlap surface, divergences): [COMPATIBILITY-firecrawl.md](https://github.com/us/crw/blob/main/COMPATIBILITY-firecrawl.md)
+- fastCRW ↔ Firecrawl capability matrix (overlap surface, divergences): [COMPATIBILITY-firecrawl.md](https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md)
 
-*Pricing and feature claims verified on 2026-05-11. If you spot stale information, please open an issue on [github.com/us/crw](https://github.com/us/crw).*
+*Pricing and feature claims verified on 2026-05-11. If you spot stale information, please open an issue on [github.com/fastcrw/crw](https://github.com/fastcrw/crw).*
 
 Also see: [Apify vs fastCRW: When to migrate (2026)](/alternatives/apify) · [Firecrawl alternative](/alternatives/firecrawl) · [Firecrawl self-hosted Rust crate](/alternatives/firecrawl-self-hosted-rust) · [Firecrawl vs Crawl4AI vs CRW](/blog/firecrawl-vs-crawl4ai-vs-crw) · [CRW vs Crawl4AI](/blog/crw-vs-crawl4ai) · [Best self-hosted scrapers](/blog/best-self-hosted-scrapers)
 

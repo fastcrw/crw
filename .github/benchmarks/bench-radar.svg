@@ -60,5 +60,5 @@
 
 <line x1="40" y1="718" x2="1080" y2="718" stroke="#E6E8E6" stroke-width="1"/>
 <text x="40.0" y="740.0" fill="#A2A9A4" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" text-anchor="start">Firecrawl's own public 1,000-URL dataset, 819 labeled URLs, all three tools run through the same matcher (diagnose_3way.py), 2026-05-08.</text>
-<text x="1080.0" y="740.0" fill="#A2A9A4" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" font-weight="400" text-anchor="end">github.com/us/crw</text>
+<text x="1080.0" y="740.0" fill="#A2A9A4" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="11.5" font-weight="400" text-anchor="end">github.com/fastcrw/crw</text>
 </svg>

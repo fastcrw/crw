@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Verify the MCP registry has io.github.us/crw at the expected version.
+# Verify the MCP registry has io.github.fastcrw/crw at the expected version.
 #
-# Usage: verify_mcp_registry.sh <version> [server_name=io.github.us/crw]
+# Usage: verify_mcp_registry.sh <version> [server_name=io.github.fastcrw/crw]
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
 v="${1:?version required}"
-name="${2:-io.github.us/crw}"
+name="${2:-io.github.fastcrw/crw}"
 
 # Ask for the ONE version we just published. `search=` alone is still paginated
 # (30 per page, oldest first), so it returns our earliest 30 releases and the new

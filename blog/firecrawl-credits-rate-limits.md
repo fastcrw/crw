@@ -104,7 +104,7 @@ Every guardrail above manages a meter you do not control. The principle worth in
 ## Sources
 
 - Firecrawl pricing and credit docs: [firecrawl.dev/pricing](https://www.firecrawl.dev/pricing) (verified 2026-05-18)
-- fastCRW credit model and self-host: [github.com/us/crw](https://github.com/us/crw)
+- fastCRW credit model and self-host: [github.com/fastcrw/crw](https://github.com/fastcrw/crw)
 
 Related: [Firecrawl pricing explained](/blog/firecrawl-pricing-explained) · [Migrate from Firecrawl](/blog/migrate-from-firecrawl)
 

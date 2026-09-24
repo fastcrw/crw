@@ -261,9 +261,9 @@ body: JSON.stringify({
 ```
  Aggressive Bot Detection Some sites block requests from known cloud IP ranges. If self-hosted CRW is getting blocked, fastCRW's proxy network rotates IPs automatically. Self-Host or Use fastCRW Cloud Self-Host for Free
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
- Source: github.com/us/crw
+ Source: github.com/fastcrw/crw
 
 ### fastCRW Cloud
 

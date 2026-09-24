@@ -1,6 +1,6 @@
 # crw-sdk
 
-TypeScript/JavaScript SDK for [CRW](https://github.com/us/crw) — the fast,
+TypeScript/JavaScript SDK for [CRW](https://github.com/fastcrw/crw) — the fast,
 Rust-native web data API. Use native `/v1` methods for new CRW integrations;
 Firecrawl v2 compatibility is available separately for migration work.
 

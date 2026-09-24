@@ -1,10 +1,10 @@
 # crw-server
 
-Firecrawl-compatible API server for the [CRW](https://github.com/us/crw) web scraper.
+Firecrawl-compatible API server for the [CRW](https://github.com/fastcrw/crw) web scraper.
 
 [![crates.io](https://img.shields.io/crates/v/crw-server.svg)](https://crates.io/crates/crw-server)
 [![docs.rs](https://docs.rs/crw-server/badge.svg)](https://docs.rs/crw-server)
-[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/us/crw/blob/main/LICENSE)
+[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/fastcrw/crw/blob/main/LICENSE)
 
 ## Overview
 
@@ -128,7 +128,7 @@ CRW_SERVER__PORT=8080 CRW_CRAWLER__MAX_CONCURRENCY=20 crw-server
 
 ```bash
 # Pre-built image
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 
 # With JS rendering sidecar
 docker compose up
@@ -152,7 +152,7 @@ async fn main() {
 
 ## Part of CRW
 
-This crate is part of the [CRW](https://github.com/us/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
+This crate is part of the [CRW](https://github.com/fastcrw/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
 
 This crate (`crw-server`) is the Axum HTTP API - both a library (embedded by
 `crw-cli` for `crw serve`) and its own binary (the production container
@@ -161,4 +161,4 @@ entrypoint). For the full crate table and dependency graph, see
 
 ## License
 
-AGPL-3.0 — see [LICENSE](https://github.com/us/crw/blob/main/LICENSE).
+AGPL-3.0 — see [LICENSE](https://github.com/fastcrw/crw/blob/main/LICENSE).

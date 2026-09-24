@@ -14,8 +14,8 @@ How crw-opencore ships, what to do when something breaks, and how to keep the pi
 | npm              | `publish-npm`        | `verify_npm.sh` — existence + optionalDeps pin + smoke |
 | GHCR (Docker)    | `publish-docker`     | `verify_docker.sh` — version + latest + major.minor    |
 | MCP Registry     | `publish-mcp-registry` | `verify_mcp_registry.sh`                             |
-| APT repo (us/apt-crw) | `update-apt`    | `verify_apt_homebrew.sh` — commit-status correlation   |
-| Homebrew tap (us/homebrew-crw) | `update-homebrew` | same                                       |
+| APT repo (fastcrw/apt-crw) | `update-apt`    | `verify_apt_homebrew.sh` — commit-status correlation   |
+| Homebrew tap (fastcrw/homebrew-crw) | `update-homebrew` | same                                       |
 
 Each tag also produces `release-audit-<version>.md` as a workflow artifact and attaches it to the GitHub Release.
 
@@ -80,7 +80,7 @@ These tags were cut while the release pipeline silently failed (cargo publish ou
 | `CARGO_REGISTRY_TOKEN` | `publish-crates`               | crates.io account → API tokens → revoke + create new with `publish-update` scope |
 | `PYPI_TOKEN`         | `publish-pypi`                   | pypi.org account → API tokens → scoped to project `crw` |
 | npm (no secret)      | `publish-npm`, `publish-npm-sdk` | trusted publishing, configured per package on npmjs.com; nothing to rotate |
-| `GH_DISPATCH_PAT`    | `dispatch-release`, `update-apt`, `update-homebrew` | GitHub fine-grained PAT with `actions:write` on this repo + `us/apt-crw` + `us/homebrew-crw` |
+| `GH_DISPATCH_PAT`    | `dispatch-release`, `update-apt`, `update-homebrew` | GitHub fine-grained PAT with `actions:write` on this repo + `fastcrw/apt-crw` + `fastcrw/homebrew-crw` |
 
 `GITHUB_TOKEN` is auto-provisioned and does not need rotation.
 

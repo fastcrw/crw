@@ -3,11 +3,11 @@
 Standalone CLI tool for scraping URLs to markdown, JSON, HTML, or plain text — no server needed.
 
 [![crates.io](https://img.shields.io/crates/v/crw-cli.svg)](https://crates.io/crates/crw-cli)
-[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/us/crw/blob/main/LICENSE)
+[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/fastcrw/crw/blob/main/LICENSE)
 
 ## Overview
 
-`crw-cli` is a single-binary web scraper that fetches any URL and outputs clean content to stdout. Part of the [CRW](https://github.com/us/crw) project — same extraction engine as the server, but with zero setup.
+`crw-cli` is a single-binary web scraper that fetches any URL and outputs clean content to stdout. Part of the [CRW](https://github.com/fastcrw/crw) project — same extraction engine as the server, but with zero setup.
 
 - **6 output formats** — markdown, JSON, HTML, raw HTML, plain text, links
 - **Main content extraction** — automatically strips nav, footer, ads, scripts
@@ -143,7 +143,7 @@ Options:
 
 ## Part of CRW
 
-This crate is part of the [CRW](https://github.com/us/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
+This crate is part of the [CRW](https://github.com/fastcrw/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
 
 This crate (`crw-cli`) builds the standalone `crw` binary. For the full
 crate table and dependency graph, see
@@ -151,4 +151,4 @@ crate table and dependency graph, see
 
 ## License
 
-AGPL-3.0 — see [LICENSE](https://github.com/us/crw/blob/main/LICENSE).
+AGPL-3.0 — see [LICENSE](https://github.com/fastcrw/crw/blob/main/LICENSE).

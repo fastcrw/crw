@@ -76,7 +76,7 @@ cargo build -p crw-browse --release
 # Binary: target/release/crw-browse
 ```
 
-Prebuilt binaries are attached to the [v0.4.0 GitHub release](https://github.com/us/crw/releases/tag/v0.4.0) and later.
+Prebuilt binaries are attached to the [v0.4.0 GitHub release](https://github.com/fastcrw/crw/releases/tag/v0.4.0) and later.
 
 ## Start crw-browse
 

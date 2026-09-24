@@ -74,4 +74,4 @@ platform_packages = [
 package = "crw"
 
 [docker]
-image = "ghcr.io/us/crw"
+image = "ghcr.io/fastcrw/crw"

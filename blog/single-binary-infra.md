@@ -112,7 +112,7 @@ services:
     image: your-app:latest
 
   crw:
-    image: ghcr.io/us/crw:latest
+    image: ghcr.io/fastcrw/crw:latest
     restart: unless-stopped
     # Internal only — app communicates over Docker network
     expose:
@@ -137,10 +137,10 @@ Download the CRW binary directly or pull the Docker image:
 
 ```
 # Docker
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 
 # Or download the binary
-curl -L https://github.com/us/crw/releases/latest/download/crw-linux-x86_64 -o crw
+curl -L https://github.com/fastcrw/crw/releases/latest/download/crw-linux-x86_64 -o crw
 chmod +x crw && ./crw serve
 ```
 

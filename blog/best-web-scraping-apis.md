@@ -40,7 +40,7 @@ This guide evaluates eight scraping APIs against these AI-specific criteria. We 
 
 ### 1. CRW / fastCRW
 
-[CRW](https://github.com/us/crw) is an open-source, Rust-based web scraping API that implements the Firecrawl REST interface. It's a single small static binary with no Redis or Playwright dependencies and no headless-browser memory baseline. [fastCRW](https://fastcrw.com) is the managed cloud version.
+[CRW](https://github.com/fastcrw/crw) is an open-source, Rust-based web scraping API that implements the Firecrawl REST interface. It's a single small static binary with no Redis or Playwright dependencies and no headless-browser memory baseline. [fastCRW](https://fastcrw.com) is the managed cloud version.
 
 **Why it stands out for AI:** CRW was built specifically for AI agent use cases. The built-in MCP server means your Claude, GPT, or custom agent gets `scrape`, `crawl`, and `map` tools with zero extra configuration. Latency is low and predictable because there is no browser render in the request path — fast enough for synchronous agent tool calls without timeout issues.
 
@@ -247,10 +247,10 @@ CRW gives you both options with the same API: self-host the open-source binary, 
 ### Self-Host CRW (Free, Open Source)
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Try fastCRW Cloud
 

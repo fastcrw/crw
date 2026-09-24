@@ -25,7 +25,7 @@ The system has four components:
 
 ## Prerequisites
 
-- CRW running locally: `docker run -p 3000:3000 ghcr.io/us/crw:latest`
+- CRW running locally: `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`
 - Python 3.10+
 - An OpenAI API key (for change summarization)
 
@@ -550,7 +550,7 @@ Competitor monitoring requires clean, consistent content extraction across diver
 - Check out [Website to Markdown with CRW](/blog/website-to-markdown) for more on CRW's content extraction
 - See [CRW vs Firecrawl](/blog/firecrawl-vs-crawl4ai-vs-crw) for a detailed comparison
 
-Self-host CRW from [GitHub](https://github.com/us/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping with no infrastructure to maintain.
+Self-host CRW from [GitHub](https://github.com/fastcrw/crw) for free, or use [fastCRW](https://fastcrw.com) for managed cloud scraping with no infrastructure to maintain.
 
 ## FAQ
 

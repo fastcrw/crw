@@ -34,7 +34,7 @@ lower latency. Same binary, same API; pick accuracy or latency per workload.
 | Reproducible public benchmark | Yes | Vendor-published only | Vendor-published only |
 
 fastCRW's idle memory baseline was measured with `docker top <container> -eo rss`, 15 seconds
-after `docker run -p 3000:3000 ghcr.io/us/crw:latest` (crw v0.30.0). `docker stats` under-reports
+after `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest` (crw v0.30.0). `docker stats` under-reports
 at this scale and should not be used for this measurement.
 
 ## Reproduce it yourself

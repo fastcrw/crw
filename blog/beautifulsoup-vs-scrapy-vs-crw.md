@@ -294,7 +294,7 @@ Scrapy has dedicated deployment options: Scrapyd (a deployment daemon), Scrapy C
 One Docker command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 It's a single small static binary in a lean container that runs comfortably on a $5 VPS. There's nothing to configure, no dependencies to manage, no runtime to set up. For teams that want scraping as infrastructure rather than scraping as code, this operational simplicity is significant. See our [post on low-memory scraping](/blog/low-memory-scraping) for why this matters at scale.
@@ -353,10 +353,10 @@ Because CRW exposes a standard REST API, it integrates naturally with any Python
 CRW is AGPL-3.0 licensed. Run it on your own infrastructure at zero cost:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[View the source on GitHub](https://github.com/us/crw) · [Read the docs](https://us.github.io/crw)
+[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://us.github.io/crw)
 
 ### Hosted Path — Use fastCRW
 

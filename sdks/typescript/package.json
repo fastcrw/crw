@@ -7,10 +7,10 @@
   "homepage": "https://fastcrw.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/us/crw.git"
+    "url": "https://github.com/fastcrw/crw.git"
   },
   "bugs": {
-    "url": "https://github.com/us/crw/issues"
+    "url": "https://github.com/fastcrw/crw/issues"
   },
   "keywords": [
     "web-scraping",

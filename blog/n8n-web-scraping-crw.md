@@ -16,7 +16,7 @@ No coding required — just n8n's visual workflow builder and CRW's API endpoint
 
 ## Prerequisites
 
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
 - n8n running locally (`docker run -p 5678:5678 n8nio/n8n`) or n8n cloud
 - Basic familiarity with n8n's visual workflow editor
 
@@ -253,7 +253,7 @@ Both n8n and CRW can be self-hosted, making this a fully open-source stack. Run 
 # docker-compose.yml
 services:
   crw:
-    image: ghcr.io/us/crw:latest
+    image: ghcr.io/fastcrw/crw:latest
     ports:
       - "3000:3000"
 
@@ -301,7 +301,7 @@ fastCRW handles scaling and reliability, which is important for workflows that s
 Run CRW and n8n together:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 docker run -p 5678:5678 n8nio/n8n
 ```
 

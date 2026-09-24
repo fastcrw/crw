@@ -16,7 +16,7 @@ By the end, you'll have a Gemini-powered agent that can discover pages, scrape c
 
 ## Prerequisites
 
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
 - Python 3.11+
 - A Google Cloud project with Gemini API access
 - `pip install google-adk firecrawl-py`
@@ -301,7 +301,7 @@ All tool functions work identically. fastCRW is ideal for production ADK agents 
 Run CRW locally in one command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to skip infrastructure and start building your Google ADK agent today.

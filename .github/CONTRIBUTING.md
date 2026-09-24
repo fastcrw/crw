@@ -182,6 +182,6 @@ convert arbitrary file URLs to Markdown without a separate HTTP call.
 
 ## Questions?
 
-Open a [Discussion](https://github.com/us/crw/discussions) or join the
+Open a [Discussion](https://github.com/fastcrw/crw/discussions) or join the
 [Discord](https://discord.gg/kkFh2SC8). For cloud-specific questions, visit
 [fastcrw.com](https://fastcrw.com).

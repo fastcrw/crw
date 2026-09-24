@@ -428,7 +428,7 @@ async function scrapeMany(urls: string[], concurrency = 5) {
 
 |  | Self-Hosted CRW | fastCRW Cloud |
 | --- | --- | --- |
-| Setup | `docker run -p 3000:3000 ghcr.io/us/crw:latest` | Sign up at [fastcrw.com](https://fastcrw.com) |
+| Setup | `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest` | Sign up at [fastcrw.com](https://fastcrw.com) |
 | Cost | Free (your infra) | Pay per request |
 | API URL | `http://localhost:3000` | `https://api.fastcrw.com` |
 | Proxy rotation | Not included | Built-in |
@@ -440,4 +440,4 @@ JavaScript web scraping has come a long way from jQuery-parsing raw HTML. With C
 
 For AI and RAG applications, see our [RAG pipeline guide](/blog/rag-pipeline-with-crw). To convert websites to markdown, check [our conversion guide](/blog/website-to-markdown).
 
-Get started: [self-host CRW](https://github.com/us/crw) or try [fastCRW cloud](https://fastcrw.com).
+Get started: [self-host CRW](https://github.com/fastcrw/crw) or try [fastCRW cloud](https://fastcrw.com).

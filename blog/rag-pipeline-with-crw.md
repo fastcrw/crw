@@ -16,7 +16,7 @@ CRW handles steps 1 and 2. We'll use TypeScript throughout, but the same pattern
 
 ## Prerequisites
 
-- CRW running locally: `docker run -p 3000:3000 ghcr.io/us/crw:latest`
+- CRW running locally: `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`
 - Node.js 18+ or Bun
 - An OpenAI API key (for embeddings and completion)
 

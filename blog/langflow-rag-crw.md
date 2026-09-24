@@ -17,7 +17,7 @@ Langflow is an open-source visual framework for building AI workflows. Combined 
 ## Prerequisites
 
 - Langflow installed: `pip install langflow` then `langflow run` (opens at `http://localhost:7860`)
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) cloud API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) cloud API key
 - An OpenAI API key (for embeddings and chat completion)
 
 ## Architecture Overview
@@ -249,7 +249,7 @@ Both CRW and Langflow can run either self-hosted or in the cloud:
 
 | Component | Self-Hosted | Cloud |
 | --- | --- | --- |
-| CRW | `docker run -p 3000:3000 ghcr.io/us/crw:latest` | [fastCRW](https://fastcrw.com) — managed API |
+| CRW | `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest` | [fastCRW](https://fastcrw.com) — managed API |
 | Langflow | `pip install langflow && langflow run` | [DataStax Langflow](https://astra.datastax.com/langflow) — managed hosting |
 | Vector Store | Chroma (local) or pgvector | Pinecone or Qdrant Cloud |
 
@@ -261,4 +261,4 @@ Langflow + CRW makes building RAG chatbots accessible to anyone — no AI engine
 
 For a code-first approach to RAG with CRW, check out our [RAG pipeline guide](/blog/rag-pipeline-with-crw). To learn more about CRW's AI agent integration, see our [MCP server guide](/blog/mcp-web-scraping).
 
-Ready to start? [Self-host CRW](https://github.com/us/crw) for free or get a [fastCRW](https://fastcrw.com) cloud API key in seconds.
+Ready to start? [Self-host CRW](https://github.com/fastcrw/crw) for free or get a [fastCRW](https://fastcrw.com) cloud API key in seconds.

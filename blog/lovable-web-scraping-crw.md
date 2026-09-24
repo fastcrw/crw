@@ -214,4 +214,4 @@ Lovable + CRW is the fastest path from idea to working web scraping app. Lovable
 
 For more on CRW's capabilities, see our [website-to-markdown conversion guide](/blog/website-to-markdown) and [CRW vs. Firecrawl comparison](/blog/firecrawl-vs-crawl4ai-vs-crw).
 
-Get started: [self-host CRW](https://github.com/us/crw) or sign up for [fastCRW cloud](https://fastcrw.com).
+Get started: [self-host CRW](https://github.com/fastcrw/crw) or sign up for [fastCRW cloud](https://fastcrw.com).

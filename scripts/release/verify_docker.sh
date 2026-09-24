@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Verify ghcr.io/us/crw image exists for $version, latest, and major.minor,
+# Verify ghcr.io/fastcrw/crw image exists for $version, latest, and major.minor,
 # with both linux/amd64 and linux/arm64 manifests.
 #
-# Usage: verify_docker.sh <version> [image=ghcr.io/us/crw]
+# Usage: verify_docker.sh <version> [image=ghcr.io/fastcrw/crw]
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
 v="${1:?version required}"
-image="${2:-ghcr.io/us/crw}"
+image="${2:-ghcr.io/fastcrw/crw}"
 major_minor=$(printf '%s' "$v" | cut -d. -f1-2)
 
 # Poll, for the same reason the npm checks do: a registry accepts the push

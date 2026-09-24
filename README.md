@@ -27,9 +27,9 @@
   <a href="https://crates.io/crates/crw-server"><img src="https://img.shields.io/crates/v/crw-server.svg" alt="crates.io"></a>
   <a href="https://pypi.org/project/crw/"><img src="https://img.shields.io/pypi/v/crw.svg?label=pypi" alt="PyPI"></a>
   <a href="https://www.npmjs.com/package/crw-mcp"><img src="https://img.shields.io/npm/v/crw-mcp.svg?label=npm%20mcp" alt="npm crw-mcp"></a>
-  <a href="https://github.com/us/crw/actions/workflows/ci.yml"><img src="https://github.com/us/crw/actions/workflows/ci.yml/badge.svg?branch=main&event=push" alt="CI"></a>
+  <a href="https://github.com/fastcrw/crw/actions/workflows/ci.yml"><img src="https://github.com/fastcrw/crw/actions/workflows/ci.yml/badge.svg?branch=main&event=push" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/us/crw/stargazers"><img src="https://img.shields.io/github/stars/us/crw?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/fastcrw/crw/stargazers"><img src="https://img.shields.io/github/stars/fastcrw/crw?style=social" alt="GitHub Stars"></a>
 </p>
 
 ## One-command install
@@ -188,7 +188,7 @@ Capabilities and response shapes can differ by deployment:
 The workspace requires Rust 1.85 or newer:
 
 ```bash
-git clone https://github.com/us/crw
+git clone https://github.com/fastcrw/crw
 cd crw
 make check-fast
 ```

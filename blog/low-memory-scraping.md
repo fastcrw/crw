@@ -90,7 +90,7 @@ The memory difference isn't just about current costs — it's about the operatio
 Self-host CRW on a $5/month server:
 
 ```
-docker run -d --restart unless-stopped -p 3000:3000 ghcr.io/us/crw:latest
+docker run -d --restart unless-stopped -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or use [fastCRW](https://fastcrw.com) — the managed version — if you prefer not to manage infrastructure at all.

@@ -80,13 +80,13 @@ See our [benchmark methodology post](/blog/benchmark-crw) and the full latency d
 ### CRW — One command
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 No external services. No environment variables required for basic usage. Works on a $5/month VPS. The entire stack is one process. For production with an API key:
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your_key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your_key ghcr.io/fastcrw/crw:latest
 ```
 
 ### Firecrawl — Multi-service setup
@@ -557,10 +557,10 @@ Signals that you've outgrown CRW: you're hitting more than 20% failure rates on 
 ### Open-Source Path — Self-Host CRW for Free
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 Verify it's running:
 

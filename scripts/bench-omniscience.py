@@ -142,7 +142,7 @@ def render():
         "provider's published score to within 1.5 points.",
         CAP, 11.5,
     ))
-    p.append(text(W - PAD, fy + 20, "github.com/us/crw", CAP, 11.5, 400, "end", MONO))
+    p.append(text(W - PAD, fy + 20, "github.com/fastcrw/crw", CAP, 11.5, 400, "end", MONO))
     p.append("</svg>")
     return "\n".join(p)
 

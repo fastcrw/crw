@@ -16,7 +16,7 @@ Unlike simple RAG pipelines that work with a fixed corpus, this agent actively e
 
 ## Prerequisites
 
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
 - Python 3.11+
 - An OpenAI API key
 - `pip install openai firecrawl-py`
@@ -376,7 +376,7 @@ The rest of the code stays the same. fastCRW is particularly valuable for deep r
 Run CRW locally in one command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to start building your deep research agent without managing infrastructure.

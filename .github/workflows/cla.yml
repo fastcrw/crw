@@ -23,8 +23,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: signatures/version1/cla.json
-          path-to-document: https://github.com/us/crw/blob/main/CLA.md
+          path-to-document: https://github.com/fastcrw/crw/blob/main/CLA.md
           branch: cla-signatures
           allowlist: us,dependabot[bot],github-actions[bot]
           custom-notsigned-prcomment: |
-            Thanks for the pull request. Before we can merge it, please read our [Contributor License Agreement](https://github.com/us/crw/blob/main/CLA.md) and sign it by posting the comment below in this PR.
+            Thanks for the pull request. Before we can merge it, please read our [Contributor License Agreement](https://github.com/fastcrw/crw/blob/main/CLA.md) and sign it by posting the comment below in this PR.

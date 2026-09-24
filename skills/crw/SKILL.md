@@ -13,7 +13,7 @@ metadata:
   author: us
   version: "0.3.0"
   homepage: https://fastcrw.com
-  repository: https://github.com/us/crw
+  repository: https://github.com/fastcrw/crw
 allowed-tools: Bash(crw:*) Bash(curl:*) Read
 ---
 
@@ -31,7 +31,7 @@ step.
 ## Prerequisites
 
 ```bash
-crw --version          # binary on PATH?  (brew install us/crw/crw)
+crw --version          # binary on PATH?  (brew install fastcrw/crw/crw)
 ```
 
 - **No binary?** If your harness has MCP, use the MCP tools (`crw_scrape`,
@@ -110,5 +110,5 @@ The skills show all three; pick what's available:
 ## Links
 
 - Managed API: https://api.fastcrw.com · Docs: https://docs.fastcrw.com
-- GitHub: https://github.com/us/crw
+- GitHub: https://github.com/fastcrw/crw
 - Firecrawl-compatible endpoints: `/v1/{scrape,crawl,map,search}` + `/v2/{scrape,crawl,map,search,batch/scrape,parse,extract}`

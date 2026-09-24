@@ -45,7 +45,7 @@ ScrapingBee does one thing well: it renders JavaScript pages and returns HTML th
 
 ## 1. CRW — Best Cost-Effective Alternative
 
-[CRW](https://github.com/us/crw) is a Rust-based scraping API that eliminates ScrapingBee's biggest limitation: per-request costs. Self-host CRW on a $5/month VPS and scrape unlimited pages with zero per-request fees. It also adds everything ScrapingBee lacks for AI use cases: markdown output, crawl endpoints, and a built-in MCP server.
+[CRW](https://github.com/fastcrw/crw) is a Rust-based scraping API that eliminates ScrapingBee's biggest limitation: per-request costs. Self-host CRW on a $5/month VPS and scrape unlimited pages with zero per-request fees. It also adds everything ScrapingBee lacks for AI use cases: markdown output, crawl endpoints, and a built-in MCP server.
 
 ### Why CRW Over ScrapingBee
 
@@ -238,10 +238,10 @@ CRW. One Docker command to start, REST API for scraping, markdown output for LLM
 ### Self-Host CRW for Free
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Try fastCRW Cloud
 

@@ -16,7 +16,7 @@ This pattern is useful for competitive intelligence, market research, content ag
 
 ## Prerequisites
 
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
 - Python 3.11+
 - An LLM API key (OpenAI, Anthropic, or use Ollama for free local inference)
 
@@ -323,7 +323,7 @@ pip install crewai crewai-crw
 Run CRW locally in one command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to skip infrastructure setup and start building your CrewAI crew today.

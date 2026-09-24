@@ -14,7 +14,7 @@ metadata:
   author: us
   version: "0.3.0"
   homepage: https://fastcrw.com
-  repository: https://github.com/us/crw
+  repository: https://github.com/fastcrw/crw
 allowed-tools: Bash(crw:*) Bash(python3:*) Bash(uv run:*) Bash(jq:*)
 ---
 

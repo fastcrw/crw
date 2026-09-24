@@ -121,7 +121,7 @@ What this means in practice:
 - **Unmodified self-hosting**: no source-offer obligation beyond what AGPL always requires. Point users at the upstream repository.
 - **Modified self-hosting exposed to third parties**: you must make the modified source available. The standard approach is a public fork or a `GET /source` endpoint that redirects to a tagged archive.
 - **Internal use only** (your own employees, no third-party network access): the network-use trigger does not apply. Standard GPL obligations still apply if you distribute binaries.
-- **Commercial carve-out**: if AGPL compliance is impractical for your use case (embedding in a proprietary product, offering a managed service without source disclosure), a commercial license is available — see the [LICENSE](https://github.com/us/crw/blob/main/LICENSE) file and contact information in the repository.
+- **Commercial carve-out**: if AGPL compliance is impractical for your use case (embedding in a proprietary product, offering a managed service without source disclosure), a commercial license is available — see the [LICENSE](https://github.com/fastcrw/crw/blob/main/LICENSE) file and contact information in the repository.
 
 **What counts as a modification**: any change to the Rust source in `crates/` or the build scripts that alters runtime behavior. Configuration-only changes (`.toml` files, `.env` files, `docker-compose.yml` overrides) do not constitute a modification of the software itself.
 

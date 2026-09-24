@@ -12,13 +12,13 @@ agent the [`skills`](https://github.com/vercel-labs/skills) tool supports.
 
 ```bash
 # All crw skills, into every detected agent:
-npx skills add us/crw
+npx skills add fastcrw/crw
 
 # Just one skill:
-npx skills add us/crw@crw-scrape
+npx skills add fastcrw/crw@crw-scrape
 
 # Global (user-level) instead of project-level:
-npx skills add -g us/crw
+npx skills add -g fastcrw/crw
 ```
 
 Or install as a plugin marketplace (Claude Code / Codex / Cursor) — the
@@ -60,5 +60,5 @@ Climb in order; stop at the cheapest rung that answers the need.
 ## Links
 
 - Managed API: https://api.fastcrw.com · Docs: https://docs.fastcrw.com
-- Source: https://github.com/us/crw
+- Source: https://github.com/fastcrw/crw
 - License: AGPL-3.0

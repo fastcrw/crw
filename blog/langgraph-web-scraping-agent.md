@@ -16,7 +16,7 @@ By the end of this tutorial, you'll have a working agent that can: (1) discover 
 
 ## Prerequisites
 
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
 - Python 3.11+
 - An OpenAI API key (for the LLM powering the agent)
 - `pip install langgraph langchain-openai "firecrawl-py>=1,<2"` — the snippets below use the v1 SDK shape (`FirecrawlApp`, `scrape_url(..., params=...)`); v2 renamed the client and changed method signatures
@@ -312,7 +312,7 @@ Everything else stays exactly the same. fastCRW handles infrastructure and scali
 Run CRW locally in one command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to skip the infrastructure and start building your LangGraph agent immediately.

@@ -17,7 +17,7 @@ from platformdirs import user_cache_dir
 from crw._platform import BINARY_NAME, get_asset_name
 from crw.exceptions import CrwBinaryNotFoundError
 
-GITHUB_REPO = "us/crw"
+GITHUB_REPO = "fastcrw/crw"
 _RELEASES = f"https://github.com/{GITHUB_REPO}/releases/download"
 
 _HINT = (

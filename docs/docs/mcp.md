@@ -55,7 +55,7 @@ pip install crw
 cargo install crw-mcp
 
 # Docker:
-docker run -i ghcr.io/us/crw crw-mcp
+docker run -i ghcr.io/fastcrw/crw crw-mcp
 ```
 
 Add to your MCP client:
@@ -204,7 +204,7 @@ cargo install crw-browse
 crw-browse
 
 # Or grab a prebuilt binary from the v0.4.0 GitHub release
-# https://github.com/us/crw/releases/tag/v0.4.0
+# https://github.com/fastcrw/crw/releases/tag/v0.4.0
 ```
 
 Wire it into your client the same way you do `crw-mcp` — it uses stdio transport and is a self-hosted binary (no cloud account required).

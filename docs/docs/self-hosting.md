@@ -7,7 +7,7 @@ Use self-hosting when you want CRW running inside your own infrastructure. The h
 The shortest self-hosted path is Docker:
 
 ```bash
-docker run -p 3000:3000 ghcr.io/us/crw
+docker run -p 3000:3000 ghcr.io/fastcrw/crw
 ```
 
 Then make a local request:

@@ -16,7 +16,7 @@ OpenAI's Agents SDK provides the orchestration layer (tool calling, agent handof
 
 ## Prerequisites
 
-- CRW running locally (`docker run -p 3000:3000 ghcr.io/us/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
+- CRW running locally (`docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`) or a [fastCRW](https://fastcrw.com) API key
 - Python 3.11+
 - An OpenAI API key
 - `pip install openai-agents firecrawl-py`
@@ -304,7 +304,7 @@ All tools and agents work identically. fastCRW manages infrastructure, proxies, 
 Run CRW locally in one command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to skip infrastructure and start building web-aware OpenAI agents immediately.

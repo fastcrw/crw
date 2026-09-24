@@ -31,7 +31,7 @@ pip install crewai crewai-crw langchain-openai langchain-community faiss-cpu lan
 ### Option A: Self-hosted (free)
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 ### Option B: Cloud (fastCRW)
@@ -317,7 +317,7 @@ pip install crewai crewai-crw
 ```
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to skip infrastructure setup.

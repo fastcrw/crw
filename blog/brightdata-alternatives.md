@@ -47,7 +47,7 @@ Bright Data has the largest proxy network in the industry (72M+ residential IPs)
 
 ## 1. CRW — Best Developer-Friendly Alternative
 
-[CRW](https://github.com/us/crw) takes the opposite approach from Bright Data. Instead of a massive platform with proxy networks and enterprise contracts, CRW is a single Rust binary that turns URLs into clean markdown via a simple REST API. For most AI and developer scraping use cases, this is all you need.
+[CRW](https://github.com/fastcrw/crw) takes the opposite approach from Bright Data. Instead of a massive platform with proxy networks and enterprise contracts, CRW is a single Rust binary that turns URLs into clean markdown via a simple REST API. For most AI and developer scraping use cases, this is all you need.
 
 ### Why CRW Over Bright Data
 
@@ -258,10 +258,10 @@ Self-host CRW on a $5/month VPS. You get a Firecrawl-compatible API, markdown ou
 ### Self-Host CRW for Free
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/us/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
 
 ### Try fastCRW Cloud
 

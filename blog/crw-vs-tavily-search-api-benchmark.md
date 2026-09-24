@@ -110,7 +110,7 @@ Full transparency on how we ran this:
 - **Single run** from the same network location, same time of day
 - **Full results:** 124KB JSON report with per-URL and per-query data
 
-The benchmark script, dataset, and full results are [open source](https://github.com/us/crw). Run it yourself — we encourage independent verification.
+The benchmark script, dataset, and full results are [open source](https://github.com/fastcrw/crw). Run it yourself — we encourage independent verification.
 
 ## Try It Yourself
 
@@ -130,7 +130,7 @@ curl -X POST https://api.fastcrw.com/v1/scrape \
   -d '{"url": "https://example.com", "formats": ["markdown"]}'
 ```
 
-Or [self-host the entire stack](https://github.com/us/crw) for free. Same APIs, your infrastructure.
+Or [self-host the entire stack](https://github.com/fastcrw/crw) for free. Same APIs, your infrastructure.
 
 ## Frequently Asked Questions
 

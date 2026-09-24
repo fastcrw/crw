@@ -1,10 +1,10 @@
 # crw-extract
 
-HTML content extraction and format conversion engine for the [CRW](https://github.com/us/crw) web scraper.
+HTML content extraction and format conversion engine for the [CRW](https://github.com/fastcrw/crw) web scraper.
 
 [![crates.io](https://img.shields.io/crates/v/crw-extract.svg)](https://crates.io/crates/crw-extract)
 [![docs.rs](https://docs.rs/crw-extract/badge.svg)](https://docs.rs/crw-extract)
-[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/us/crw/blob/main/LICENSE)
+[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/fastcrw/crw/blob/main/LICENSE)
 
 ## Overview
 
@@ -175,7 +175,7 @@ assert!(links.iter().any(|l| l.contains("/about")));
 
 ## Part of CRW
 
-This crate is part of the [CRW](https://github.com/us/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
+This crate is part of the [CRW](https://github.com/fastcrw/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
 
 This crate (`crw-extract`) handles HTML → markdown/plaintext extraction. For
 the full crate table and dependency graph, see
@@ -183,4 +183,4 @@ the full crate table and dependency graph, see
 
 ## License
 
-AGPL-3.0 — see [LICENSE](https://github.com/us/crw/blob/main/LICENSE).
+AGPL-3.0 — see [LICENSE](https://github.com/fastcrw/crw/blob/main/LICENSE).

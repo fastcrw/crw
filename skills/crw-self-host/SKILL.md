@@ -10,7 +10,7 @@ metadata:
   author: us
   version: "0.3.0"
   homepage: https://fastcrw.com
-  repository: https://github.com/us/crw
+  repository: https://github.com/fastcrw/crw
 allowed-tools: Bash(crw:*) Bash(curl:*) Bash(docker:*) Bash(cargo:*) Read
 ---
 
@@ -35,9 +35,9 @@ Choose one. All install paths run the same Rust binary.
 
 ```bash
 npx crw-mcp                           # zero install (npm; embedded engine, ~14 MB RAM)
-brew install us/crw/crw-mcp           # Homebrew
+brew install fastcrw/crw/crw-mcp           # Homebrew
 cargo install crw-mcp                 # Cargo (~17 MB, full embedded)
-docker run -i ghcr.io/us/crw crw-mcp  # Docker
+docker run -i ghcr.io/fastcrw/crw crw-mcp  # Docker
 pip install crw                       # Python SDK (auto-downloads binary on first use)
 ```
 
@@ -49,7 +49,7 @@ cargo build --profile release-small --no-default-features -p crw-mcp
 ### CLI (`crw`) — scrape from the terminal
 
 ```bash
-brew install us/crw/crw
+brew install fastcrw/crw/crw
 curl -fsSL https://fastcrw.com/install | CRW_BINARY=crw sh
 cargo install crw-cli
 
@@ -66,9 +66,9 @@ For serving multiple apps, other languages (Node.js, Go, Java), or as a shared
 microservice.
 
 ```bash
-brew install us/crw/crw-server
+brew install fastcrw/crw/crw-server
 curl -fsSL https://fastcrw.com/install | CRW_BINARY=crw-server sh
-docker run -p 3000:3000 ghcr.io/us/crw
+docker run -p 3000:3000 ghcr.io/fastcrw/crw
 ```
 
 ## Running the API server
@@ -83,7 +83,7 @@ CRW_PORT=3001 crw-server              # env-var alternative for the standalone b
 
 **Docker (single container, no search):**
 ```bash
-docker run -p 3000:3000 ghcr.io/us/crw
+docker run -p 3000:3000 ghcr.io/fastcrw/crw
 curl http://localhost:3000/v1/scrape \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com"}'

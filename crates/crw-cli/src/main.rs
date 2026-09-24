@@ -48,10 +48,10 @@ use teardown::{CmdError, finish, install_signal_teardown};
         crw browse                                                      # Start browser automation MCP\n  \
         crw setup                                                       # Interactive setup wizard",
     after_help = "INSTALL:\n  \
-        brew install us/crw/crw                                         # macOS / Linux\n  \
+        brew install fastcrw/crw/crw                                         # macOS / Linux\n  \
         cargo install crw-cli                                           # Any Rust toolchain\n  \
         curl -fsSL https://fastcrw.com/install | sh\n\n\
-        DOCS:    https://docs.fastcrw.com  ·  https://github.com/us/crw\n\
+        DOCS:    https://docs.fastcrw.com  ·  https://github.com/fastcrw/crw\n\
         CLOUD:   https://fastcrw.com (1000 free credits, no monthly reset)\n\
         SEARCH:  `crw setup` connects Cloud; `crw setup --local` adds a private local backend.\n\
         "

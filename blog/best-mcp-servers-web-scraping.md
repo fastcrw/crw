@@ -46,7 +46,7 @@ The key advantage over traditional API integration: **your agent discovers the s
 
 ### 1. CRW — Built-In MCP Server
 
-[CRW](https://github.com/us/crw) is the only web scraping tool with a **built-in MCP server** — no separate package, no additional configuration. When you run CRW, the MCP server is just there. This is the simplest path from "I have a scraper" to "my AI agent can scrape the web."
+[CRW](https://github.com/fastcrw/crw) is the only web scraping tool with a **built-in MCP server** — no separate package, no additional configuration. When you run CRW, the MCP server is just there. This is the simplest path from "I have a scraper" to "my AI agent can scrape the web."
 
 **Tools provided:**
 
@@ -64,7 +64,7 @@ The key advantage over traditional API integration: **your agent discovers the s
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/us/crw:latest", "crw-mcp"],
+      "args": ["run", "-i", "--rm", "ghcr.io/fastcrw/crw:latest", "crw-mcp"],
       "env": {
         "CRW_API_KEY": "your-key"
       }
@@ -289,7 +289,7 @@ Yes — and many teams do. A common pattern is CRW for fast markdown scraping pl
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/us/crw:latest", "crw-mcp"]
+      "args": ["run", "-i", "--rm", "ghcr.io/fastcrw/crw:latest", "crw-mcp"]
     },
     "playwright": {
       "command": "npx",
@@ -336,7 +336,7 @@ Add this to your MCP client config and you're done:
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/us/crw:latest", "crw-mcp"]
+      "args": ["run", "-i", "--rm", "ghcr.io/fastcrw/crw:latest", "crw-mcp"]
     }
   }
 }

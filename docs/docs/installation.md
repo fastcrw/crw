@@ -45,15 +45,15 @@ Supported platforms: macOS (Intel & Apple Silicon), Linux (x64 & ARM64), Windows
 ## Homebrew (macOS & Linux)
 
 ```bash
-brew install us/crw/crw
+brew install fastcrw/crw/crw
 ```
 
 The tap is added automatically by the fully-qualified name, so no `brew tap` step is needed.
 The REST API server and the MCP server are separate formulae:
 
 ```bash
-brew install us/crw/crw-server   # REST API server
-brew install us/crw/crw-mcp      # MCP server
+brew install fastcrw/crw/crw-server   # REST API server
+brew install fastcrw/crw/crw-mcp      # MCP server
 ```
 
 Upgrade with `brew upgrade crw`.
@@ -96,7 +96,7 @@ cargo install crw-server
 ## From source
 
 ```bash
-git clone https://github.com/us/crw.git
+git clone https://github.com/fastcrw/crw.git
 cd crw
 
 # CLI tool (no server, no setup)
@@ -123,7 +123,7 @@ The lean build (`--no-default-features`) omits the `embedded` cargo feature that
 
 ```bash
 # Pre-built image
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 
 # With docker-compose (includes LightPanda sidecar)
 docker compose up

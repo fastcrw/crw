@@ -168,7 +168,7 @@ If you prefer not to install the binary directly, run CRW as a Docker container 
   "mcpServers": {
     "crw": {
       "command": "docker",
-      "args": ["run", "--rm", "-i", "ghcr.io/us/crw:latest", "crw-mcp"]
+      "args": ["run", "--rm", "-i", "ghcr.io/fastcrw/crw:latest", "crw-mcp"]
     }
   }
 }
@@ -401,7 +401,7 @@ xattr -d com.apple.quarantine /usr/local/bin/crw-mcp
 When using the Docker transport, ensure Docker Desktop is running before launching Claude Desktop or Cursor. The MCP client starts Docker as a subprocess — if Docker isn't running, the server will fail to start with a cryptic error. Test manually first:
 
 ```
-docker run --rm -i ghcr.io/us/crw:latest crw-mcp
+docker run --rm -i ghcr.io/fastcrw/crw:latest crw-mcp
 # Should start without error and wait for stdin input
 ```
 
@@ -437,7 +437,7 @@ npm install -g crw-mcp
 # Then add to your claude_desktop_config.json
 ```
 
-Source and docs: [github.com/us/crw](https://github.com/us/crw)
+Source and docs: [github.com/fastcrw/crw](https://github.com/fastcrw/crw)
 
 ### Use fastCRW's Cloud MCP
 

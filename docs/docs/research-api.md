@@ -122,7 +122,7 @@ lands below the published number.
 Install it into your agent (Claude Code, Cursor, Codex, Gemini CLI, …):
 
 ```bash
-npx skills add us/crw@crw-research
+npx skills add fastcrw/crw@crw-research
 ```
 
 ## Notes and limits

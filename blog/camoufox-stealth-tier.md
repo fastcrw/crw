@@ -92,4 +92,4 @@ This tier is not free, which is exactly why it's opt-in:
 
 Keep `auto` as your default. Pin `camoufox` on the specific hosts where Chrome keeps coming back blocked on its fingerprint — and leave everything else on the fast path. That's the whole idea: stealth on demand, speed by default, and nothing changes for anyone who never turns it on.
 
-CRW is open source. If you want to see how the tier slots into the renderer chain without disturbing the rest, the code lives in [`crates/crw-renderer`](https://github.com/us/crw/tree/main/crates/crw-renderer), and the docs are at [JS rendering → Camoufox](https://docs.fastcrw.com/#js-rendering).
+CRW is open source. If you want to see how the tier slots into the renderer chain without disturbing the rest, the code lives in [`crates/crw-renderer`](https://github.com/fastcrw/crw/tree/main/crates/crw-renderer), and the docs are at [JS rendering → Camoufox](https://docs.fastcrw.com/#js-rendering).

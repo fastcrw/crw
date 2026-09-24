@@ -1,10 +1,10 @@
 # crw-core
 
-Core types, configuration, and error handling for the [CRW](https://github.com/us/crw) web scraper.
+Core types, configuration, and error handling for the [CRW](https://github.com/fastcrw/crw) web scraper.
 
 [![crates.io](https://img.shields.io/crates/v/crw-core.svg)](https://crates.io/crates/crw-core)
 [![docs.rs](https://docs.rs/crw-core/badge.svg)](https://docs.rs/crw-core)
-[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/us/crw/blob/main/LICENSE)
+[![license](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/fastcrw/crw/blob/main/LICENSE)
 
 ## Overview
 
@@ -102,7 +102,7 @@ let request = ScrapeRequest {
 
 ## Part of CRW
 
-This crate is part of the [CRW](https://github.com/us/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
+This crate is part of the [CRW](https://github.com/fastcrw/crw) workspace — a fast, lightweight, Firecrawl-compatible web scraper built in Rust.
 
 This crate (`crw-core`) provides core types, config, and error handling. For
 the full crate table and dependency graph, see
@@ -110,4 +110,4 @@ the full crate table and dependency graph, see
 
 ## License
 
-AGPL-3.0 — see [LICENSE](https://github.com/us/crw/blob/main/LICENSE).
+AGPL-3.0 — see [LICENSE](https://github.com/fastcrw/crw/blob/main/LICENSE).

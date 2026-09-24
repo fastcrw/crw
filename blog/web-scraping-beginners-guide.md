@@ -121,7 +121,7 @@ Let's get hands-on. We'll use CRW — an open-source web scraping API that retur
 Run CRW locally with Docker:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 CRW is now running at `http://localhost:3000`. That's it — no configuration, no API key needed for local use.
@@ -336,7 +336,7 @@ Now that you know the basics, here are some beginner-friendly projects to practi
 
 |  | Self-Hosted CRW | fastCRW Cloud |
 | --- | --- | --- |
-| Setup | `docker run -p 3000:3000 ghcr.io/us/crw:latest` | Sign up at [fastcrw.com](https://fastcrw.com) |
+| Setup | `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest` | Sign up at [fastcrw.com](https://fastcrw.com) |
 | Cost | Free | Pay per request |
 | API Key | Not needed locally | Required |
 | Best for | Learning, high volume | Quick start, no Docker needed |
@@ -347,4 +347,4 @@ Web scraping doesn't have to be complicated. With CRW, you can go from zero to e
 
 For more advanced topics, explore our [Python web scraping guide](/blog/python-web-scraping), [JavaScript scraping guide](/blog/javascript-web-scraping), or learn how to [build a RAG pipeline](/blog/rag-pipeline-with-crw) with scraped content.
 
-Ready to start? [Self-host CRW](https://github.com/us/crw) for free or sign up for [fastCRW cloud](https://fastcrw.com).
+Ready to start? [Self-host CRW](https://github.com/fastcrw/crw) for free or sign up for [fastCRW cloud](https://fastcrw.com).

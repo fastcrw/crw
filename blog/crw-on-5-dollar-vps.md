@@ -61,7 +61,7 @@ Download the latest release directly:
 
 ```
 # Download the latest release
-curl -L https://github.com/us/crw/releases/latest/download/crw-server-x86_64-unknown-linux-gnu -o /usr/local/bin/crw-server
+curl -L https://github.com/fastcrw/crw/releases/latest/download/crw-server-x86_64-unknown-linux-gnu -o /usr/local/bin/crw-server
 chmod +x /usr/local/bin/crw-server
 
 # Verify it works
@@ -82,7 +82,7 @@ cargo install crw-server
 ### Option C: Docker (single container)
 
 ```
-docker run -d --name crw -p 3000:3000 --restart unless-stopped ghcr.io/us/crw:latest
+docker run -d --name crw -p 3000:3000 --restart unless-stopped ghcr.io/fastcrw/crw:latest
 ```
 
 Even with Docker overhead, CRW uses under 30 MB of RAM — well within budget.
@@ -256,7 +256,7 @@ CRW is so lightweight that it runs comfortably on a Raspberry Pi. If you have a 
 
 ```
 # On Raspberry Pi (ARM64)
-curl -L https://github.com/us/crw/releases/latest/download/crw-server-aarch64-unknown-linux-gnu -o /usr/local/bin/crw-server
+curl -L https://github.com/fastcrw/crw/releases/latest/download/crw-server-aarch64-unknown-linux-gnu -o /usr/local/bin/crw-server
 chmod +x /usr/local/bin/crw-server
 crw-server
 ```

@@ -262,7 +262,7 @@ For teams that need full data privacy or want to avoid per-request pricing, CRW 
 ### Docker (Recommended)
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 That's it. The API is now running at `http://localhost:3000`. All the endpoints work the same as the cloud version.
@@ -584,7 +584,7 @@ Here's your quick-start checklist:
 
 - **5 minutes:** Install MCP server (`npx -y crw-mcp`) and try a search in Claude Code or Cursor
 - **15 minutes:** Sign up at [fastcrw.com](https://fastcrw.com), get an API key, run the Python search agent from this guide
-- **30 minutes:** Self-host with Docker (`docker run -p 3000:3000 ghcr.io/us/crw`) and wire it into your existing agent
+- **30 minutes:** Self-host with Docker (`docker run -p 3000:3000 ghcr.io/fastcrw/crw`) and wire it into your existing agent
 - **1 hour:** Build a complete RAG pipeline with search, using the [RAG Pipeline guide](/blog/rag-pipeline-with-crw)
 
 Every AI agent that answers questions about the real world needs web access. The difference between an agent that hallucinates and one that cites sources is a single API integration. CRW makes that integration as simple as possible — whether you use MCP, the REST API, or self-host the entire thing.

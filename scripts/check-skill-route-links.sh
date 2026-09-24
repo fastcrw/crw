@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mechanical guard against two drift classes in skills/ content:
 #
-#   1. MISSING SKILL: an `npx skills add us/crw@<name>` install line names a
+#   1. MISSING SKILL: an `npx skills add fastcrw/crw@<name>` install line names a
 #      skill directory (skills/<name>/) that does not exist.
 #   2. DEAD ROUTE: a documented `METHOD /path`, or a bare `/v1`, `/v2` or
 #      `/firecrawl` path named in backticks with no method attached (e.g. a
@@ -117,7 +117,7 @@ ROUTE_RE = re.compile(r"\b(?:GET|POST|PUT|PATCH|DELETE) (/(?:v1|v2|firecrawl)/[a
 # never wrapped as bare backtick-path text starting with /v1 in this corpus)
 # is never mistaken for a route mention.
 BARE_PATH_RE = re.compile(r"`(/(?:v1|v2|firecrawl)[a-zA-Z0-9/_{}:*.-]*)`")
-SKILL_RE = re.compile(r"us/crw@([a-zA-Z0-9-]+)")
+SKILL_RE = re.compile(r"fastcrw/crw@([a-zA-Z0-9-]+)")
 
 dead_routes = []  # (file, line_no, path)
 missing_skills = []  # (file, line_no, name)

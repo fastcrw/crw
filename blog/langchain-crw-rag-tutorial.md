@@ -38,7 +38,7 @@ curl -fsSL https://fastcrw.com/install | bash
 crw serve  # runs on http://localhost:3000
 
 # Or Docker
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 
 # Point the loader at it
 export CRW_API_URL=http://localhost:3000
@@ -272,7 +272,7 @@ pip install langchain-crw
 Run CRW locally:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or sign up for [fastCRW](https://fastcrw.com) to skip infrastructure setup.

@@ -60,7 +60,7 @@ crw  # starts on http://localhost:3000
 ### Option C: Self-hosted with Docker
 
 ```
-docker run -d -p 3000:3000 ghcr.io/us/crw:latest
+docker run -d -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Same config as Option B.
@@ -117,7 +117,7 @@ OpenClaw already has a Firecrawl plugin. Here's how CRW compares:
 
 - [openclaw-plugin-crw on npm](https://www.npmjs.com/package/openclaw-plugin-crw)
 - [GitHub: us/openclaw-plugin-crw](https://github.com/us/openclaw-plugin-crw)
-- [CRW on GitHub](https://github.com/us/crw)
+- [CRW on GitHub](https://github.com/fastcrw/crw)
 - [fastcrw.com — 1000 free credits](https://fastcrw.com)
 
 ## Get Started

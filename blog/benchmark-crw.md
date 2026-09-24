@@ -195,7 +195,7 @@ set -e
 export URLS_FILE=${1:-urls.txt}
 
 echo "Starting CRW..."
-docker run -d --name bench-crw -p 3002:3000   -e CRW_API_KEY=test ghcr.io/us/crw:latest
+docker run -d --name bench-crw -p 3002:3000   -e CRW_API_KEY=test ghcr.io/fastcrw/crw:latest
 
 echo "Starting Firecrawl (requires docker compose)..."
 echo "See https://github.com/mendableai/firecrawl for self-host setup"
@@ -282,7 +282,7 @@ For memory budgets, the difference is structural: you can pack many CRW instance
 Self-host CRW and run your own benchmark:
 
 ```
-docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/us/crw:latest
+docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
 Or use [fastCRW](https://fastcrw.com) — the managed version with a one-time lifetime 1000 credits (not a monthly meter), no credit card required.

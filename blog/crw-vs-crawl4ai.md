@@ -70,7 +70,7 @@ Getting Crawl4AI running requires Python 3.10+, Playwright, and a Chromium or Fi
 CRW deploys with one command:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 The image is a small single binary with a tiny idle footprint. The entire stack runs on a $5/month server. No Python environment, no Playwright, no Chromium to manage. If you are adding scraping as a sidecar to an existing application, this difference in operational overhead is significant.
@@ -347,7 +347,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       crw:
-        image: ghcr.io/us/crw:latest
+        image: ghcr.io/fastcrw/crw:latest
         ports:
           - 3000:3000
     steps:
@@ -415,7 +415,7 @@ Also see: [Best Self-Hosted Web Scraping Tools for AI Agents and RAG](/blog/best
 CRW is AGPL-3.0 licensed. Run it on your own server at no cost:
 
 ```
-docker run -p 3000:3000 ghcr.io/us/crw:latest
+docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
 Or install the binary directly — CRW ships as a single statically-linked binary with no runtime dependencies. Review the install script before running it:
@@ -431,7 +431,7 @@ crw --version
 crw serve
 ```
 
-[GitHub repository](https://github.com/us/crw) · [Documentation](https://us.github.io/crw)
+[GitHub repository](https://github.com/fastcrw/crw) · [Documentation](https://us.github.io/crw)
 
 ### Hosted Path — Use fastCRW
 
