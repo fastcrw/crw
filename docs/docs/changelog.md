@@ -1,6 +1,6 @@
 # Changelog
 
-This page is generated from the root [`CHANGELOG.md`](https://github.com/us/crw/blob/main/CHANGELOG.md), which is maintained by release-please during releases.
+This page is generated from the root [`CHANGELOG.md`](https://github.com/fastcrw/crw/blob/main/CHANGELOG.md), which is maintained by release-please during releases.
 
 :::note
 The source of truth is the repository root changelog. Do not edit this docs page manually.
