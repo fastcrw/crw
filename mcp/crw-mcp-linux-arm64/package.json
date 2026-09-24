@@ -1,6 +1,6 @@
 {
   "name": "crw-mcp-linux-arm64",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "description": "CRW MCP server binary for linux arm64",
   "license": "AGPL-3.0",
   "author": "fastCRW <hello@fastcrw.com>",

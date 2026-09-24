@@ -2,6 +2,34 @@
 
 All notable changes to CRW are documented here.
 
+## [0.37.0](https://github.com/fastcrw/crw/compare/v0.36.0...v0.37.0) (2026-09-24)
+
+
+### Features
+
+* **renderer:** reach the solver tier on hosts that block datacenter addresses ([63762e7](https://github.com/fastcrw/crw/commit/63762e724b115915316bda2fa4944a3ce185a443))
+* **server:** expose and clear the per-host renderer preference learner ([8d50185](https://github.com/fastcrw/crw/commit/8d50185397c0aafd972ef1309288a4705bc6b14a))
+
+
+### Bug Fixes
+
+* **browse:** give script actions an object item schema ([9043cd7](https://github.com/fastcrw/crw/commit/9043cd76301d8ae64705abcbff2349a1dd7b762c)), closes [#578](https://github.com/fastcrw/crw/issues/578)
+* **ci:** stop the release audit calling a healthy publish broken ([a0ac61e](https://github.com/fastcrw/crw/commit/a0ac61e43b7d620da334b0395a0e2c6002b83d8b))
+* **crawl:** classify the current Cloudflare block page as cloudflare ([139a21d](https://github.com/fastcrw/crw/commit/139a21d6801a648ad1c554954b5ca95e8a350b79))
+* **docs:** describe LightPanda as Zig-based, not Rust-based ([b9c1554](https://github.com/fastcrw/crw/commit/b9c15549380f89bff9068957e813e6e6d2bd360f))
+* **release:** keep Cargo.lock in step with the workspace version ([311ee8b](https://github.com/fastcrw/crw/commit/311ee8b8d01cf20c9bf0938a35d1ac5c74f241b3))
+* **release:** publish and link from the fastcrw GitHub org ([8de5ff3](https://github.com/fastcrw/crw/commit/8de5ff377e5fc0145f139d6757efce0d30b523a7))
+* **search:** keep github and research results when sources is set ([f3a84f3](https://github.com/fastcrw/crw/commit/f3a84f3cd5a95b3a111d47e3263452d1a312b375))
+* **v2:** accept object-form sources and categories in /v2/search ([c704f19](https://github.com/fastcrw/crw/commit/c704f19d2c7e790896eaec6614518b495be54293))
+* **v2:** do not claim Firecrawl's DNS answer for any unreachable target ([54108c7](https://github.com/fastcrw/crw/commit/54108c736d11a707c4f653378a843b5f31039f34))
+* **v2:** match Firecrawl's success semantics, final URL and error envelope ([5cfcb0e](https://github.com/fastcrw/crw/commit/5cfcb0ea8eb704e05f8448d660bb89c281e16e92))
+
+
+### Performance
+
+* **renderer:** extend the hydration gate to 500 ([a066f65](https://github.com/fastcrw/crw/commit/a066f655c0680d056e2964c51e9fbe35491706ec))
+* **renderer:** stop spending the JS ladder on a 404 with nothing to hydrate ([fc18b2c](https://github.com/fastcrw/crw/commit/fc18b2cf6f610c50f251ad6686d4b99a660aebbe))
+
 ## [0.36.0](https://github.com/us/crw/compare/v0.35.1...v0.36.0) (2026-09-19)
 
 
