@@ -248,6 +248,116 @@ def test_audit_anti_vacuity(tmp_path):
     assert run_audit(tmp_path).returncode == 1
 
 
+def _add_lock(fixture: Path, crates: list[str], entry: bool = True) -> None:
+    """Give the fixture a Cargo.lock and, when `entry`, a release-please entry
+    whose filter names `crates`."""
+    _write(
+        fixture / "Cargo.lock",
+        "version = 4\n"
+        + "".join(
+            f'\n[[package]]\nname = "{c}"\nversion = "{VERSION}"\n'
+            for c in ("crw-core", "crw-server", "serde")
+        ),
+    )
+    if not entry:
+        return
+    names = " || ".join(f"@.name.value == '{c}'" for c in crates)
+
+    def add(cfg):
+        cfg["packages"]["."]["extra-files"].append(
+            {
+                "type": "toml",
+                "path": "Cargo.lock",
+                "jsonpath": f"$.package[?({names})].version",
+            }
+        )
+
+    patch_config(fixture, add)
+
+
+def test_lock_entry_covering_every_member_is_green(tmp_path):
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, ["crw-core", "crw-server"])
+    r = run_audit(tmp_path)
+    assert r.returncode == 0, r.stderr
+
+
+def test_lock_entry_missing_a_member(tmp_path):
+    """A crate left out of the Cargo.lock filter keeps its old lock version
+    after the bump: the drift that left the lock at 0.35.1 under 0.36.0."""
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, ["crw-core"])
+    r = run_audit(tmp_path)
+    assert r.returncode == 1 and "crw-server" in r.stderr
+
+
+def test_lock_entry_not_targeting_version(tmp_path):
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, ["crw-core", "crw-server"])
+
+    def retarget(cfg):
+        cfg["packages"]["."]["extra-files"][-1]["jsonpath"] = cfg["packages"]["."][
+            "extra-files"
+        ][-1]["jsonpath"].replace(".version", ".checksum")
+
+    patch_config(tmp_path, retarget)
+    assert run_audit(tmp_path).returncode == 1
+
+
+def test_lock_entry_with_unverified_filter_syntax(tmp_path):
+    """Right names, but a filter shape release-please was never verified with
+    (here `&&`, which matches nothing): the lock would silently stay stale."""
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, ["crw-core", "crw-server"])
+
+    def use_and(cfg):
+        ef = cfg["packages"]["."]["extra-files"][-1]
+        ef["jsonpath"] = ef["jsonpath"].replace(" || ", " && ")
+
+    patch_config(tmp_path, use_and)
+    assert run_audit(tmp_path).returncode == 1
+
+
+def test_lock_entry_without_toml_type(tmp_path):
+    """A `generic` entry is skipped by the audit and cannot bump lock versions."""
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, [], entry=False)
+    patch_config(
+        tmp_path,
+        lambda cfg: cfg["packages"]["."]["extra-files"].append({"path": "Cargo.lock"}),
+    )
+    assert run_audit(tmp_path).returncode == 1
+
+
+def test_lock_entry_naming_a_registry_dependency(tmp_path):
+    """`serde` in the filter would get the release version written over it."""
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, ["crw-core", "crw-server", "serde"])
+    r = run_audit(tmp_path)
+    assert r.returncode == 1 and "serde" in r.stderr
+
+
+def test_lock_with_a_same_name_registry_crate(tmp_path):
+    """The name filter would bump a registry `crw-core` too, breaking its checksum."""
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, ["crw-core", "crw-server"])
+    lock = tmp_path / "Cargo.lock"
+    lock.write_text(
+        lock.read_text()
+        + '\n[[package]]\nname = "crw-core"\nversion = "0.1.0"\n'
+        + 'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+    )
+    r = run_audit(tmp_path)
+    assert r.returncode == 1 and "exactly once" in r.stderr
+
+
+def test_untracked_lock(tmp_path):
+    make_fixture(tmp_path)
+    _add_lock(tmp_path, [], entry=False)
+    r = run_audit(tmp_path)
+    assert r.returncode == 1 and "Cargo.lock: not tracked" in r.stderr
+
+
 # ── crates.io checksum lookup ────────────────────────────────────────────
 #
 # `publish_crate.sh` treats "already uploaded" as success only when the local

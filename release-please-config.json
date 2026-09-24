@@ -67,6 +67,11 @@
           "jsonpath": "$.workspace.dependencies.crw-browse.version"
         },
         {
+          "type": "toml",
+          "path": "Cargo.lock",
+          "jsonpath": "$.package[?(@.name.value == 'crw-browse' || @.name.value == 'crw-cli' || @.name.value == 'crw-core' || @.name.value == 'crw-crawl' || @.name.value == 'crw-diff' || @.name.value == 'crw-extract' || @.name.value == 'crw-mcp' || @.name.value == 'crw-mcp-proto' || @.name.value == 'crw-renderer' || @.name.value == 'crw-search' || @.name.value == 'crw-server')].version"
+        },
+        {
           "type": "json",
           "path": "server.json",
           "jsonpath": "$.version"

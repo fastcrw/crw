@@ -108,6 +108,54 @@ def _config_covered_pins(cfg: dict) -> set[tuple[str, str, str]]:
     return covered
 
 
+_LOCK_PATH = "Cargo.lock"
+_LOCK_NAME = re.compile(r"@\.name\.value == '([\w-]+)'")
+_LOCK_TERM = r"@\.name\.value == '[\w-]+'"
+# The exact shape verified against the release-please + jsonpath-plus versions
+# bundled in the pinned action: anything else may silently match nothing.
+_LOCK_SHAPE = re.compile(
+    rf"^\$\.package\[\?\({_LOCK_TERM}(?: \|\| {_LOCK_TERM})*\)\]\.version$"
+)
+
+
+def _audit_lock_entry(data: dict, jsonpath: str) -> list[str]:
+    """Cargo.lock is an array of `[[package]]` tables, so its entry selects the
+    workspace crates with a jsonpath filter (`@.name.value`, because
+    release-please's TOML parser wraps every value) that the dotted walk above
+    cannot follow. Check instead that the filter names exactly the workspace
+    crates: a missing one keeps its old lock version after a release bump, an
+    extra one (a registry dependency) gets the release version written over it.
+    The filter matches by name only, so each name must also be locked exactly
+    once, as the workspace crate (no `source`)."""
+    root = tomllib.loads(Path(_WS_DEPS_PATH).read_text())
+    members = {
+        tomllib.loads((Path(m) / "Cargo.toml").read_text())["package"]["name"]
+        for m in root.get("workspace", {}).get("members", [])
+    }
+    names = set(_LOCK_NAME.findall(jsonpath))
+    if not _LOCK_SHAPE.match(jsonpath):
+        shape = "$.package[?(@.name.value == '<crate>' || ...)].version"
+        return [f"{_LOCK_PATH}::{jsonpath}: must be {shape}"]
+    errors = [
+        f"{_LOCK_PATH}: workspace crate {n} missing from the jsonpath filter "
+        f"(its lock version would go stale on the next bump)"
+        for n in sorted(members - names)
+    ]
+    errors += [
+        f"{_LOCK_PATH}: {n} in the jsonpath filter is not a workspace crate "
+        f"(release-please would overwrite its locked version)"
+        for n in sorted(names - members)
+    ]
+    for n in sorted(names & members):
+        entries = [pkg for pkg in data.get("package", []) if pkg.get("name") == n]
+        if len(entries) != 1 or "source" in entries[0]:
+            errors.append(
+                f"{_LOCK_PATH}: {n} must be locked exactly once, as the "
+                f"workspace crate (a same-name registry entry would be bumped too)"
+            )
+    return errors
+
+
 def main(config_path: Path = Path("release-please-config.json")) -> int:
     if not config_path.exists():
         print(f"::error::{config_path} not found", file=sys.stderr)
@@ -139,6 +187,24 @@ def main(config_path: Path = Path("release-please-config.json")) -> int:
                 f"tracked in release-please-config.json extra-files "
                 f"(would go stale on the next version bump)"
             )
+    # A committed Cargo.lock with no extra-files entry lags one release behind:
+    # release-please bumps Cargo.toml, and the lock only catches up whenever
+    # someone happens to commit it after a local build.
+    extra_files = [
+        ef
+        for pkg in cfg.get("packages", {}).values()
+        for ef in pkg.get("extra-files", [])
+    ]
+    if Path(_LOCK_PATH).exists() and not any(
+        isinstance(ef, dict)
+        and ef.get("path") == _LOCK_PATH
+        and ef.get("type") == "toml"
+        for ef in extra_files
+    ):
+        errors.append(
+            f"{_LOCK_PATH}: not tracked by a type=toml release-please-config.json extra-file "
+            f"(workspace crate versions in the lock would go stale on every bump)"
+        )
     for pkg_name, pkg in cfg.get("packages", {}).items():
         for ef in pkg.get("extra-files", []):
             # Bare string form: just a path, no jsonpath.
@@ -179,7 +245,9 @@ def main(config_path: Path = Path("release-please-config.json")) -> int:
                 except tomllib.TOMLDecodeError as e:
                     errors.append(f"{path_str}: invalid TOML: {e}")
                     continue
-                if not _toml_jsonpath_lookup(data, jsonpath):
+                if path_str == _LOCK_PATH:
+                    errors.extend(_audit_lock_entry(data, jsonpath))
+                elif not _toml_jsonpath_lookup(data, jsonpath):
                     errors.append(f"{path_str}::{jsonpath} (toml): jsonpath not found")
             elif t in ("generic", "yaml", "xml"):
                 # generic uses regex against file contents; cannot statically
