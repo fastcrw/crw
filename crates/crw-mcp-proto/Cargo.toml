@@ -17,4 +17,4 @@ thiserror = { workspace = true }
 [dev-dependencies]
 # Validates that emitted `structuredContent` conforms to the declared
 # `outputSchema` (issue #89). Pinned to the same 0.28 line crw-extract uses.
-jsonschema = "0.54"
+jsonschema = "0.56"

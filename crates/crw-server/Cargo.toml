@@ -55,7 +55,7 @@ toml = { workspace = true }
 crw-server = { path = ".", features = ["test-utils"] }
 # Validates emitted structuredContent against crw_search's declared outputSchema
 # using the REAL SearchResponse serializer (issue #89). Same 0.28 line as crw-extract.
-jsonschema = "0.54"
+jsonschema = "0.56"
 # Parses docker-compose.yml service names in the issue #90 host guard so the test
 # derives the allowed hosts from the real compose file instead of a hardcoded list.
 yaml-rust2 = "0.11"
