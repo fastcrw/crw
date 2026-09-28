@@ -199,6 +199,11 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                         "minimum": 0,
                         "description": "Max chars per content field; 0 = unbounded (default ~15000)"
                     },
+                    "maxAge": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Max age of a cached copy of this fetch, in ms (default 3600000; 0 = always fetch; cap 24h)"
+                    },
                     "renderer": {
                         "type": "string",
                         "enum": ["auto", "lightpanda", "chrome", "playwright", "camoufox", "impersonated-http"],
@@ -1056,7 +1061,12 @@ mod tests {
     /// description note that it is JS-less; the wording itself was trimmed in
     /// the same change (the naive description growth alone would have been
     /// ~3726 est-tok).
-    const TOOLS_LIST_TOKEN_CEILING: usize = 3700;
+    ///
+    /// Raised 3700 -> 3750 for the `maxAge` parameter on `crw_scrape`: the
+    /// fetch cache ships default-on (1h reuse), so MCP callers need the opt-out
+    /// lever in the schema. The description is one line; the remaining delta is
+    /// the property itself (trimmed footprint ~3727 est-tok).
+    const TOOLS_LIST_TOKEN_CEILING: usize = 3750;
 
     #[test]
     fn tools_list_token_budget() {
@@ -1093,6 +1103,22 @@ mod tests {
         let scrape = tool_by_name(&defs, "crw_scrape");
         let props = &scrape["inputSchema"]["properties"];
         assert_eq!(props["waitFor"]["type"], "integer");
+    }
+
+    #[test]
+    fn crw_scrape_schema_advertises_max_age() {
+        let defs = tool_definitions(false);
+        let scrape = tool_by_name(&defs, "crw_scrape");
+        let props = &scrape["inputSchema"]["properties"];
+        assert_eq!(
+            props["maxAge"]["type"], "integer",
+            "maxAge must be advertised so MCP callers can opt out of the 1h fetch cache"
+        );
+        assert_eq!(props["maxAge"]["minimum"], 0);
+        assert!(
+            props["maxAge"].get("default").is_none(),
+            "maxAge must not advertise a default: the server default (1h) is the documented one"
+        );
     }
 
     #[test]
