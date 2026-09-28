@@ -1137,6 +1137,65 @@ type Outstanding = Arc<StdMutex<std::collections::HashSet<(String, String)>>>;
 const BLOCK_LABEL_POLICY: &str = "outbound";
 /// The destination could not be proved safe: resolver error or budget expiry.
 const BLOCK_LABEL_UNRESOLVED: &str = "outbound_unresolved";
+/// A child target we deliberately left running without its own interception,
+/// because the page session already pauses everything it can ask for.
+const BLOCK_LABEL_WORKER_RESUMED: &str = "child_worker_resumed";
+
+/// A child target we resumed but could not un-pause. It is still frozen, so it
+/// is closed rather than left to stall the render.
+const BLOCK_LABEL_RESUME_FAILED: &str = "child_resume_failed";
+
+/// JSON-RPC "method not found". Chrome answers `Fetch.enable` with this on a
+/// session whose target does not implement the Fetch domain at all.
+/// `send_recv` stringifies the whole CDP error object, so the code survives
+/// into the message; matching it is what separates "this target can never be
+/// intercepted" from "we failed to intercept a target that supports it".
+const CDP_METHOD_NOT_FOUND: &str = "\"code\":-32601";
+
+/// True when the error object carries exactly code -32601.
+///
+/// Anchored on the character after the number, because a bare `contains` also
+/// matches any code that merely STARTS with those digits (-326011 and friends).
+/// Chrome does not emit one today, and this is the difference between a guard
+/// and a decoration.
+fn is_method_not_found(error: &str) -> bool {
+    error
+        .match_indices(CDP_METHOD_NOT_FOUND)
+        .any(|(i, m)| matches!(error.as_bytes().get(i + m.len()), Some(b',') | Some(b'}')))
+}
+
+/// What to do with an auto-attached child whose `Fetch.enable` did not take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChildAction {
+    /// Let it run. Only for a target whose traffic the page session already sees.
+    Resume,
+    /// Close it. A target that can carry an unchecked request must not run.
+    Close,
+}
+
+/// Decide from the target type and the CDP error.
+///
+/// Measured against the Chromium build production runs (150.0.7871.47): a
+/// dedicated `worker` answers `Fetch.enable` with `-32601` in about 12ms, and
+/// every Fetch-domain request it then makes (`fetch`, `XMLHttpRequest`,
+/// `importScripts`, `EventSource`, `caches.add`, a nested worker's `fetch`, and
+/// the same from inside a cross-site iframe) pauses on the PAGE session and is
+/// answered by the same destination check as the page's own traffic. So the
+/// worker is guarded whether or not its own session has the domain, and closing
+/// it only breaks pages that need it.
+///
+/// Exactly `"worker"`, never a "worker family" match, and never on any other
+/// error. `shared_worker` traffic pauses on NO session, and a `service_worker`
+/// attaches to the page session while its `fetch` stays invisible there, so
+/// resuming either would hand a scraped page an unchecked request channel. An
+/// unknown, empty or absent type closes, which is the fail-closed default.
+fn child_enable_failure_action(target_type: &str, error: &str) -> ChildAction {
+    if target_type == "worker" && is_method_not_found(error) {
+        ChildAction::Resume
+    } else {
+        ChildAction::Close
+    }
+}
 
 /// One render's share of [`RESOLVE_LIMIT`]. Small enough that a page with
 /// hundreds of unique hosts cannot park the whole global pool, large enough
@@ -1252,6 +1311,16 @@ async fn run_intercept_pump(
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string();
+                // Absent or malformed `targetInfo` yields "", which
+                // `child_enable_failure_action` treats as "close": the default
+                // has to be the guarded one.
+                let child_type = ev
+                    .params
+                    .get("targetInfo")
+                    .and_then(|t| t.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
                 in_flight.push(
                     async move {
                         // The child is attached paused, so its FIRST request —
@@ -1268,16 +1337,77 @@ async fn run_intercept_pump(
                                 Some(&child),
                                 cmd_timeout,
                             )
-                            .await
-                            .is_ok();
-                        if !enabled {
+                            .await;
+                        if let Err(enable_err) = enabled {
+                            let err = enable_err.to_string();
+                            // A dedicated worker has no Fetch domain to enable,
+                            // and does not need one: every Fetch-domain request
+                            // it makes pauses on the PAGE session, so it is
+                            // already behind the destination check. Closing it
+                            // is what breaks the page. Anything else, including
+                            // a worker that failed for some OTHER reason, is
+                            // still closed.
+                            let mut label = "child_unguarded";
+                            if child_enable_failure_action(&child_type, &err)
+                                == ChildAction::Resume
+                            {
+                                // Deliberately NO `Target.setAutoAttach` here.
+                                // It succeeds on a worker session and does
+                                // cascade, but a nested worker's requests
+                                // already pause on the page session, so it
+                                // guards nothing, while every extra attach
+                                // event it manufactures is one more child that
+                                // hangs for the whole render if the broadcast
+                                // ring drops it.
+                                //
+                                // Counted only once the browser has actually
+                                // taken the resume. Counting before the call
+                                // would report a worker as running while it sat
+                                // paused for the rest of the render, which is
+                                // the very hang this branch exists to remove.
+                                let resumed = conn
+                                    .send_recv(
+                                        "Runtime.runIfWaitingForDebugger",
+                                        serde_json::json!({}),
+                                        Some(&child),
+                                        cmd_timeout,
+                                    )
+                                    .await
+                                    .is_ok();
+                                if resumed {
+                                    crw_core::metrics::metrics()
+                                        .chrome_blocked_requests_total
+                                        .with_label_values(&[BLOCK_LABEL_WORKER_RESUMED])
+                                        .inc();
+                                    // Routine: every page that starts a worker
+                                    // reaches this. `warn!` here fired 1014
+                                    // times in 37 hours and told an operator
+                                    // nothing.
+                                    tracing::debug!(
+                                        target_id = %child_target,
+                                        target_type = %child_type,
+                                        error = %err,
+                                        "child target has no Fetch domain; resuming it under the page session's interception"
+                                    );
+                                    return;
+                                }
+                                // Still paused at start, so it will never run.
+                                // Fall through and close it, which is what
+                                // happened before this branch existed, and count
+                                // it apart so a rise here is visible instead of
+                                // hiding inside the resume total.
+                                label = BLOCK_LABEL_RESUME_FAILED;
+                            }
                             crw_core::metrics::metrics()
                                 .chrome_blocked_requests_total
-                                .with_label_values(&["child_unguarded"])
+                                .with_label_values(&[label])
                                 .inc();
                             tracing::warn!(
                                 target_id = %child_target,
-                                "could not intercept a child target; closing it"
+                                target_type = %child_type,
+                                outcome = label,
+                                error = %err,
+                                "child target could not be guarded or resumed; closing it"
                             );
                             let closed = !child_target.is_empty()
                                 && conn
@@ -3791,10 +3921,11 @@ fn is_spa_text_ready(text_len: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        CdpRenderer, CrwError, STEALTH_DEFAULT_LANGUAGES, STEALTH_JS, build_auth_response,
-        geo_accept_language, is_content_stable, is_proxy_tunnel_error, language_locale,
-        lightpanda_safe_ua, outbound_block_label, screenshot_clip, split_caller_headers,
-        ua_override_params,
+        BLOCK_LABEL_RESUME_FAILED, BLOCK_LABEL_WORKER_RESUMED, CdpRenderer, ChildAction, CrwError,
+        STEALTH_DEFAULT_LANGUAGES, STEALTH_JS, build_auth_response, child_enable_failure_action,
+        geo_accept_language, is_content_stable, is_method_not_found, is_proxy_tunnel_error,
+        language_locale, lightpanda_safe_ua, outbound_block_label, screenshot_clip,
+        split_caller_headers, ua_override_params,
     };
     use std::collections::HashMap;
     use std::time::Duration;
@@ -5320,5 +5451,172 @@ mod tests {
             lightpanda_safe_ua(ua),
             "(compatible) extra Mozilla/5.0 tail"
         );
+    }
+
+    // --- child_enable_failure_action --------------------------------------------
+    //
+    // The whole decision this fix turns on, held down type by type so a later
+    // "worker family" refactor fails loudly instead of quietly handing a scraped
+    // page an unchecked request channel.
+
+    /// The exact string that reaches `child_enable_failure_action` for a target
+    /// with no Fetch domain. `send_recv` wraps the serialized CDP error object in
+    /// `CDP {method}: ...`, and `CrwError::RendererError`'s Display adds its own
+    /// prefix on top (`crw-core/src/error.rs`), so both are here: a test constant
+    /// that is not what production sees would not catch a move to a prefix match.
+    const NOT_FOUND: &str = "Renderer error: CDP Fetch.enable: {\"code\":-32601,\"message\":\"'Fetch.enable' wasn't found\"}";
+
+    #[test]
+    fn worker_child_resumes_instead_of_closing() {
+        assert_eq!(
+            child_enable_failure_action("worker", NOT_FOUND),
+            ChildAction::Resume
+        );
+    }
+
+    #[test]
+    fn service_worker_child_still_closes() {
+        // It attaches to the page session on this build, but its own fetch is
+        // invisible there, so resuming it would bypass the destination check.
+        assert_eq!(
+            child_enable_failure_action("service_worker", NOT_FOUND),
+            ChildAction::Close
+        );
+    }
+
+    #[test]
+    fn shared_worker_child_still_closes() {
+        // Its traffic pauses on no session at all.
+        assert_eq!(
+            child_enable_failure_action("shared_worker", NOT_FOUND),
+            ChildAction::Close
+        );
+    }
+
+    #[test]
+    fn worklet_children_still_close() {
+        for t in [
+            "worklet",
+            "auction_worklet",
+            "shared_storage_worklet",
+            "paint_worklet",
+        ] {
+            assert_eq!(
+                child_enable_failure_action(t, NOT_FOUND),
+                ChildAction::Close,
+                "{t} must stay closed"
+            );
+        }
+    }
+
+    #[test]
+    fn iframe_and_page_children_still_close() {
+        for t in ["iframe", "page", "tab", "browser", "other", "webview"] {
+            assert_eq!(
+                child_enable_failure_action(t, NOT_FOUND),
+                ChildAction::Close,
+                "{t} must stay closed"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_or_absent_target_type_closes() {
+        // `targetInfo.type` missing yields "" at the call site. Fail closed.
+        assert_eq!(
+            child_enable_failure_action("", NOT_FOUND),
+            ChildAction::Close
+        );
+        assert_eq!(
+            child_enable_failure_action("WORKER", NOT_FOUND),
+            ChildAction::Close
+        );
+        assert_eq!(
+            child_enable_failure_action("worker2", NOT_FOUND),
+            ChildAction::Close
+        );
+    }
+
+    #[test]
+    fn worker_still_closes_when_the_failure_is_not_method_not_found() {
+        // The two other shapes `send_recv` can produce. A worker that failed for
+        // any reason OTHER than "this target has no Fetch domain" has not been
+        // shown to be guarded, so it is closed exactly as before.
+        for err in [
+            "Timeout after 2000ms",
+            "CDP Fetch.enable: {\"code\":-32001,\"message\":\"Session with given id not found.\"}",
+            "CDP connection closed",
+            "WS send (Fetch.enable): broken pipe",
+        ] {
+            assert_eq!(
+                child_enable_failure_action("worker", err),
+                ChildAction::Close,
+                "worker must close on: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn worker_resume_label_is_distinct_from_child_unguarded() {
+        // The 1014-per-37h `child_unguarded` baseline has to stay comparable
+        // across the deploy, so the resume gets its own label rather than
+        // renaming the old one.
+        assert_ne!(BLOCK_LABEL_WORKER_RESUMED, "child_unguarded");
+        assert_ne!(BLOCK_LABEL_WORKER_RESUMED, "child_stuck");
+        assert_eq!(BLOCK_LABEL_WORKER_RESUMED, "child_worker_resumed");
+    }
+
+    #[test]
+    fn method_not_found_matches_the_real_cdp_error() {
+        assert!(is_method_not_found(NOT_FOUND));
+        // The code as the last field of the object, not followed by a comma.
+        assert!(is_method_not_found(
+            "Renderer error: CDP Fetch.enable: {\"message\":\"x\",\"code\":-32601}"
+        ));
+    }
+
+    #[test]
+    fn method_not_found_does_not_match_a_longer_code() {
+        // A bare `contains` would accept every code that merely STARTS with these
+        // digits, which is the difference between a guard and a decoration.
+        for e in [
+            "Renderer error: CDP Fetch.enable: {\"code\":-326011}",
+            "Renderer error: CDP Fetch.enable: {\"code\":-3260123,\"message\":\"x\"}",
+        ] {
+            assert!(!is_method_not_found(e), "must not match: {e}");
+            assert_eq!(
+                child_enable_failure_action("worker", e),
+                ChildAction::Close,
+                "must close: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn worker_resume_needs_the_code_not_the_prose() {
+        // Two mutations that pass every other test in this module: matching the
+        // bare number, or matching Chrome's English message. The code plus its
+        // `"code":` anchor is the contract; the prose is not.
+        assert_eq!(
+            child_enable_failure_action("worker", "Renderer error: CDP Fetch.enable: -32601"),
+            ChildAction::Close
+        );
+        assert_eq!(
+            child_enable_failure_action(
+                "worker",
+                "Renderer error: CDP Fetch.enable: 'Fetch.enable' wasn't found"
+            ),
+            ChildAction::Close
+        );
+    }
+
+    #[test]
+    fn resume_failure_has_its_own_label() {
+        // A worker we could not un-pause is still frozen and is closed, so it
+        // must not be counted as a successful resume: that would report the
+        // render as healthy while it burned the whole navigation budget.
+        assert_ne!(BLOCK_LABEL_RESUME_FAILED, BLOCK_LABEL_WORKER_RESUMED);
+        assert_ne!(BLOCK_LABEL_RESUME_FAILED, "child_unguarded");
+        assert_ne!(BLOCK_LABEL_RESUME_FAILED, "child_stuck");
     }
 }
