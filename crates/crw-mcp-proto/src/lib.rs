@@ -199,11 +199,6 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                         "minimum": 0,
                         "description": "Max chars per content field; 0 = unbounded (default ~15000)"
                     },
-                    "maxAge": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Max age of a cached copy of this fetch, in ms (default 3600000; 0 = always fetch; cap 24h)"
-                    },
                     "renderer": {
                         "type": "string",
                         "enum": ["auto", "lightpanda", "chrome", "playwright", "camoufox", "impersonated-http"],
@@ -573,6 +568,29 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
         for tool in &mut tools {
             if let Some(obj) = tool.as_object_mut() {
                 obj.remove("outputSchema");
+            }
+            // `maxAge` is advertised ONLY in proxy mode. The embedded MCP dispatcher
+            // disables the page cache outright (`crw-server/src/routes/mcp.rs` sets
+            // `max_age = Some(0)`, `store_in_cache = Some(false)`: that path carries
+            // no tenant scope, so no entry may be written or read), which makes the
+            // knob a silent no-op there and its "default 3600000" description false.
+            // In proxy mode the args are forwarded verbatim to the remote
+            // `/v1/scrape`, which honors both the default and the override. Do not
+            // advertise what a surface discards.
+            if tool.get("name").and_then(|n| n.as_str()) == Some("crw_scrape")
+                && let Some(props) = tool
+                    .get_mut("inputSchema")
+                    .and_then(|s| s.get_mut("properties"))
+                    .and_then(|p| p.as_object_mut())
+            {
+                props.insert(
+                    "maxAge".to_string(),
+                    json!({
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Max age of a cached copy of this fetch, in ms (default 3600000; 0 = always fetch; cap 24h)"
+                    }),
+                );
             }
         }
     }
@@ -1061,12 +1079,7 @@ mod tests {
     /// description note that it is JS-less; the wording itself was trimmed in
     /// the same change (the naive description growth alone would have been
     /// ~3726 est-tok).
-    ///
-    /// Raised 3700 -> 3750 for the `maxAge` parameter on `crw_scrape`: the
-    /// fetch cache ships default-on (1h reuse), so MCP callers need the opt-out
-    /// lever in the schema. The description is one line; the remaining delta is
-    /// the property itself (trimmed footprint ~3727 est-tok).
-    const TOOLS_LIST_TOKEN_CEILING: usize = 3750;
+    const TOOLS_LIST_TOKEN_CEILING: usize = 3700;
 
     #[test]
     fn tools_list_token_budget() {
@@ -1106,18 +1119,30 @@ mod tests {
     }
 
     #[test]
-    fn crw_scrape_schema_advertises_max_age() {
-        let defs = tool_definitions(false);
-        let scrape = tool_by_name(&defs, "crw_scrape");
-        let props = &scrape["inputSchema"]["properties"];
+    fn crw_scrape_schema_advertises_max_age_in_proxy_mode_only() {
+        let proxy_defs = tool_definitions(true);
+        let proxy = tool_by_name(&proxy_defs, "crw_scrape");
+        let props = &proxy["inputSchema"]["properties"];
         assert_eq!(
             props["maxAge"]["type"], "integer",
-            "maxAge must be advertised so MCP callers can opt out of the 1h fetch cache"
+            "proxy mode forwards args verbatim, so the remote's maxAge must be advertised"
         );
         assert_eq!(props["maxAge"]["minimum"], 0);
         assert!(
             props["maxAge"].get("default").is_none(),
             "maxAge must not advertise a default: the server default (1h) is the documented one"
+        );
+
+        // The embedded dispatcher forces max_age = Some(0) (no tenant scope on
+        // that path, so the page cache is off there, by design). Advertising the
+        // knob on that surface would promise cache reuse that cannot happen.
+        let embedded_defs = tool_definitions(false);
+        let embedded = tool_by_name(&embedded_defs, "crw_scrape");
+        assert!(
+            embedded["inputSchema"]["properties"]
+                .get("maxAge")
+                .is_none(),
+            "embedded mode discards maxAge (routes/mcp.rs forces a fresh fetch); do not advertise it"
         );
     }
 
