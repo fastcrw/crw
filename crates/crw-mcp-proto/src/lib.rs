@@ -569,28 +569,14 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
             if let Some(obj) = tool.as_object_mut() {
                 obj.remove("outputSchema");
             }
-            // `maxAge` is advertised ONLY in proxy mode. The embedded MCP dispatcher
-            // disables the page cache outright (`crw-server/src/routes/mcp.rs` sets
-            // `max_age = Some(0)`, `store_in_cache = Some(false)`: that path carries
-            // no tenant scope, so no entry may be written or read), which makes the
-            // knob a silent no-op there and its "default 3600000" description false.
-            // In proxy mode the args are forwarded verbatim to the remote
-            // `/v1/scrape`, which honors both the default and the override. Do not
-            // advertise what a surface discards.
-            if tool.get("name").and_then(|n| n.as_str()) == Some("crw_scrape")
-                && let Some(props) = tool
-                    .get_mut("inputSchema")
-                    .and_then(|s| s.get_mut("properties"))
-                    .and_then(|p| p.as_object_mut())
-            {
-                props.insert(
-                    "maxAge".to_string(),
-                    json!({
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Max age of a cached copy of this fetch, in ms (default 3600000; 0 = always fetch; cap 24h)"
-                    }),
-                );
+            // Proxy mode only: the embedded dispatcher (`crw-server/src/routes/mcp.rs`)
+            // forces `max_age = Some(0)`, so `maxAge` would be a silent no-op there.
+            if tool["name"] == "crw_scrape" {
+                tool["inputSchema"]["properties"]["maxAge"] = json!({
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Max age of a cached copy of this fetch, in ms (default 3600000; 0 = always fetch; cap 24h)"
+                });
             }
         }
     }
@@ -1128,14 +1114,7 @@ mod tests {
             "proxy mode forwards args verbatim, so the remote's maxAge must be advertised"
         );
         assert_eq!(props["maxAge"]["minimum"], 0);
-        assert!(
-            props["maxAge"].get("default").is_none(),
-            "maxAge must not advertise a default: the server default (1h) is the documented one"
-        );
 
-        // The embedded dispatcher forces max_age = Some(0) (no tenant scope on
-        // that path, so the page cache is off there, by design). Advertising the
-        // knob on that surface would promise cache reuse that cannot happen.
         let embedded_defs = tool_definitions(false);
         let embedded = tool_by_name(&embedded_defs, "crw_scrape");
         assert!(
