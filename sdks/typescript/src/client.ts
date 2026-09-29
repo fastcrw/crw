@@ -33,7 +33,7 @@ import type {
 // talks to the managed cloud. Mirrors the Python SDK + CLI onboarding.
 export const CLOUD_API_URL = "https://api.fastcrw.com";
 export const DASHBOARD_URL = "https://fastcrw.com/dashboard";
-export const DOCS_URL = "https://us.github.io/crw";
+export const DOCS_URL = "https://docs.fastcrw.com";
 
 const SIGNUP_NUDGE =
   `No CRW API key found. CRW uses the managed cloud (${CLOUD_API_URL}) by default.\n` +

@@ -278,7 +278,7 @@ If AGPL-3.0 is a concern for embedding the fastCRW engine in a closed-source pro
 docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-Single small static binary. Works on the cheapest VPS tier. No Redis, no Playwright, no Python environment. [GitHub repo](https://github.com/fastcrw/crw) · [Documentation](https://us.github.io/crw).
+Single small static binary. Works on the cheapest VPS tier. No Redis, no Playwright, no Python environment. [GitHub repo](https://github.com/fastcrw/crw) · [Documentation](https://docs.fastcrw.com).
 
 ### Hosted via fastCRW
 

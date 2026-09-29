@@ -560,7 +560,7 @@ Signals that you've outgrown CRW: you're hitting more than 20% failure rates on 
 docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://docs.fastcrw.com)
 
 Verify it's running:
 

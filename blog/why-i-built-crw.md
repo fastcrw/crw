@@ -213,7 +213,7 @@ Or install the CLI directly:
 cargo install crw
 ```
 
-Source code: [github.com/fastcrw/crw](https://github.com/fastcrw/crw) · [Documentation](https://us.github.io/crw)
+Source code: [github.com/fastcrw/crw](https://github.com/fastcrw/crw) · [Documentation](https://docs.fastcrw.com)
 
 ### Hosted Path — fastCRW
 

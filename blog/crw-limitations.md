@@ -263,7 +263,7 @@ GitHub issues drive our priority decisions. If a specific limitation is blocking
 docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
+[GitHub](https://github.com/fastcrw/crw) · [Docs](https://docs.fastcrw.com)
 
 ### Hosted Path — fastCRW
 

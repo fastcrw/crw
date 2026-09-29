@@ -289,7 +289,7 @@ If AGPL is a concern for your use case, CRW is available as a managed service vi
 docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. Single small static binary. Works on the cheapest VPS tier. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. Single small static binary. Works on the cheapest VPS tier. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://docs.fastcrw.com)
 
 ### Try fastCRW Cloud
 

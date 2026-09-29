@@ -491,6 +491,22 @@ jobs:
           # patch release, confirming the cold rebuild). `cache-from` is dropped
           # with it since there is now nothing to read.
 
+      # ghcr.io/us/crw predates the move to the fastcrw org and is still pulled by
+      # older docs and the io.github.us/crw MCP registry entry. Copy the pushed
+      # manifests there so it keeps getting releases. Best effort: a failure here
+      # must never fail the release.
+      - name: Mirror to the legacy image
+        continue-on-error: true
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r src; do
+            [ -n "$src" ] || continue
+            dst="ghcr.io/us/crw:${src##*:}"
+            docker buildx imagetools create -t "$dst" "$src"
+          done <<< "$TAGS"
+
   publish-mcp-registry:
     needs: [release-context, publish-docker]
     runs-on: ubuntu-latest

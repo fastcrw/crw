@@ -316,7 +316,7 @@ Self-hosting CRW and using open-source tools for parsing and storage cuts ingest
 docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. Works with LangChain and LlamaIndex out of the box. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. Works with LangChain and LlamaIndex out of the box. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://docs.fastcrw.com)
 
 ### Or Use fastCRW Cloud
 

@@ -21,7 +21,7 @@ _REQUEST_ID = 0
 # talks to the managed cloud. These mirror the CLI onboarding (setup/cloud.rs).
 CLOUD_API_URL = "https://api.fastcrw.com"
 DASHBOARD_URL = "https://fastcrw.com/dashboard"
-DOCS_URL = "https://us.github.io/crw"
+DOCS_URL = "https://docs.fastcrw.com"
 
 _SIGNUP_NUDGE = (
     "No CRW API key found. CRW uses the managed cloud ({cloud}) by default.\n"

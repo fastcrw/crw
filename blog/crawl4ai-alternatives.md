@@ -194,7 +194,7 @@ CRW. As a single static Rust binary with no Chromium bundle, it has a far smalle
 docker run -p 3000:3000 -e CRW_API_KEY=your-key ghcr.io/fastcrw/crw:latest
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://docs.fastcrw.com)
 
 ### Try fastCRW Cloud
 

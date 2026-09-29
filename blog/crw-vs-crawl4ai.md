@@ -431,7 +431,7 @@ crw --version
 crw serve
 ```
 
-[GitHub repository](https://github.com/fastcrw/crw) · [Documentation](https://us.github.io/crw)
+[GitHub repository](https://github.com/fastcrw/crw) · [Documentation](https://docs.fastcrw.com)
 
 ### Hosted Path — Use fastCRW
 

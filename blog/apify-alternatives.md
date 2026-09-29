@@ -254,7 +254,7 @@ The break-even point is low. If you're scraping more than a few hundred pages pe
 docker compose up
 ```
 
-AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://us.github.io/crw)
+AGPL-3.0 licensed. No per-request fees. [GitHub](https://github.com/fastcrw/crw) · [Docs](https://docs.fastcrw.com)
 
 ### Try fastCRW Cloud
 

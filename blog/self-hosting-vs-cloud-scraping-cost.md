@@ -238,7 +238,7 @@ CRW is AGPL-3.0 licensed. Run it on your own infrastructure at zero software cos
 docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest
 ```
 
-[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://us.github.io/crw)
+[View the source on GitHub](https://github.com/fastcrw/crw) · [Read the docs](https://docs.fastcrw.com)
 
 ### Hosted Path — Use fastCRW
 
