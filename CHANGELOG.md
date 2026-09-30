@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.37.1](https://github.com/fastcrw/crw/compare/v0.37.0...v0.37.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **renderer:** own the Chrome profile dir and reap the browser tree on Windows ([850bf3a](https://github.com/fastcrw/crw/commit/850bf3a5f34e94a99745834292f0ec0a7c329664)), closes [#594](https://github.com/fastcrw/crw/issues/594)
+
 ## [0.37.0](https://github.com/fastcrw/crw/compare/v0.36.0...v0.37.0) (2026-09-29)
 
 
