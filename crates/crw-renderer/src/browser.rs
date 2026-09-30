@@ -8,7 +8,7 @@
 //! The spawned process/container is automatically cleaned up on drop.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{LazyLock, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -22,7 +22,19 @@ use tokio::process::{Child, Command};
 ///
 /// This registry is the only thing robust to `process::exit`/signal — the
 /// dominant leak cause — because it does not depend on `Drop` running.
+#[cfg(unix)]
 static BROWSER_PGIDS: LazyLock<Mutex<HashSet<i32>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Per-launch Chrome profile directories we created. Chrome without
+/// `--user-data-dir` drops a full profile (~15 MB) into the OS temp dir that
+/// nothing ever removes, so we own the directory and delete it ourselves.
+/// Like the pgid registry this survives `process::exit`, which skips `Drop`.
+static BROWSER_PROFILES: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn lock_profiles() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+    BROWSER_PROFILES.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Lock the registry, recovering from a poisoned mutex. A panic in one
 /// teardown path must not cascade-abort the others.
@@ -41,8 +53,14 @@ fn register_child(child: &Child) -> Option<i32> {
     Some(pgid)
 }
 
-#[cfg(not(unix))]
-fn register_child(_child: &Child) -> Option<i32> {
+/// Windows has no process groups. Put the browser in a kill-on-close job so
+/// the whole tree dies with us, even when we are terminated without running
+/// any teardown code.
+#[cfg(windows)]
+fn register_child(child: &Child) -> Option<i32> {
+    if let Some(handle) = child.raw_handle() {
+        job::assign(handle);
+    }
     None
 }
 
@@ -55,12 +73,22 @@ fn deregister_pgid(pgid: i32) {
     tracing::debug!(pgid, "deregistered browser process group");
 }
 
-/// SIGKILL every still-registered browser process group. Idempotent and
-/// safe to call from a signal/teardown path or `Drop`. Drains under the
+/// Kill every browser we spawned and delete their profile directories.
+/// Idempotent and safe to call from a signal/teardown path. This, not `Drop`,
+/// is what runs on the `process::exit` paths.
+pub fn kill_all_browsers() {
+    #[cfg(unix)]
+    kill_all_process_groups();
+    #[cfg(windows)]
+    job::terminate();
+    remove_registered_profiles();
+}
+
+/// SIGKILL every still-registered browser process group. Drains under the
 /// lock then kills lock-free so a re-entrant signal cannot deadlock on the
 /// registry mutex.
 #[cfg(unix)]
-pub fn kill_all_browsers() {
+fn kill_all_process_groups() {
     let pgids: Vec<i32> = {
         let mut set = lock_pgids();
         set.drain().collect()
@@ -88,10 +116,185 @@ pub fn kill_all_browsers() {
     }
 }
 
-/// No-op on non-Unix: process groups / `killpg` are Unix-only. Browsers
-/// degrade to `kill_on_drop(true)` (documented).
-#[cfg(not(unix))]
-pub fn kill_all_browsers() {}
+fn remove_registered_profiles() {
+    let dirs: Vec<PathBuf> = lock_profiles().drain().collect();
+    for dir in dirs {
+        // The job/group kill above is asynchronous: give the tree a moment
+        // to release its file handles (Windows refuses to delete open files).
+        for attempt in 0..5 {
+            if remove_profile_dir(&dir) {
+                break;
+            }
+            if attempt < 4 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    }
+}
+
+/// Windows job holding every browser we spawn. `KILL_ON_JOB_CLOSE` makes the
+/// OS kill the whole tree when our last handle to the job closes, which
+/// includes hard termination of this process.
+#[cfg(windows)]
+mod job {
+    use std::ffi::c_void;
+    use std::sync::OnceLock;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject,
+    };
+
+    /// The job handle as an integer so the static is `Send + Sync`. Never
+    /// closed on purpose: it lives for the whole process.
+    static JOB: OnceLock<Option<usize>> = OnceLock::new();
+
+    fn handle() -> Option<*mut c_void> {
+        let job = JOB.get_or_init(|| {
+            // SAFETY: plain FFI; the info struct is zeroed then filled in.
+            unsafe {
+                let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+                if job.is_null() {
+                    return None;
+                }
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let ok = SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    (&raw const info).cast(),
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                (ok != 0).then_some(job as usize)
+            }
+        });
+        job.map(|j| j as *mut c_void)
+    }
+
+    pub fn assign(process: *mut c_void) {
+        let Some(job) = handle() else {
+            tracing::warn!("could not create browser job object; browser may outlive us");
+            return;
+        };
+        // SAFETY: both handles are valid; the process handle is owned by the caller.
+        if unsafe { AssignProcessToJobObject(job, process) } == 0 {
+            tracing::warn!("could not assign browser to job object");
+        }
+    }
+
+    pub fn terminate() {
+        if let Some(job) = JOB.get().copied().flatten() {
+            // SAFETY: the job handle is valid for the process lifetime.
+            unsafe { TerminateJobObject(job as *mut c_void, 1) };
+        }
+    }
+}
+
+/// Is `pid` a live process? Used to tell a running sibling's profile from a
+/// dead process's leftovers.
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let Ok(pid) = i32::try_from(pid) else {
+            return false;
+        };
+        // SAFETY: signal 0 only checks existence and permission.
+        let exists = unsafe { libc::kill(pid, 0) } == 0;
+        exists || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Foundation::{CloseHandle, ERROR_INVALID_PARAMETER, GetLastError};
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        // SAFETY: plain FFI; the handle is closed before returning.
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if handle.is_null() {
+                return GetLastError() != ERROR_INVALID_PARAMETER;
+            }
+            let mut code = 0u32;
+            let alive = GetExitCodeProcess(handle, &mut code) == 0 || code == 259; // STILL_ACTIVE
+            CloseHandle(handle);
+            alive
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
+/// Where per-launch Chrome profiles live: an app-owned cache directory, not
+/// the shared OS temp dir, so a profile (cookies, session state) is not
+/// world-readable and leftovers are attributable to us.
+fn profile_root() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("crw")
+        .join("chrome-profiles")
+}
+
+/// Create a fresh private profile directory named `<pid>-<nanos>` under `root`
+/// and register it for teardown. The pid prefix is what lets a later run tell
+/// leftovers from a live sibling. Sweeps dead processes' leftovers first.
+fn create_profile_dir(root: &Path) -> Option<PathBuf> {
+    sweep_stale_profiles(root);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let dir = root.join(format!("{}-{nanos}", std::process::id()));
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder
+        .create(&dir)
+        .map_err(|e| tracing::warn!("Failed to create Chrome profile dir: {e}"))
+        .ok()?;
+    lock_profiles().insert(dir.clone());
+    Some(dir)
+}
+
+/// Delete profile directories under `root` whose owning process is gone
+/// (assumes one pid namespace per cache dir; containers sharing one mounted
+/// cache dir could sweep each other)
+/// (crash, SIGKILL, or a terminated MCP host). Best effort: a directory a
+/// surviving browser still locks is retried on the next launch.
+fn sweep_stale_profiles(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let owner = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.split('-').next()?.parse::<u32>().ok());
+        // Never touch a directory this process still owns. An unregistered
+        // one with our own pid is a previous run's (container restarts reuse
+        // pid 1), so it is swept like any dead owner's.
+        if let Some(pid) = owner
+            && !lock_profiles().contains(&entry.path())
+            && (pid == std::process::id() || !pid_alive(pid))
+        {
+            remove_profile_dir(&entry.path());
+        }
+    }
+}
+
+/// Best-effort delete. Returns whether the directory is gone.
+fn remove_profile_dir(dir: &Path) -> bool {
+    match std::fs::remove_dir_all(dir) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(e) => {
+            tracing::debug!(dir = %dir.display(), "could not remove Chrome profile dir: {e}");
+            false
+        }
+    }
+}
 
 /// A managed browser process or Docker container.
 /// Automatically cleaned up when dropped.
@@ -103,7 +306,12 @@ enum BrowserKind {
     /// A native process (LightPanda binary or Chrome). `pgid` is the
     /// process-group id registered in `BROWSER_PGIDS` (`None` if the child
     /// had already exited at spawn time, or on non-Unix).
-    Process { child: Child, pgid: Option<i32> },
+    /// `profile` is the Chrome user-data-dir we created and must delete.
+    Process {
+        child: Child,
+        pgid: Option<i32>,
+        profile: Option<PathBuf>,
+    },
     /// A Docker container, identified by its container ID.
     Docker(String),
 }
@@ -111,7 +319,11 @@ enum BrowserKind {
 impl Drop for ManagedBrowser {
     fn drop(&mut self) {
         match &mut self.kind {
-            BrowserKind::Process { child, pgid } => {
+            BrowserKind::Process {
+                child,
+                pgid,
+                profile,
+            } => {
                 #[cfg(unix)]
                 if let Some(pg) = *pgid {
                     // SAFETY: killpg is async-signal-safe. Group-kill first
@@ -129,6 +341,13 @@ impl Drop for ManagedBrowser {
                 // offloaded to the teardown path; short-lived CLI runs are
                 // reaped by the OS on process exit.
                 let _ = child.try_wait();
+                // Stay registered if removal fails (Windows: the browser tree
+                // may still hold files open) so `kill_all_browsers` retries.
+                if let Some(dir) = profile.take()
+                    && remove_profile_dir(&dir)
+                {
+                    lock_profiles().remove(&dir);
+                }
             }
             BrowserKind::Docker(container_id) => {
                 // Best-effort stop + remove. Fire-and-forget.
@@ -365,7 +584,11 @@ async fn try_lightpanda_native() -> Option<(ManagedBrowser, String)> {
     // poll failure drops it (→ killpg + deregister) instead of orphaning.
     let pgid = register_child(&child);
     let guard = ManagedBrowser {
-        kind: BrowserKind::Process { child, pgid },
+        kind: BrowserKind::Process {
+            child,
+            pgid,
+            profile: None,
+        },
     };
 
     // LightPanda doesn't print a WS URL to stderr like Chrome does.
@@ -552,7 +775,25 @@ async fn try_chrome_native() -> Option<(ManagedBrowser, String)> {
     let bin = find_chrome()?;
     tracing::info!("Auto-detected Chrome: {bin}");
 
-    let mut cmd = Command::new(&bin);
+    // Own the profile dir so Chrome does not create an un-cleaned one in the
+    // OS temp dir. If it cannot be created, or a sandboxed Chrome (snap,
+    // flatpak) cannot use it, fall back to Chrome's default: rendering wins.
+    if let Some(profile) = create_profile_dir(&profile_root()) {
+        if let Some(found) = launch_chrome(&bin, Some(profile)).await {
+            return Some(found);
+        }
+        tracing::warn!("Chrome did not start with an owned profile dir, retrying without it");
+    }
+    launch_chrome(&bin, None).await
+}
+
+async fn launch_chrome(bin: &str, profile: Option<PathBuf>) -> Option<(ManagedBrowser, String)> {
+    let mut cmd = Command::new(bin);
+    if let Some(dir) = &profile {
+        let mut flag = std::ffi::OsString::from("--user-data-dir=");
+        flag.push(dir);
+        cmd.arg(flag);
+    }
     cmd.args([
         "--headless",
         "--disable-gpu",
@@ -569,17 +810,28 @@ async fn try_chrome_native() -> Option<(ManagedBrowser, String)> {
     // children, not just the parent PID (rust-lang/rust#115241).
     #[cfg(unix)]
     cmd.process_group(0);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| tracing::warn!("Failed to spawn Chrome: {e}"))
-        .ok()?;
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            tracing::warn!("Failed to spawn Chrome: {e}");
+            if let Some(dir) = &profile {
+                lock_profiles().remove(dir);
+                remove_profile_dir(dir);
+            }
+            return None;
+        }
+    };
 
     // Take stderr before moving `child` into the guard; register the pgid
     // BEFORE reading the WS URL so a Ctrl-C during startup still reaps it.
     let stderr = child.stderr.take()?;
     let pgid = register_child(&child);
     let guard = ManagedBrowser {
-        kind: BrowserKind::Process { child, pgid },
+        kind: BrowserKind::Process {
+            child,
+            pgid,
+            profile,
+        },
     };
 
     let ws_url = read_ws_url_from_stderr(stderr).await?; // guard drops on None
@@ -690,6 +942,61 @@ fn command_exists(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The profile registry is process-global; tests touching it take turns.
+    static REGISTRY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn scratch_root(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("crw-profile-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create scratch root");
+        root
+    }
+
+    #[test]
+    fn profile_dir_is_created_registered_and_removed_on_teardown() {
+        let _turn = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = scratch_root("create");
+        let dir = create_profile_dir(&root).expect("profile dir");
+        assert!(dir.starts_with(&root) && dir.is_dir());
+        assert!(lock_profiles().contains(&dir));
+
+        remove_registered_profiles();
+        assert!(!dir.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sweep_removes_dead_owner_but_keeps_live_and_own() {
+        let _turn = REGISTRY_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = scratch_root("sweep");
+        // No real process has this pid (above every OS pid limit, below i32::MAX).
+        let dead = root.join("2000000000-1");
+        let live = create_profile_dir(&root).expect("registered profile");
+        let prev_run = root.join(format!("{}-1", std::process::id()));
+        let unrelated = root.join("not-a-profile");
+        for d in [&dead, &prev_run, &unrelated] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+
+        sweep_stale_profiles(&root);
+
+        assert!(!dead.exists(), "dead owner's profile must be swept");
+        assert!(live.exists(), "a registered profile must survive");
+        assert!(
+            !prev_run.exists(),
+            "a same-pid dir from a previous run is stale"
+        );
+        assert!(unrelated.exists(), "unparseable names must survive");
+        remove_registered_profiles();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn pid_alive_distinguishes_self_from_nonexistent() {
+        assert!(pid_alive(std::process::id()));
+        assert!(!pid_alive(2_000_000_000));
+    }
 
     /// Create a throwaway directory holding a single fake executable.
     fn dir_with_executable(tag: &str, file_name: &str) -> PathBuf {
