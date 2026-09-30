@@ -217,7 +217,7 @@ test("HTTPS_PROXY routes the download through a CONNECT tunnel", async () => {
     await withTempCache(async () => {
       await assert.rejects(fromDownload(), /proxy CONNECT failed: HTTP 502/);
     });
-    assert.ok(targets.includes("github.com:443"), `CONNECT targets: ${targets}`);
+    assert.equal(targets[0], "github.com:443");
   } finally {
     if (prev === undefined) delete process.env.HTTPS_PROXY;
     else process.env.HTTPS_PROXY = prev;
