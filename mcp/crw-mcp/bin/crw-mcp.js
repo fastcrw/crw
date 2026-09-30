@@ -5,7 +5,9 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const http = require("http");
 const https = require("https");
+const tls = require("tls");
 
 const VERSION = require("../package.json").version;
 const REPO = "fastcrw/crw";
@@ -56,16 +58,55 @@ function cacheDir() {
   return path.join(base, "crw-mcp", `v${VERSION}`);
 }
 
+// HTTPS_PROXY / HTTP_PROXY support: Node's https ignores them, and restricted
+// networks often only allow egress through one. Plain-http proxies only (the
+// usual corporate setup), tunnelled with CONNECT. ponytail: NO_PROXY is not
+// honoured, add when someone needs a bypass list.
+function proxyAgent() {
+  const raw =
+    process.env.HTTPS_PROXY || process.env.https_proxy ||
+    process.env.HTTP_PROXY || process.env.http_proxy;
+  if (!raw) return undefined;
+  const proxy = new URL(raw);
+  const headers = {};
+  if (proxy.username) {
+    const cred = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+    headers["Proxy-Authorization"] = `Basic ${Buffer.from(cred).toString("base64")}`;
+  }
+  const agent = new https.Agent();
+  agent.createConnection = (opts, cb) => {
+    const req = http.request({
+      host: proxy.hostname,
+      port: proxy.port || 80,
+      method: "CONNECT",
+      path: `${opts.host}:${opts.port || 443}`,
+      headers,
+    });
+    req.once("connect", (res, socket) => {
+      if (res.statusCode !== 200) {
+        socket.destroy();
+        return cb(new Error(`proxy CONNECT failed: HTTP ${res.statusCode}`));
+      }
+      cb(null, tls.connect({ socket, servername: opts.servername || opts.host }));
+    });
+    req.once("error", cb);
+    req.end();
+  };
+  return agent;
+}
+
 // Always resolves a Buffer: the archive is verified in memory, so an unverified
 // byte never reaches disk at all.
-function httpsGet(url, redirects = 0) {
+function httpsGet(url, extraHeaders = {}, redirects = 0) {
   return new Promise((resolve, reject) => {
+    const headers = { "User-Agent": `crw-mcp/${VERSION}`, ...extraHeaders };
     https
-      .get(url, { headers: { "User-Agent": `crw-mcp/${VERSION}` } }, (res) => {
+      .get(url, { headers, agent: proxyAgent() }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
           if (redirects > 5) return reject(new Error("too many redirects"));
-          return resolve(httpsGet(res.headers.location, redirects + 1));
+          // Extra headers are not forwarded: the redirect target is another host.
+          return resolve(httpsGet(res.headers.location, {}, redirects + 1));
         }
         if (res.statusCode !== 200) {
           res.resume();
@@ -78,6 +119,34 @@ function httpsGet(url, redirects = 0) {
       })
       .on("error", reject);
   });
+}
+
+// Same release file through api.github.com, for networks where the
+// github.com download host is blocked but the API host is reachable.
+async function viaApi(name) {
+  const tag = `https://api.github.com/repos/${REPO}/releases/tags/v${VERSION}`;
+  const release = JSON.parse((await httpsGet(tag)).toString("utf8"));
+  const asset = (release.assets || []).find((a) => a.name === name);
+  if (!asset) throw new Error(`${name} is not an asset of v${VERSION}`);
+  return httpsGet(
+    `https://api.github.com/repos/${REPO}/releases/assets/${asset.id}`,
+    { Accept: "application/octet-stream" }
+  );
+}
+
+// A 404 means the release lacks the file, so the API would say the same. Any
+// other failure is a network problem worth one retry through the API host.
+async function fetchAsset(name) {
+  try {
+    return await httpsGet(`https://github.com/${REPO}/releases/download/v${VERSION}/${name}`);
+  } catch (e) {
+    if (/^HTTP 404 /.test(e.message)) throw e;
+    try {
+      return await viaApi(name);
+    } catch (e2) {
+      throw new Error(`${e.message}; api.github.com fallback: ${e2.message}`);
+    }
+  }
 }
 
 // Parse one entry out of a coreutils-style SHA256SUMS. Written on Linux, read
@@ -98,14 +167,12 @@ async function fromDownload() {
   if (fs.existsSync(bin)) return bin;
 
   fs.mkdirSync(dir, { recursive: true });
-  const base = `https://github.com/${REPO}/releases/download/v${VERSION}`;
-  const url = `${base}/${plat.asset}`;
 
   // Fail closed: fetch the expected digest first, so a release without one is
   // refused before anything is downloaded rather than after.
   let sums;
   try {
-    sums = (await httpsGet(`${base}/SHA256SUMS`)).toString("utf8");
+    sums = (await fetchAsset("SHA256SUMS")).toString("utf8");
   } catch (e) {
     // Only a 404 means the release genuinely lacks checksums. Reporting a
     // proxy or DNS failure as "our release is broken" sends users to file
@@ -123,7 +190,7 @@ async function fromDownload() {
 
   // stderr only: stdout is the MCP (JSON-RPC) channel.
   console.error(`crw-mcp: downloading ${plat.asset} (v${VERSION})...`);
-  const data = await httpsGet(url);
+  const data = await fetchAsset(plat.asset);
 
   const actual = crypto.createHash("sha256").update(data).digest("hex");
   if (actual !== expected) {
@@ -168,7 +235,7 @@ async function resolveBinary() {
   return fromEnv() || fromPackage() || (await fromDownload());
 }
 
-module.exports = { digestFor, fromDownload, cacheDir, plat, binName };
+module.exports = { digestFor, fromDownload, cacheDir, plat, binName, proxyAgent };
 
 // Only run when invoked as the CLI, so tests can require this file.
 if (require.main === module) {
@@ -198,8 +265,10 @@ if (require.main === module) {
   .catch((err) => {
     console.error(
       `crw-mcp: could not locate or download the ${key} binary.\n  ${err.message}\n` +
-        `  Set CRW_MCP_BINARY=/path/to/crw-mcp to use a local build, or install\n` +
-        `  from https://github.com/${REPO}/releases.`
+        `  Manual install: download ${plat.asset} from\n` +
+        `  https://github.com/${REPO}/releases/tag/v${VERSION}, check it against SHA256SUMS,\n` +
+        `  and put ${binName} in ${cacheDir()}\n` +
+        `  (or set CRW_MCP_BINARY=/path/to/${binName}). HTTPS_PROXY is honoured.`
     );
     process.exit(1);
   });

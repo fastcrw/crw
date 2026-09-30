@@ -9,18 +9,20 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const crypto = require("crypto");
 const fs = require("fs");
+const http = require("http");
 const https = require("https");
 const os = require("os");
 const path = require("path");
 const { Readable } = require("stream");
 
-const { fromDownload, cacheDir, plat, binName } = require("../bin/crw-mcp.js");
+const { fromDownload, cacheDir, plat, binName, proxyAgent } = require("../bin/crw-mcp.js");
 
 // Replace https.get with a queue of canned responses. The launcher holds the
 // same module object we mutate here, so this reaches the real code path.
-function stubHttps(queue) {
+function stubHttps(queue, seen = []) {
   const original = https.get;
-  https.get = (_url, _opts, cb) => {
+  https.get = (url, _opts, cb) => {
+    seen.push(url);
     const item = queue.shift();
     const body = item.body === undefined ? [] : [Buffer.from(item.body)];
     const res = Readable.from(body);
@@ -129,6 +131,111 @@ test("a verified archive is extracted and returned as an executable path", async
       restore();
     }
   });
+});
+
+test("a blocked download host falls back to api.github.com and is still verified", async () => {
+  await withTempCache(async () => {
+    const archive = buildTarGz(binName, "#!/bin/sh\nexit 0\n");
+    const digest = crypto.createHash("sha256").update(archive).digest("hex");
+    const release = JSON.stringify({
+      assets: [
+        { name: "SHA256SUMS", id: 11 },
+        { name: plat.asset, id: 22 },
+      ],
+    });
+    const seen = [];
+    const restore = stubHttps(
+      [
+        { status: 500 }, // github.com SHA256SUMS blocked
+        { body: release }, // api release lookup
+        { body: `${digest}  ${plat.asset}\n` }, // api asset 11
+        { status: 500 }, // github.com archive blocked
+        { body: release },
+        { body: archive }, // api asset 22
+      ],
+      seen
+    );
+    try {
+      const resolved = await fromDownload();
+      assert.ok(fs.existsSync(resolved));
+      assert.ok(seen.some((u) => u.endsWith("/releases/assets/22")));
+    } finally {
+      restore();
+    }
+  });
+});
+
+test("the api fallback still refuses a mismatched archive", async () => {
+  await withTempCache(async () => {
+    const release = JSON.stringify({
+      assets: [
+        { name: "SHA256SUMS", id: 11 },
+        { name: plat.asset, id: 22 },
+      ],
+    });
+    const restore = stubHttps([
+      { status: 500 },
+      { body: release },
+      { body: `${"0".repeat(64)}  ${plat.asset}\n` },
+      { status: 500 },
+      { body: release },
+      { body: "tampered" },
+    ]);
+    try {
+      await assert.rejects(fromDownload(), /checksum mismatch/);
+      assert.equal(fs.existsSync(path.join(cacheDir(), binName)), false);
+    } finally {
+      restore();
+    }
+  });
+});
+
+test("a 404 is final: the api host is not asked", async () => {
+  await withTempCache(async () => {
+    const seen = [];
+    const restore = stubHttps([{ status: 404 }], seen);
+    try {
+      await assert.rejects(fromDownload(), /publishes no SHA256SUMS/);
+      assert.equal(seen.length, 1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+test("HTTPS_PROXY routes the download through a CONNECT tunnel", async () => {
+  const targets = [];
+  const proxy = http.createServer();
+  proxy.on("connect", (req, socket) => {
+    targets.push(req.url);
+    socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+  });
+  await new Promise((r) => proxy.listen(0, "127.0.0.1", r));
+  const prev = process.env.HTTPS_PROXY;
+  process.env.HTTPS_PROXY = `http://127.0.0.1:${proxy.address().port}`;
+  try {
+    await withTempCache(async () => {
+      await assert.rejects(fromDownload(), /proxy CONNECT failed: HTTP 502/);
+    });
+    assert.ok(targets.includes("github.com:443"), `CONNECT targets: ${targets}`);
+  } finally {
+    if (prev === undefined) delete process.env.HTTPS_PROXY;
+    else process.env.HTTPS_PROXY = prev;
+    proxy.close();
+  }
+});
+
+test("no proxy variable means no proxy agent", () => {
+  const saved = {};
+  for (const k of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]) {
+    saved[k] = process.env[k];
+    delete process.env[k];
+  }
+  try {
+    assert.equal(proxyAgent(), undefined);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) if (v !== undefined) process.env[k] = v;
+  }
 });
 
 // Build a real .tar.gz in-process so the extraction path runs for real.
