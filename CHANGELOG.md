@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.37.2](https://github.com/fastcrw/crw/compare/v0.37.1...v0.37.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **mcp:** npm launcher falls back to api.github.com and honours proxies ([8a3360d](https://github.com/fastcrw/crw/commit/8a3360d07a3510fd770d833d2901f93abe0cdffd)), closes [#597](https://github.com/fastcrw/crw/issues/597)
+
 ## [0.37.1](https://github.com/fastcrw/crw/compare/v0.37.0...v0.37.1) (2026-09-30)
 
 
