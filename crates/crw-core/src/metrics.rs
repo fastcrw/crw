@@ -239,7 +239,7 @@ impl Metrics {
         .unwrap();
         let chrome_blocked_requests_total = register_int_counter_vec_with_registry!(
             "crw_chrome_blocked_requests_total",
-            "Chrome requests blocked by interception, labeled by reason",
+            "Chrome request-interception outcomes, labeled by reason",
             &["reason"],
             registry
         )
