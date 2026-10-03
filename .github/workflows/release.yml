@@ -494,7 +494,16 @@ jobs:
       # ghcr.io/us/crw predates the move to the fastcrw org and is still pulled by
       # older docs and the io.github.us/crw MCP registry entry. Copy the pushed
       # manifests there so it keeps getting releases. Best effort: a failure here
-      # must never fail the release.
+      # must never fail the release. The org GITHUB_TOKEN cannot write a package
+      # owned by the `us` user (403), so this step logs in with a PAT.
+      - name: Log in to GHCR as the legacy owner
+        continue-on-error: true
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: us
+          password: ${{ secrets.LEGACY_GHCR_TOKEN }}
+
       - name: Mirror to the legacy image
         continue-on-error: true
         env:
