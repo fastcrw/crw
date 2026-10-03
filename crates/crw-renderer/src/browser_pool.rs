@@ -292,7 +292,7 @@ impl<C: ChromeConnOps> BrowserContextPool<C> {
         // exists to prevent.
         let _ = self
             .inflight
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
                 Some(v.saturating_sub(1))
             });
         self.notify_idle.notify_waiters();
