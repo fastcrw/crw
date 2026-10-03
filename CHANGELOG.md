@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.37.3](https://github.com/fastcrw/crw/compare/v0.37.2...v0.37.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* **ci:** authenticate the legacy image mirror with a PAT ([55c2056](https://github.com/fastcrw/crw/commit/55c2056b85339675ea97eb67d4f4b4aa99b4a5af))
+
 ## [0.37.2](https://github.com/fastcrw/crw/compare/v0.37.1...v0.37.2) (2026-09-30)
 
 
