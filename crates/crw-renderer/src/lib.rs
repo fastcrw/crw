@@ -4475,6 +4475,60 @@ impl FallbackRenderer {
     }
 }
 
+/// Byte offset of the document's real `<body` opening tag, or `None` when it
+/// has none. Skips comments and the content of raw-text elements, where a
+/// literal `<body` is data, not markup.
+fn find_body_open(html: &str) -> Option<usize> {
+    const SKIPPED: [&str; 4] = ["script", "style", "template", "textarea"];
+    let b = html.as_bytes();
+    // `name` at `b[at..]`, case-insensitive, followed by a tag-name boundary.
+    let tag_at = |at: usize, name: &str| {
+        b.get(at..at + name.len())
+            .is_some_and(|w| w.eq_ignore_ascii_case(name.as_bytes()))
+            && matches!(
+                b.get(at + name.len()),
+                None | Some(b'>' | b'/' | b' ' | b'\t' | b'\n' | b'\r' | b'\x0c')
+            )
+    };
+    let find_from = |from: usize, needle: &[u8]| {
+        b[from..]
+            .windows(needle.len())
+            .position(|w| w.eq_ignore_ascii_case(needle))
+            .map(|i| from + i)
+    };
+    let mut i = 0;
+    while let Some(off) = b[i..].iter().position(|&c| c == b'<') {
+        let at = i + off;
+        if b[at..].starts_with(b"<!--") {
+            // From `at + 2` so the empty comments `<!-->` and `<!--->` close too.
+            i = find_from(at + 2, b"-->")? + 3;
+        } else if tag_at(at + 1, "body") {
+            return Some(at);
+        } else if let Some(name) = SKIPPED.iter().find(|n| tag_at(at + 1, n)) {
+            // An unterminated raw-text element swallows the rest of the document.
+            i = find_from(at + 1 + name.len(), format!("</{name}").as_bytes())? + 2;
+        } else if b.get(at + 1).is_some_and(u8::is_ascii_alphabetic) {
+            // Step over the whole tag: a `<script` or `<!--` inside a quoted
+            // attribute value (`content="use the <script> tag"`) is text.
+            let mut quote = None;
+            let mut j = at + 1;
+            while let Some(&c) = b.get(j) {
+                match (quote, c) {
+                    (None, b'>') => break,
+                    (None, b'"' | b'\'') => quote = Some(c),
+                    (Some(q), _) if c == q => quote = None,
+                    _ => {}
+                }
+                j += 1;
+            }
+            i = (j + 1).min(b.len());
+        } else {
+            i = at + 1;
+        }
+    }
+    None
+}
+
 /// Rough estimate of visible text length in an HTML document.
 /// Strips tags and collapses whitespace. Used to detect "thin" renders
 /// where a renderer returned HTML but failed to execute JavaScript.
@@ -4488,7 +4542,18 @@ fn html_body_text_len(html: &str) -> usize {
     // opening tag. `&html[start..end]` then panics with
     // "byte range starts at 198294 but ends at 197897" and kills the request.
     // Seen in production 2026-08-11, 9 times in 30 minutes.
-    let body = if let Some(start) = html.find("<body") {
+    //
+    // The opening tag comes from `find_body_open`, which skips a `<body` inside
+    // `<script>`, `<style>`, `<template>`, `<textarea>` or a comment. A plain
+    // `find("<body")` lands on the first such mention: an ad or video loader in
+    // `<head>` that writes `<body><script ...></script></body>` into an iframe
+    // made the real body measure 0 characters, so a fully loaded page was
+    // classified as a thin render and escalated to the next tier.
+    //
+    // When the scan finds nothing (an unterminated comment or raw-text element
+    // swallowed the rest of the document) it falls back to the plain find, which
+    // is what this function did before.
+    let body = if let Some(start) = find_body_open(html).or_else(|| html.find("<body")) {
         let start = html[start..].find('>').map(|i| start + i + 1).unwrap_or(0);
         let end = html[start..]
             .find("</body>")
@@ -4550,6 +4615,71 @@ mod tests {
         );
         assert!(html.find("</body>").unwrap() < html.find("<body").unwrap());
         assert!(html_body_text_len(html) > 0);
+    }
+
+    #[test]
+    fn body_text_len_ignores_a_body_tag_inside_a_head_script() {
+        // An iframe-writing loader in <head> carries a literal `<body>...</body>`
+        // pair. Locating the opening tag with a plain find measured the 0
+        // characters between that pair instead of the real body.
+        let html = concat!(
+            "<html><head><script>createIFrame(`<body><script src=x><\\/script></body>`);</script></head>",
+            "<body><p>real content here</p></body></html>"
+        );
+        assert_eq!(html_body_text_len(html), 17);
+    }
+
+    #[test]
+    fn find_body_open_skips_raw_text_and_comments() {
+        let real = "<body class=\"a\"><p>x</p></body>";
+        for skipped in [
+            "<script>var a = '<body>';</script>",
+            "<SCRIPT type=x>var a = '<body>';</SCRIPT>",
+            "<style>/* <body> */</style>",
+            "<template><body></template>",
+            "<textarea><body></textarea>",
+            "<!-- <body> -->",
+        ] {
+            let html = format!("<html><head>{skipped}</head>{real}</html>");
+            assert_eq!(find_body_open(&html), html.find("<body class"), "{skipped}");
+        }
+    }
+
+    #[test]
+    fn find_body_open_matches_the_tag_not_a_longer_name() {
+        let html = "<bodyguard>x</bodyguard><BODY>y</BODY>";
+        assert_eq!(find_body_open(html), html.find("<BODY>"));
+    }
+
+    #[test]
+    fn find_body_open_gives_up_on_an_unterminated_raw_text_element() {
+        // Nothing after an unclosed <script> is markup, so the scan finds no body
+        // tag; `html_body_text_len` then falls back to the plain find.
+        assert_eq!(find_body_open("<script>var a = '<body>';"), None);
+        assert_eq!(find_body_open("<!-- <body>"), None);
+        assert_eq!(find_body_open("<div class=\"x"), None);
+        assert_eq!(html_body_text_len("<!-- x<body>real text</body>"), 9);
+    }
+
+    #[test]
+    fn find_body_open_ignores_markup_lookalikes_in_attribute_values() {
+        // `<` is legal in an attribute value in raw HTTP HTML. A `<script` or
+        // `<!--` there must not be read as the start of a raw-text region that
+        // swallows the real body.
+        let html = concat!(
+            "<head><meta name=\"description\" content=\"Use the <script> tag, or <!-- x\">",
+            "</head><body><p>lots of real text</p><script src=a.js></script></body>"
+        );
+        assert_eq!(find_body_open(html), html.find("<body"));
+        assert_eq!(html_body_text_len(html), 17);
+    }
+
+    #[test]
+    fn find_body_open_closes_the_empty_comments() {
+        for empty in ["<!-->", "<!--->"] {
+            let html = format!("{empty}<body>x</body>");
+            assert_eq!(find_body_open(&html), html.find("<body"), "{empty}");
+        }
     }
 
     #[test]
