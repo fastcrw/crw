@@ -56,6 +56,8 @@ pub struct CloakRenderer {
     proxy_base: Option<(String, String)>,
     /// Default country for the `__cr.<cc>` suffix (`config.proxy_default_country`).
     default_country: Option<String>,
+    /// How country and session are written into `proxy_base`'s username.
+    proxy_username_format: crw_core::config::ProxyUsernameFormat,
     /// Proxy `scheme://host:port` for cloak to self-provision a residential exit
     /// when the per-request `REQUEST_PROXY` is absent (creds come from
     /// `proxy_base`). `None` (unset/empty) keeps today's REQUEST_PROXY-only
@@ -88,10 +90,20 @@ impl CloakRenderer {
             timeout: Duration::from_millis(timeout_ms),
             proxy_base,
             default_country,
+            proxy_username_format: crw_core::config::ProxyUsernameFormat::default(),
             proxy_host: proxy_host.filter(|h| !h.trim().is_empty()),
             client,
             sessid_map: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Set the username format for `proxy_base`. Defaults to DataImpulse.
+    pub fn with_proxy_username_format(
+        mut self,
+        format: crw_core::config::ProxyUsernameFormat,
+    ) -> Self {
+        self.proxy_username_format = format;
+        self
     }
 
     fn auth(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -123,17 +135,16 @@ impl CloakRenderer {
             .ok()
             .flatten()
             .or_else(|| self.proxy_host.clone())?;
-        let cc = crate::REQUEST_COUNTRY
+        let req_country = crate::REQUEST_COUNTRY
             .try_with(|c| c.clone())
             .ok()
-            .flatten()
-            .or_else(|| self.default_country.clone())
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()));
-        let username = match cc {
-            Some(cc) => format!("{user}__cr.{cc};sessid.stick{sessid}"),
-            None => format!("{user};sessid.stick{sessid}"),
-        };
+            .flatten();
+        let cc = crw_core::config::normalize_proxy_country(
+            req_country.as_deref().or(self.default_country.as_deref()),
+        );
+        let username = self
+            .proxy_username_format
+            .compose(user, cc.as_deref(), Some(sessid));
         // server is "scheme://host:port" (no creds); inject "user:pass@".
         Some(server.replacen("://", &format!("://{username}:{pass}@"), 1))
     }
@@ -383,6 +394,24 @@ mod tests {
         assert_eq!(
             r.sticky_proxy_url("abc").unwrap(),
             "http://user__cr.us;sessid.stickabc:pass@gw.dataimpulse.com:823"
+        );
+    }
+
+    #[tokio::test]
+    async fn self_provisions_proxy_in_nodemaven_format() {
+        let r = CloakRenderer::new(
+            "cloak",
+            "http://sidecar:8000",
+            "",
+            30_000,
+            Some(("acct".to_string(), "pass".to_string())),
+            Some("us".to_string()),
+            Some("http://gateway.example.com:8080".to_string()),
+        )
+        .with_proxy_username_format(crw_core::config::ProxyUsernameFormat::NodeMaven);
+        assert_eq!(
+            r.sticky_proxy_url("abc").unwrap(),
+            "http://acct-country-us-sid-abc:pass@gateway.example.com:8080"
         );
     }
 

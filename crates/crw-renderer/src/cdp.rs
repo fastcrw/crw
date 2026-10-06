@@ -471,6 +471,8 @@ pub struct CdpRenderer {
     /// Country code used when a `ScrapeRequest.country` is not supplied.
     /// `None` means "no suffix" → DataImpulse global pool.
     default_country: Option<String>,
+    /// How the country is written into `proxy_auth_base`'s username.
+    proxy_username_format: crw_core::config::ProxyUsernameFormat,
     /// Phase (latency-qn): max Cloudflare/anti-bot challenge-clear retries in the
     /// post-navigate loop. Default `CHALLENGE_MAX_RETRIES` (3 × 3s = 9s). Measured
     /// as 28% of render time, mostly on shells that never clear (→ fail anyway);
@@ -519,6 +521,7 @@ impl CdpRenderer {
             pool_batch_gate: None,
             proxy_auth_base: None,
             default_country: None,
+            proxy_username_format: crw_core::config::ProxyUsernameFormat::default(),
             challenge_max_retries: CHALLENGE_MAX_RETRIES,
             spa_selector_max: Duration::from_millis(SPA_SELECTOR_MAX_MS),
             fast_ready: false,
@@ -571,6 +574,30 @@ impl CdpRenderer {
     ) -> Self {
         self.proxy_auth_base = Some((base_user, base_pass));
         self.default_country = default_country;
+        self
+    }
+
+    /// The `proxy_auth_base` credentials with the country composed in:
+    /// per-request country, then `default_country`, then none (global pool).
+    fn base_proxy_credentials(&self, req_country: Option<&str>) -> Option<(String, String)> {
+        let (base_user, base_pass) = self.proxy_auth_base.as_ref()?;
+        let cc = crw_core::config::normalize_proxy_country(
+            req_country.or(self.default_country.as_deref()),
+        );
+        Some((
+            self.proxy_username_format
+                .compose(base_user, cc.as_deref(), None),
+            base_pass.clone(),
+        ))
+    }
+
+    /// Set the username format used with [`Self::with_proxy_auth_base`].
+    /// Defaults to DataImpulse's `{base_user}__cr.{country}`.
+    pub fn with_proxy_username_format(
+        mut self,
+        format: crw_core::config::ProxyUsernameFormat,
+    ) -> Self {
+        self.proxy_username_format = format;
         self
     }
 
@@ -3099,21 +3126,11 @@ impl CdpRenderer {
             .ok()
             .flatten();
         let effective_creds: Option<(String, String)> = request_proxy_auth.or_else(|| {
-            self.proxy_auth_base.as_ref().map(|(base_user, base_pass)| {
-                let req_country = crate::REQUEST_COUNTRY
-                    .try_with(|c| c.clone())
-                    .ok()
-                    .flatten();
-                let cc = req_country
-                    .as_deref()
-                    .or(self.default_country.as_deref())
-                    .map(|s| s.trim().to_lowercase())
-                    .filter(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()));
-                match cc {
-                    Some(cc) => (format!("{base_user}__cr.{cc}"), base_pass.clone()),
-                    None => (base_user.clone(), base_pass.clone()),
-                }
-            })
+            let req_country = crate::REQUEST_COUNTRY
+                .try_with(|c| c.clone())
+                .ok()
+                .flatten();
+            self.base_proxy_credentials(req_country.as_deref())
         });
         let auth_active = effective_creds.is_some();
 
@@ -4842,6 +4859,44 @@ mod tests {
             Some(("diuser".to_string(), "dipass".to_string()))
         );
         assert_eq!(r.default_country, Some("de".to_string()));
+    }
+
+    #[test]
+    fn base_proxy_credentials_dataimpulse_by_default() {
+        let r = CdpRenderer::new("chrome_proxy", "ws://x/", 1000, 1).with_proxy_auth_base(
+            "diuser".to_string(),
+            "dipass".to_string(),
+            Some("de".to_string()),
+        );
+        assert_eq!(
+            r.base_proxy_credentials(Some("US")),
+            Some(("diuser__cr.us".to_string(), "dipass".to_string()))
+        );
+        assert_eq!(
+            r.base_proxy_credentials(None).map(|c| c.0),
+            Some("diuser__cr.de".to_string())
+        );
+    }
+
+    #[test]
+    fn base_proxy_credentials_nodemaven_format() {
+        let r = CdpRenderer::new("chrome_proxy", "ws://x/", 1000, 1)
+            .with_proxy_auth_base("acct".to_string(), "pw".to_string(), None)
+            .with_proxy_username_format(crw_core::config::ProxyUsernameFormat::NodeMaven);
+        assert_eq!(
+            r.base_proxy_credentials(Some("gb")),
+            Some(("acct-country-gb".to_string(), "pw".to_string()))
+        );
+        assert_eq!(
+            r.base_proxy_credentials(None).map(|c| c.0),
+            Some("acct".to_string())
+        );
+    }
+
+    #[test]
+    fn base_proxy_credentials_none_without_base() {
+        let r = CdpRenderer::new("chrome_proxy", "ws://x/", 1000, 1);
+        assert!(r.base_proxy_credentials(Some("us")).is_none());
     }
 
     #[test]

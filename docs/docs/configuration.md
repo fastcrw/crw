@@ -42,6 +42,7 @@ ws_url = "ws://127.0.0.1:9222/"
 # proxy_base_user = ""              # base username, WITHOUT __cr.<cc> suffix
 # proxy_base_pass = ""
 # proxy_default_country = "us"      # 2-letter ISO 3166-1 alpha-2, lowercase
+# proxy_username_format = "dataimpulse" # or "nodemaven": how country/session go into the username
 
 # [renderer.chrome_proxy]
 # ws_url = "ws://chrome-proxy:9222"
@@ -197,6 +198,7 @@ Use the `CRW_` prefix with `__` as a nesting separator:
 | `renderer.proxy_base_user` | `CRW_RENDERER__PROXY_BASE_USER` |
 | `renderer.proxy_base_pass` | `CRW_RENDERER__PROXY_BASE_PASS` |
 | `renderer.proxy_default_country` | `CRW_RENDERER__PROXY_DEFAULT_COUNTRY` |
+| `renderer.proxy_username_format` | `CRW_RENDERER__PROXY_USERNAME_FORMAT` |
 | `extraction.llm.api_key` | `CRW_EXTRACTION__LLM__API_KEY` |
 | `extraction.llm.provider` | `CRW_EXTRACTION__LLM__PROVIDER` |
 | `extraction.llm.model` | `CRW_EXTRACTION__LLM__MODEL` |
