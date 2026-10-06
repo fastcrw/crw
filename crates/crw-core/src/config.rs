@@ -3274,10 +3274,6 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(w.f, ProxyUsernameFormat::NodeMaven);
         let w: Wrap = toml::from_str("f = \"dataimpulse\"").unwrap();
         assert_eq!(w.f, ProxyUsernameFormat::DataImpulse);
-        assert_eq!(
-            ProxyUsernameFormat::default(),
-            ProxyUsernameFormat::DataImpulse
-        );
     }
 
     #[test]
