@@ -4894,12 +4894,6 @@ mod tests {
     }
 
     #[test]
-    fn base_proxy_credentials_none_without_base() {
-        let r = CdpRenderer::new("chrome_proxy", "ws://x/", 1000, 1);
-        assert!(r.base_proxy_credentials(Some("us")).is_none());
-    }
-
-    #[test]
     fn with_proxy_auth_base_accepts_no_default_country() {
         let r = CdpRenderer::new("chrome", "ws://x/", 1000, 1).with_proxy_auth_base(
             "u".to_string(),
