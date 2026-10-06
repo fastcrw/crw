@@ -451,7 +451,8 @@ can&#39;t proxy), the request <strong>errors</strong> rather than leaking your r
 <h2 id="residential-geo-targeted-tier-advanced">Residential / geo-targeted tier (advanced)</h2>
 <p>Separately from <code>proxy_list</code>, crw has an opt-in <strong>residential <code>chrome_proxy</code>
 renderer tier</strong> for IP-flagged targets, with per-request country selection
-(<code>country</code> on the scrape body → <code>__cr.&lt;cc&gt;</code> for DataImpulse-style providers). See
+(<code>country</code> on the scrape body → <code>__cr.&lt;cc&gt;</code> for DataImpulse-style providers, or
+<code>-country-&lt;cc&gt;</code> with <code>proxy_username_format = &quot;nodemaven&quot;</code>). See
 <a href="js-rendering.md">JS Rendering</a> for that tier&#39;s setup (<code>proxy_base_user</code>,
 <code>proxy_base_pass</code>, <code>[renderer.chrome_proxy]</code>).</p>
 <h2 id="managed-cloud">Managed cloud</h2>

@@ -321,6 +321,7 @@ ws_url = &quot;ws://127.0.0.1:9222/&quot;
 # proxy_base_user = &quot;&quot;              # base username, WITHOUT __cr.&lt;cc&gt; suffix
 # proxy_base_pass = &quot;&quot;
 # proxy_default_country = &quot;us&quot;      # 2-letter ISO 3166-1 alpha-2, lowercase
+# proxy_username_format = &quot;dataimpulse&quot; # or &quot;nodemaven&quot;: how country/session go into the username
 
 # [renderer.chrome_proxy]
 # ws_url = &quot;ws://chrome-proxy:9222&quot;
@@ -532,6 +533,10 @@ CRW_CONFIG=config.stealth crw-server</code></pre>
 <tr>
 <td><code>renderer.proxy_default_country</code></td>
 <td><code>CRW_RENDERER__PROXY_DEFAULT_COUNTRY</code></td>
+</tr>
+<tr>
+<td><code>renderer.proxy_username_format</code></td>
+<td><code>CRW_RENDERER__PROXY_USERNAME_FORMAT</code></td>
 </tr>
 <tr>
 <td><code>extraction.llm.api_key</code></td>
