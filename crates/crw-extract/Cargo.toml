@@ -23,7 +23,7 @@ pdf-inspector = { workspace = true, optional = true }
 # Used ONLY for the pre-parse decompression-bomb guard: structure-parse the PDF
 # and bounded-inflate each FlateDecode stream so a malicious file is rejected
 # before pdf-inspector allocates the full (huge) decompressed payload.
-lopdf = { version = "0.44", optional = true }
+lopdf = { version = "0.45", optional = true }
 flate2 = { version = "1", optional = true }
 lol_html = { workspace = true }
 scraper = { workspace = true }
