@@ -725,6 +725,46 @@ pub enum RendererMode {
     Cloak,
 }
 
+/// How the residential proxy tiers (`chrome_proxy`, cloak) write the request
+/// country and the sticky session into the proxy username.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProxyUsernameFormat {
+    /// `{user}__cr.{cc};sessid.stick{id}`
+    #[default]
+    DataImpulse,
+    /// `{user}-country-{cc}-sid-{id}`
+    NodeMaven,
+}
+
+impl ProxyUsernameFormat {
+    /// `country` is expected to be already normalized by [`normalize_proxy_country`].
+    pub fn compose(self, user: &str, country: Option<&str>, session: Option<&str>) -> String {
+        let (country_sep, session_sep) = match self {
+            Self::DataImpulse => ("__cr.", ";sessid.stick"),
+            Self::NodeMaven => ("-country-", "-sid-"),
+        };
+        let mut out = user.to_string();
+        if let Some(cc) = country {
+            out.push_str(country_sep);
+            out.push_str(cc);
+        }
+        if let Some(id) = session {
+            out.push_str(session_sep);
+            out.push_str(id);
+        }
+        out
+    }
+}
+
+/// Lower-cased two-letter country code, or `None` for anything else (wrong
+/// length, non-alphabetic, empty), which selects the provider's global pool.
+pub fn normalize_proxy_country(country: Option<&str>) -> Option<String> {
+    country
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()))
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RendererConfig {
     #[serde(default)]
@@ -996,6 +1036,10 @@ pub struct RendererConfig {
     /// 2-letter ISO 3166-1 alpha-2 (e.g. "us"). None = global pool (no suffix).
     #[serde(default)]
     pub proxy_default_country: Option<String>,
+    /// Username format of the residential proxy behind `proxy_base_user`:
+    /// `dataimpulse` (default) or `nodemaven`.
+    #[serde(default)]
+    pub proxy_username_format: ProxyUsernameFormat,
 }
 
 /// Engine escalation policy — adds `ChromeStealth` and `ChromeStealthProxy`
@@ -1203,6 +1247,7 @@ impl Default for RendererConfig {
             proxy_base_user: None,
             proxy_base_pass: None,
             proxy_default_country: None,
+            proxy_username_format: ProxyUsernameFormat::default(),
         }
     }
 }
@@ -1377,14 +1422,12 @@ impl RendererConfig {
     pub fn effective_proxy_credentials(&self, country: Option<&str>) -> Option<(String, String)> {
         let user = self.proxy_base_user.as_ref()?;
         let pass = self.proxy_base_pass.as_ref()?;
-        let cc = country
-            .or(self.proxy_default_country.as_deref())
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| s.len() == 2 && s.chars().all(|c| c.is_ascii_alphabetic()));
-        Some(match cc {
-            Some(cc) => (format!("{user}__cr.{cc}"), pass.clone()),
-            None => (user.clone(), pass.clone()),
-        })
+        let cc = normalize_proxy_country(country.or(self.proxy_default_country.as_deref()));
+        Some((
+            self.proxy_username_format
+                .compose(user, cc.as_deref(), None),
+            pass.clone(),
+        ))
     }
 
     /// Number of active CDP tiers (lightpanda + playwright + chrome) under
@@ -3181,6 +3224,60 @@ search_backend_url = "http://from-file:8080"
         // Empty string after trim → rejected.
         let (u, _) = cfg.effective_proxy_credentials(Some("  ")).unwrap();
         assert_eq!(u, "abc");
+    }
+
+    #[test]
+    fn effective_proxy_credentials_nodemaven_format() {
+        let cfg = RendererConfig {
+            proxy_base_user: Some("acct".into()),
+            proxy_base_pass: Some("pw".into()),
+            proxy_default_country: Some("de".into()),
+            proxy_username_format: ProxyUsernameFormat::NodeMaven,
+            ..Default::default()
+        };
+        let (u, p) = cfg.effective_proxy_credentials(Some("US")).unwrap();
+        assert_eq!(u, "acct-country-us");
+        assert_eq!(p, "pw");
+        let (u, _) = cfg.effective_proxy_credentials(None).unwrap();
+        assert_eq!(u, "acct-country-de");
+        let (u, _) = cfg.effective_proxy_credentials(Some("usa")).unwrap();
+        assert_eq!(
+            u, "acct",
+            "invalid country falls through to the global pool"
+        );
+    }
+
+    #[test]
+    fn proxy_username_format_composes_country_and_session() {
+        let di = ProxyUsernameFormat::DataImpulse;
+        let nm = ProxyUsernameFormat::NodeMaven;
+        assert_eq!(
+            di.compose("u", Some("us"), Some("s1")),
+            "u__cr.us;sessid.sticks1"
+        );
+        assert_eq!(di.compose("u", None, Some("s1")), "u;sessid.sticks1");
+        assert_eq!(
+            nm.compose("u", Some("us"), Some("s1")),
+            "u-country-us-sid-s1"
+        );
+        assert_eq!(nm.compose("u", None, Some("s1")), "u-sid-s1");
+        assert_eq!(nm.compose("u", None, None), "u");
+    }
+
+    #[test]
+    fn proxy_username_format_parses_lowercase_names() {
+        #[derive(Deserialize)]
+        struct Wrap {
+            f: ProxyUsernameFormat,
+        }
+        let w: Wrap = toml::from_str("f = \"nodemaven\"").unwrap();
+        assert_eq!(w.f, ProxyUsernameFormat::NodeMaven);
+        let w: Wrap = toml::from_str("f = \"dataimpulse\"").unwrap();
+        assert_eq!(w.f, ProxyUsernameFormat::DataImpulse);
+        assert_eq!(
+            ProxyUsernameFormat::default(),
+            ProxyUsernameFormat::DataImpulse
+        );
     }
 
     #[test]

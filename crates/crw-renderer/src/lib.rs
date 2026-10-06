@@ -1157,11 +1157,13 @@ impl FallbackRenderer {
                     // to Chrome's `Fetch.authRequired` via CDP — replacing the
                     // removed gost forwarder.
                     if let (Some(u), Some(p)) = (&config.proxy_base_user, &config.proxy_base_pass) {
-                        renderer = renderer.with_proxy_auth_base(
-                            u.clone(),
-                            p.clone(),
-                            config.proxy_default_country.clone(),
-                        );
+                        renderer = renderer
+                            .with_proxy_auth_base(
+                                u.clone(),
+                                p.clone(),
+                                config.proxy_default_country.clone(),
+                            )
+                            .with_proxy_username_format(config.proxy_username_format);
                     }
                     tracing::info!(
                         ws_url = %cp.ws_url,
@@ -1244,15 +1246,18 @@ impl FallbackRenderer {
                     proxy_auth = proxy_base.is_some(),
                     "cloak recovery tier enabled"
                 );
-                Some(Arc::new(cloak::CloakRenderer::new(
-                    "cloak",
-                    &ck.base_url,
-                    &ck.api_key,
-                    config.cloak_timeout(),
-                    proxy_base,
-                    config.proxy_default_country.clone(),
-                    config.cloak_proxy_host.clone(),
-                )) as Arc<dyn PageFetcher>)
+                Some(Arc::new(
+                    cloak::CloakRenderer::new(
+                        "cloak",
+                        &ck.base_url,
+                        &ck.api_key,
+                        config.cloak_timeout(),
+                        proxy_base,
+                        config.proxy_default_country.clone(),
+                        config.cloak_proxy_host.clone(),
+                    )
+                    .with_proxy_username_format(config.proxy_username_format),
+                ) as Arc<dyn PageFetcher>)
             } else if matches!(config.mode, RendererMode::Cloak) {
                 return Err(CrwError::ConfigError(
                     "renderer.mode = \"cloak\" but [renderer.cloak] base_url is not configured"

@@ -176,7 +176,8 @@ This means: if a proxy is set, your real IP is never used for that request.
 
 Separately from `proxy_list`, crw has an opt-in **residential `chrome_proxy`
 renderer tier** for IP-flagged targets, with per-request country selection
-(`country` on the scrape body → `__cr.<cc>` for DataImpulse-style providers). See
+(`country` on the scrape body → `__cr.<cc>` for DataImpulse-style providers, or
+`-country-<cc>` with `proxy_username_format = "nodemaven"`). See
 [JS Rendering](js-rendering.md) for that tier's setup (`proxy_base_user`,
 `proxy_base_pass`, `[renderer.chrome_proxy]`).
 
