@@ -58,4 +58,4 @@ crw-server = { path = ".", features = ["test-utils"] }
 jsonschema = "0.54"
 # Parses docker-compose.yml service names in the issue #90 host guard so the test
 # derives the allowed hosts from the real compose file instead of a hardcoded list.
-yaml-rust2 = "0.11"
+yaml-rust2 = "0.13"
