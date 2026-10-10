@@ -6,8 +6,11 @@
 //! * the auto-chain hop between the plain reqwest HTTP tier and the browser
 //!   ladder, fired only when the plain tier hit a wall-shaped response (the
 //!   Amazon interstitial class) or a transport error, never on SPA/thin/empty
-//!   shapes that need JS;
-//! * the explicit `renderer = "impersonated-http"` pin.
+//!   shapes that need JS. The hop runs on a FRESH client per attempt (see
+//!   `FallbackRenderer::impersonated_hop_factory`): no pooled impersonated
+//!   identity for a wall vendor to build per-fingerprint reputation on;
+//! * the explicit `renderer = "impersonated-http"` pin, which uses the warm
+//!   pooled client: deliberate bulk use is where pooling pays.
 //!
 //! Whole module is `#[cfg(feature = "impersonated")]`: a lean build never
 //! links the wreq/btls TLS stack.

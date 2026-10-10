@@ -631,6 +631,12 @@ fn is_hard_block_status(status_code: u16) -> bool {
 /// where config pools are small but the space of raw proxy URLs is not.
 const PROXY_CLIENT_CACHE_CAP: usize = 512;
 
+/// Builds the use-once fetcher for one hop attempt. The argument is the
+/// resolved REQUEST_PROXY raw URL, if any (None fetches direct).
+#[cfg(feature = "impersonated")]
+type ImpersonatedHopFactory =
+    Arc<dyn Fn(Option<&str>) -> CrwResult<Arc<dyn PageFetcher>> + Send + Sync>;
+
 /// Why the impersonated hop fired; label for logs and the route-decision
 /// metric. Kept as an enum (not a bool) so the Failover reason mapping cannot
 /// conflate a wall with a transport failure.
@@ -828,6 +834,17 @@ pub struct FallbackRenderer {
     /// Saved impersonated-tier timeout for the per-proxy cache.
     #[cfg(feature = "impersonated")]
     impersonated_timeout_ms: u64,
+    /// Builds the use-once fetcher for each hop attempt. The hop is a cold
+    /// retry path, so it gets a FRESH client per attempt: a new TLS session and
+    /// no pooled identity. A persistent impersonated session lets a wall vendor
+    /// build per-fingerprint reputation and quietly stop serving it, the
+    /// failure pywaze paid to learn (eifinger/pywaze#110: a pinned impersonated
+    /// session was re-blocked in six days; #111 fixed it with a fresh session
+    /// per fallback request). The pin arm keeps the warm pooled client: bulk
+    /// deliberate use is exactly where pooling pays. A factory field rather
+    /// than a method so tests can inject a counter and assert freshness.
+    #[cfg(feature = "impersonated")]
+    impersonated_hop_factory: ImpersonatedHopFactory,
 }
 
 impl std::fmt::Debug for FallbackRenderer {
@@ -929,6 +946,22 @@ impl FallbackRenderer {
             None
         };
 
+        // The hop's use-once client builder (see the field's doc). Built in
+        // every feature build; inert until a hop actually runs.
+        #[cfg(feature = "impersonated")]
+        let impersonated_hop_factory: ImpersonatedHopFactory = {
+            let timeout = std::time::Duration::from_millis(config.impersonated_timeout());
+            Arc::new(move |proxy| {
+                let fetcher = match proxy {
+                    // Fail-closed like the warm path: a bad proxy URL is a hard
+                    // error, never a silent direct connection.
+                    Some(raw) => impersonated::ImpersonatedFetcher::with_proxy(raw, timeout)?,
+                    None => impersonated::ImpersonatedFetcher::new(timeout)?,
+                };
+                Ok(Arc::new(fetcher) as Arc<dyn PageFetcher>)
+            })
+        };
+
         // A pinned backend (Lightpanda/Chrome/Playwright) must have CDP compiled in
         // AND its matching endpoint configured. `Auto` and `None` remain functional
         // without CDP — they just won't spawn any JS renderer.
@@ -1022,6 +1055,8 @@ impl FallbackRenderer {
                 impersonated_client_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
                 #[cfg(feature = "impersonated")]
                 impersonated_timeout_ms: config.impersonated_timeout(),
+                #[cfg(feature = "impersonated")]
+                impersonated_hop_factory,
             });
         }
 
@@ -1337,6 +1372,8 @@ impl FallbackRenderer {
             impersonated_client_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             #[cfg(feature = "impersonated")]
             impersonated_timeout_ms: config.impersonated_timeout(),
+            #[cfg(feature = "impersonated")]
+            impersonated_hop_factory,
         })
     }
 
@@ -1401,8 +1438,8 @@ impl FallbackRenderer {
         Ok(fetcher)
     }
 
-    /// REQUEST_PROXY-aware impersonated fetcher lookup, mirroring
-    /// [`Self::http_fetcher_for_request`]: shared tier when no proxy is set,
+    /// REQUEST_PROXY-aware impersonated fetcher lookup for the PIN arm,
+    /// mirroring [`Self::http_fetcher_for_request`]: shared tier when no proxy is set,
     /// warm per-proxy client built with `ImpersonatedFetcher::with_proxy`
     /// (fail-closed) when one is. When no REQUEST_PROXY is set the shared
     /// client falls back to wreq's system-proxy matcher, which reads
@@ -1549,7 +1586,15 @@ impl FallbackRenderer {
         // Every metric site in this function shares this label source, so a
         // typo'd literal cannot fork the series.
         let kind = RendererKind::ImpersonatedHttp;
-        let fetcher = match self.impersonated_fetcher_for_request() {
+        // Fresh, use-once client for this attempt (see the factory field's
+        // doc): no pooled identity for the wall to learn across hops.
+        // REQUEST_PROXY is honored fail-closed through the same with_proxy
+        // constructor the warm path uses.
+        let proxy_raw = REQUEST_PROXY
+            .try_with(|p| p.as_ref().map(|e| e.raw().to_string()))
+            .ok()
+            .flatten();
+        let fetcher = match (self.impersonated_hop_factory)(proxy_raw.as_deref()) {
             Ok(f) => f,
             Err(e) => {
                 tracing::warn!(
@@ -5851,6 +5896,15 @@ mod tests {
         assert!(res.html.contains("rendered"));
     }
 
+    /// Inject a mock impersonated tier the way the routing tests need: the
+    /// presence/pin path reads `impersonated`, the hop takes its fetcher from
+    /// the factory, so the mock must sit in both.
+    #[cfg(feature = "impersonated")]
+    fn inject_impersonated(r: &mut FallbackRenderer, tier: Arc<dyn PageFetcher>) {
+        r.impersonated = Some(tier.clone());
+        r.impersonated_hop_factory = Arc::new(move |_| Ok(tier.clone()));
+    }
+
     fn make_renderer_with_mocks(mocks: Vec<Arc<dyn PageFetcher>>) -> FallbackRenderer {
         // Builds a REAL HTTP fetcher. The forced-JS arm fetches HTTP before the
         // ladder (content-type check), so any test that exercises it should
@@ -6015,7 +6069,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(vec![chrome]);
         r.http = http;
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6056,7 +6110,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
         r.http = http;
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6078,6 +6132,103 @@ mod tests {
         );
     }
 
+    /// The hop builds a FRESH client per attempt: a pooled impersonated
+    /// identity is exactly what lets a wall vendor accumulate per-fingerprint
+    /// reputation (eifinger/pywaze#110, fixed by a fresh session per fallback
+    /// in #111). The counting factory proves one construction per hop attempt.
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn hop_builds_a_fresh_session_per_attempt() {
+        let http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::OkStatus(200, amazon_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        // The hop attempt misses (the impersonated client gets the same wall),
+        // so the ladder must finish the job.
+        let impersonated = Arc::new(MockFetcher {
+            name: "impersonated-http",
+            behavior: MockBehavior::OkStatus(200, amazon_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(rich_html("LADDER-")),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![chrome]);
+        r.http = http;
+        let built = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = built.clone();
+        let tier = impersonated.clone();
+        r.impersonated = Some(tier.clone());
+        r.impersonated_hop_factory = Arc::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(tier.clone())
+        });
+
+        let result = r
+            .fetch(
+                "https://www.amazon.it/dp/B0FHQGLXBP",
+                &HashMap::new(),
+                None,
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            result.rendered_with.as_deref(),
+            Some("chrome"),
+            "a hop that still sees the wall must fall through to the ladder"
+        );
+        assert_eq!(
+            built.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "exactly one fresh session per hop attempt"
+        );
+    }
+
+    /// Clean sites never construct a hop client at all: no wall, no session.
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn clean_site_builds_no_hop_session() {
+        let http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::Ok(rich_html("CLEAN-")),
+        }) as Arc<dyn PageFetcher>;
+        let impersonated = Arc::new(MockFetcher {
+            name: "impersonated-http",
+            behavior: MockBehavior::Panic("no hop may run on a clean site"),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(Vec::new());
+        r.http = http;
+        let built = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = built.clone();
+        let tier = impersonated.clone();
+        r.impersonated = Some(tier.clone());
+        r.impersonated_hop_factory = Arc::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(tier.clone())
+        });
+
+        let result = r
+            .fetch(
+                "https://example.com",
+                &HashMap::new(),
+                None,
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.rendered_with.as_deref(), Some("http"));
+        assert_eq!(
+            built.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "no hop session is built when the plain tier succeeds"
+        );
+    }
+
     #[cfg(feature = "impersonated")]
     #[tokio::test]
     async fn fetch_auto_impersonated_still_blocked_continues_to_ladder() {
@@ -6095,7 +6246,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(vec![chrome]);
         r.http = http;
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6134,7 +6285,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(vec![lp]);
         r.http = http;
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6184,7 +6335,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(vec![chrome]);
         r.http = http;
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6219,7 +6370,7 @@ mod tests {
             ),
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6281,7 +6432,7 @@ mod tests {
             behavior: MockBehavior::OkStatus(404, rich_html("GONE-")),
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6307,7 +6458,7 @@ mod tests {
             behavior: MockBehavior::OkStatus(403, rich_html("DENIED-")),
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let res = r
             .fetch(
@@ -6340,7 +6491,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
         r.http = http;
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6399,7 +6550,7 @@ mod tests {
             behavior: MockBehavior::Panic("a set proxy must route the pin, never the shared tier"),
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
         // A syntactically valid but unreachable proxy (loopback port 1):
         // the pin must error on the dead proxy rather than fall back to a
         // direct egress. The malformed-URL case is covered by the module's
@@ -6434,7 +6585,7 @@ mod tests {
             behavior: MockBehavior::OkStatus(200, amazon_interstitial_html()),
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(Vec::new());
-        r.impersonated = Some(impersonated);
+        inject_impersonated(&mut r, impersonated);
 
         let res = r
             .fetch(
