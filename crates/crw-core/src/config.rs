@@ -1809,8 +1809,7 @@ fn default_job_ttl() -> u64 {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExtractionConfig {
-    #[serde(default = "default_format")]
-    pub default_format: String,
+    /// Default for scrape/crawl/search requests that omit `onlyMainContent`.
     #[serde(default = "default_true_ext")]
     pub only_main_content: bool,
     #[serde(default)]
@@ -1872,7 +1871,6 @@ fn default_max_concurrent_extracts() -> usize {
 impl Default for ExtractionConfig {
     fn default() -> Self {
         Self {
-            default_format: default_format(),
             only_main_content: true,
             llm: None,
             domain_selectors: std::collections::HashMap::new(),
@@ -2012,9 +2010,6 @@ fn default_llm_max_tokens() -> u32 {
     4096
 }
 
-fn default_format() -> String {
-    "markdown".into()
-}
 fn default_true_ext() -> bool {
     true
 }
@@ -4110,7 +4105,6 @@ search_backend_url = "http://from-file:8080"
     #[test]
     fn extraction_config_defaults() {
         let e = ExtractionConfig::default();
-        assert_eq!(e.default_format, "markdown");
         assert!(e.only_main_content);
         assert!(e.llm.is_none());
         assert!(e.domain_selectors.is_empty());
@@ -4154,7 +4148,6 @@ search_backend_url = "http://from-file:8080"
     fn extraction_config_toml_scalar_overrides() {
         let e: ExtractionConfig = toml::from_str(
             r#"
-            default_format = "html"
             only_main_content = false
             http_retry_threshold_bytes = 250
             lightpanda_retry_threshold_bytes = 4000
@@ -4164,7 +4157,6 @@ search_backend_url = "http://from-file:8080"
             "#,
         )
         .unwrap();
-        assert_eq!(e.default_format, "html");
         assert!(!e.only_main_content);
         assert_eq!(e.http_retry_threshold_bytes, 250);
         assert_eq!(e.lightpanda_retry_threshold_bytes, 4000);
@@ -4176,7 +4168,14 @@ search_backend_url = "http://from-file:8080"
     #[test]
     fn extraction_config_empty_toml_uses_all_defaults() {
         let e: ExtractionConfig = toml::from_str("").unwrap();
-        assert_eq!(e.default_format, "markdown");
+        assert!(e.only_main_content);
+    }
+
+    /// `default_format` was never read and is gone; configs that still carry it
+    /// must keep loading.
+    #[test]
+    fn extraction_config_tolerates_retired_default_format() {
+        let e: ExtractionConfig = toml::from_str(r#"default_format = "html""#).unwrap();
         assert!(e.only_main_content);
     }
 
@@ -4717,7 +4716,7 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(a.server.port, 3000);
         assert_eq!(a.renderer.mode, RendererMode::Auto);
         assert_eq!(a.crawler.max_concurrency, 10);
-        assert_eq!(a.extraction.default_format, "markdown");
+        assert!(a.extraction.only_main_content);
         assert!(a.auth.api_keys.is_empty());
         assert_eq!(a.request.deadline_ms_default, 8000);
         assert!(a.search.enabled);

@@ -261,7 +261,7 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
         let req = build_request(
             args.url.clone(),
             request_formats.clone(),
-            !args.raw,
+            args.raw.then_some(false),
             None, // render_js = None → auto, but with no JS renderer it stays HTTP
             args.css.clone(),
             args.xpath.clone(),
@@ -407,7 +407,7 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
         let req = build_request(
             args.url,
             request_formats,
-            !args.raw,
+            args.raw.then_some(false),
             if force_js { Some(true) } else { None },
             args.css,
             args.xpath,
@@ -763,7 +763,7 @@ async fn run_local_file(args: &ScrapeArgs) -> Result<(), CmdError> {
 fn build_request(
     url: String,
     formats: Vec<OutputFormat>,
-    only_main_content: bool,
+    only_main_content: Option<bool>,
     render_js: Option<bool>,
     css: Option<String>,
     xpath: Option<String>,
@@ -1080,7 +1080,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown, OutputFormat::Links],
-            true,
+            None,
             None,
             Some("div.main".to_string()),
             Some("//h1".to_string()),
@@ -1094,7 +1094,7 @@ mod tests {
             req.formats,
             vec![OutputFormat::Markdown, OutputFormat::Links]
         );
-        assert!(req.only_main_content);
+        assert_eq!(req.only_main_content, None);
         assert_eq!(req.render_js, None);
         assert_eq!(req.css_selector.as_deref(), Some("div.main"));
         assert_eq!(req.xpath.as_deref(), Some("//h1"));
@@ -1107,7 +1107,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown],
-            true,
+            None,
             None,
             None,
             None,
@@ -1127,7 +1127,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown],
-            true,
+            None,
             None,
             None,
             None,
@@ -1144,7 +1144,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown],
-            true,
+            None,
             Some(true),
             None,
             None,
@@ -1161,7 +1161,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown],
-            true,
+            None,
             None,
             None,
             None,
@@ -1181,7 +1181,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown, OutputFormat::Json],
-            true,
+            None,
             None,
             None,
             None,
@@ -1204,7 +1204,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown],
-            false,
+            Some(false),
             None,
             None,
             None,
@@ -1213,7 +1213,7 @@ mod tests {
             None,
             None,
         );
-        assert!(!req.only_main_content);
+        assert_eq!(req.only_main_content, Some(false));
     }
 
     #[test]
@@ -1224,7 +1224,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![OutputFormat::Markdown],
-            true,
+            None,
             Some(true),
             Some("div".to_string()),
             Some("//p".to_string()),
@@ -1266,7 +1266,7 @@ mod tests {
         let req = build_request(
             "https://example.com".to_string(),
             vec![],
-            true,
+            None,
             None,
             None,
             None,

@@ -78,7 +78,14 @@ class TestScrape:
         body = call_args[0][1]
         assert body["url"] == "https://example.com"
         assert body["formats"] == ["markdown", "html"]
+        assert "onlyMainContent" not in body  # server default applies
         assert result == mock_response
+
+    def test_scrape_sends_only_main_content_when_set(self) -> None:
+        client = CrwClient(api_url="https://fastcrw.com/api", api_key="crw_live_test")
+        with patch.object(client, "_http_post", return_value={}) as mock_post:
+            client.scrape("https://example.com", only_main_content=False)
+        assert mock_post.call_args[0][1]["onlyMainContent"] is False
 
     def test_scrape_subprocess_calls_tool(self, monkeypatch: pytest.MonkeyPatch) -> None:
         client = _local_client(monkeypatch)

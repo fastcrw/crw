@@ -31,7 +31,7 @@ fn scrape_request_default_formats() {
     let req: ScrapeRequest = serde_json::from_str(r#"{"url":"https://example.com"}"#).unwrap();
     assert_eq!(req.url, "https://example.com");
     assert_eq!(req.formats, vec![OutputFormat::Markdown]);
-    assert!(req.only_main_content);
+    assert_eq!(req.only_main_content, None);
     assert!(req.render_js.is_none());
     assert!(req.wait_for.is_none());
     assert!(req.include_tags.is_empty());
@@ -151,7 +151,7 @@ fn page_metadata_extra_flattens_and_roundtrips() {
 fn crawl_request_default_formats() {
     let req: CrawlRequest = serde_json::from_str(r#"{"url":"https://example.com"}"#).unwrap();
     assert_eq!(req.formats, vec![OutputFormat::Markdown]);
-    assert!(req.only_main_content);
+    assert_eq!(req.only_main_content, None);
     assert!(req.max_depth.is_none());
     assert!(req.max_pages.is_none());
 }
@@ -254,7 +254,7 @@ fn scrape_request_with_all_fields() {
 
     let req: ScrapeRequest = serde_json::from_value(input).unwrap();
     assert_eq!(req.formats.len(), 3);
-    assert!(!req.only_main_content);
+    assert_eq!(req.only_main_content, Some(false));
     assert_eq!(req.render_js, Some(true));
     assert_eq!(req.wait_for, Some(2000));
     assert_eq!(req.include_tags, vec!["article"]);

@@ -132,7 +132,7 @@ mod tests {
             },
         }));
         assert_eq!(req.formats, vec![OutputFormat::Html]);
-        assert!(!req.only_main_content);
+        assert_eq!(req.only_main_content, Some(false));
         assert_eq!(req.render_js, Some(false));
         assert_eq!(req.wait_for, Some(1500));
     }
@@ -171,7 +171,7 @@ mod tests {
         // No scrapeOptions at all keeps the documented defaults.
         let req = parse(json!({ "url": "https://example.com" }));
         assert_eq!(req.formats, vec![OutputFormat::Markdown]);
-        assert!(req.only_main_content);
+        assert_eq!(req.only_main_content, None);
     }
 
     /// `headers` arrives either flat or nested, like every other per-page key.

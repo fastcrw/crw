@@ -79,7 +79,7 @@ pub(crate) struct ScrapeOpts {
     pub formats: Vec<OutputFormat>,
     pub headers: HashMap<String, String>,
     pub json_schema: Option<Value>,
-    pub only_main_content: bool,
+    pub only_main_content: Option<bool>,
     pub wait_for: Option<u64>,
     pub render_js: Option<bool>,
 }
@@ -90,7 +90,7 @@ pub(crate) fn scrape_opts_to_internal(opts: &Option<Value>) -> Result<ScrapeOpts
         formats: vec![OutputFormat::Markdown],
         headers: HashMap::new(),
         json_schema: None,
-        only_main_content: true,
+        only_main_content: None,
         wait_for: None,
         render_js: None,
     };
@@ -117,7 +117,7 @@ pub(crate) fn scrape_opts_to_internal(opts: &Option<Value>) -> Result<ScrapeOpts
             })?;
         }
         if let Some(b) = m.get("onlyMainContent").and_then(Value::as_bool) {
-            out.only_main_content = b;
+            out.only_main_content = Some(b);
         }
         if let Some(w) = m.get("waitFor").and_then(Value::as_u64) {
             out.wait_for = Some(w);

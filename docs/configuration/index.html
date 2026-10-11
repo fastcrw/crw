@@ -344,8 +344,7 @@ job_ttl_secs = 3600
 # user_agents = []           # custom UA pool; empty = use built-in Chrome/Firefox/Safari pool
 
 [extraction]
-default_format = &quot;markdown&quot;
-only_main_content = true
+only_main_content = true   # default when a request omits onlyMainContent; env CRW_EXTRACTION__ONLY_MAIN_CONTENT
 
 # Per-domain CSS selector overrides applied before readability narrowing.
 # Map key is the exact host (no wildcards). User-supplied request `selector` wins.

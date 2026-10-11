@@ -191,8 +191,14 @@ pub struct ScrapeRequest {
     pub url: String,
     #[serde(default = "default_formats")]
     pub formats: Vec<OutputFormat>,
-    #[serde(default = "default_true", alias = "only_main_content")]
-    pub only_main_content: bool,
+    /// Absent (or null) = the server's `[extraction].only_main_content`
+    /// (true unless configured); an explicit value always wins.
+    #[serde(
+        default,
+        alias = "only_main_content",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub only_main_content: Option<bool>,
     /// null = auto-detect, true = force JS, false = skip JS
     #[serde(alias = "render_js")]
     pub render_js: Option<bool>,
@@ -464,16 +470,15 @@ fn default_formats() -> Vec<OutputFormat> {
 
 impl Default for ScrapeRequest {
     /// Matches the serde defaults exactly (`formats: ["markdown"]`,
-    /// `only_main_content: true`, everything else empty/None). Hand-written
-    /// rather than derived because `#[derive(Default)]` would give
-    /// `formats: vec![]` / `only_main_content: false`, contradicting the wire
+    /// everything else empty/None). Hand-written rather than derived because
+    /// `#[derive(Default)]` would give `formats: vec![]`, contradicting the wire
     /// defaults — the v2 adapters build `ScrapeRequest { .., ..Default::default() }`
     /// and rely on these matching.
     fn default() -> Self {
         Self {
             url: String::new(),
             formats: default_formats(),
-            only_main_content: true,
+            only_main_content: None,
             render_js: None,
             wait_for: None,
             include_tags: Vec::new(),
@@ -1237,8 +1242,10 @@ pub struct CrawlRequest {
     pub max_pages: Option<u32>,
     #[serde(default = "default_formats")]
     pub formats: Vec<OutputFormat>,
-    #[serde(default = "default_true")]
-    pub only_main_content: bool,
+    /// Absent (or null) = the server's `[extraction].only_main_content`
+    /// (true unless configured); an explicit value always wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only_main_content: Option<bool>,
     #[serde(default, alias = "json_schema")]
     pub json_schema: Option<serde_json::Value>,
     /// null = auto-detect (use global default), true = force JS, false = skip JS.
@@ -2358,7 +2365,7 @@ mod tests {
         let d = ScrapeRequest::default();
         assert_eq!(d.url, "");
         assert_eq!(d.formats, vec![OutputFormat::Markdown]);
-        assert!(d.only_main_content);
+        assert_eq!(d.only_main_content, None);
         assert_eq!(d.render_js, None);
         assert_eq!(d.wait_for, None);
         assert!(d.include_tags.is_empty());
@@ -2417,7 +2424,7 @@ mod tests {
             url: "https://example.com".into(),
             ..Default::default()
         };
-        req.only_main_content = false;
+        req.only_main_content = Some(false);
         req.css_selector = Some(".main".into());
         req.chunk_strategy = Some(ChunkStrategy::Topic {
             max_chars: None,
@@ -2504,7 +2511,7 @@ mod tests {
             "screenshot_full_page": true
         });
         let req: ScrapeRequest = serde_json::from_value(json).unwrap();
-        assert!(!req.only_main_content);
+        assert_eq!(req.only_main_content, Some(false));
         assert_eq!(req.render_js, Some(true));
         assert_eq!(req.wait_for, Some(1500));
         assert_eq!(req.include_tags, vec!["main".to_string()]);
@@ -2547,10 +2554,22 @@ mod tests {
     }
 
     #[test]
-    fn scrape_request_only_main_content_defaults_true_when_omitted() {
-        let req: ScrapeRequest =
-            serde_json::from_value(serde_json::json!({ "url": "https://example.com" })).unwrap();
-        assert!(req.only_main_content);
+    fn scrape_request_only_main_content_omitted_or_null_is_server_default() {
+        for body in [
+            serde_json::json!({ "url": "https://example.com" }),
+            serde_json::json!({ "url": "https://example.com", "onlyMainContent": null }),
+        ] {
+            let req: ScrapeRequest = serde_json::from_value(body).unwrap();
+            assert_eq!(req.only_main_content, None);
+            // Omitted stays omitted on the wire.
+            let back = serde_json::to_value(&req).unwrap();
+            assert!(back.get("onlyMainContent").is_none());
+        }
+        let req: ScrapeRequest = serde_json::from_value(
+            serde_json::json!({ "url": "https://example.com", "only_main_content": true }),
+        )
+        .unwrap();
+        assert_eq!(req.only_main_content, Some(true));
     }
 
     #[test]
@@ -3482,7 +3501,7 @@ mod tests {
         let json = serde_json::json!({ "url": "https://example.com" });
         let req: CrawlRequest = serde_json::from_value(json).unwrap();
         assert_eq!(req.formats, vec![OutputFormat::Markdown]);
-        assert!(req.only_main_content);
+        assert_eq!(req.only_main_content, None);
         assert!(req.max_depth.is_none());
         assert!(req.max_pages.is_none());
     }
@@ -3741,7 +3760,7 @@ mod tests {
     fn search_scrape_options_defaults_from_empty_object() {
         let opts: SearchScrapeOptions = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(opts.formats, vec![OutputFormat::Markdown]);
-        assert!(opts.only_main_content);
+        assert_eq!(opts.only_main_content, None);
         assert!(opts.country.is_none());
         assert!(opts.timeout.is_none());
     }
@@ -3750,7 +3769,7 @@ mod tests {
     fn search_scrape_options_camel_case_field_names() {
         let opts = SearchScrapeOptions {
             formats: vec![OutputFormat::Markdown],
-            only_main_content: false,
+            only_main_content: Some(false),
             country: Some("gb".into()),
             timeout: Some(5000),
         };
@@ -4662,8 +4681,10 @@ impl SearchTimeFilter {
 pub struct SearchScrapeOptions {
     #[serde(default = "default_formats")]
     pub formats: Vec<OutputFormat>,
-    #[serde(default = "default_true")]
-    pub only_main_content: bool,
+    /// Absent (or null) = the server's `[extraction].only_main_content`
+    /// (true unless configured); an explicit value always wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only_main_content: Option<bool>,
     /// Residential-proxy exit country (ISO 3166-1 alpha-2) for the per-result page scrape.
     /// Populated by the SaaS layer from the caller's IP (geo-aware proxy). `None` = engine default.
     #[serde(default)]

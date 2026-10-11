@@ -159,8 +159,7 @@ job_ttl_secs = 3600
 # user_agents = []         # custom UA pool; empty = use built-in pool
 
 [extraction]
-default_format = "markdown"
-only_main_content = true
+only_main_content = true   # default when a request omits onlyMainContent; env CRW_EXTRACTION__ONLY_MAIN_CONTENT
 # max_concurrent_extracts = 8         # process-wide HTML→markdown parse cap (default ~2/3 cores)
 # reserved_interactive_extracts = 2   # extract slots reserved for interactive (absent = ~1/4; 0 disables)
 

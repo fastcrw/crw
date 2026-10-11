@@ -1620,7 +1620,7 @@ mod tests {
     fn scrape_opts(timeout: Option<u64>) -> SearchScrapeOptions {
         SearchScrapeOptions {
             formats: vec![OutputFormat::Markdown],
-            only_main_content: true,
+            only_main_content: Some(true),
             country: None,
             timeout,
         }
@@ -2896,7 +2896,7 @@ mod tests {
     fn search_scrape_options_default_formats_is_markdown() {
         let opts: SearchScrapeOptions = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(opts.formats, vec![OutputFormat::Markdown]);
-        assert!(opts.only_main_content);
+        assert_eq!(opts.only_main_content, None);
         assert!(opts.country.is_none());
         assert!(opts.timeout.is_none());
     }
@@ -2907,14 +2907,14 @@ mod tests {
             serde_json::from_value(serde_json::json!({"timeout": 3000, "onlyMainContent": false}))
                 .unwrap();
         assert_eq!(opts.timeout, Some(3000));
-        assert!(!opts.only_main_content);
+        assert_eq!(opts.only_main_content, Some(false));
     }
 
     #[test]
     fn search_scrape_options_roundtrip_preserves_all_fields() {
         let opts = SearchScrapeOptions {
             formats: vec![OutputFormat::Markdown, OutputFormat::Links],
-            only_main_content: false,
+            only_main_content: Some(false),
             country: Some("de".into()),
             timeout: Some(9_000),
         };

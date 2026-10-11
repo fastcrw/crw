@@ -67,6 +67,14 @@ test("scrape maps first-class params + jsonSchema adds json format", async () =>
   assert.equal(body.waitFor, 1500);
   assert.deepEqual(body.jsonSchema, { type: "object" });
   assert.ok(body.formats.includes("json") && body.formats.includes("markdown"));
+  assert.equal("onlyMainContent" in body, false, "omitted: server default applies");
+});
+
+test("scrape sends onlyMainContent only when set", async () => {
+  const calls = mockFetch({ success: true, data: { markdown: "x" } });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  await c.scrape("https://example.com", { onlyMainContent: false });
+  assert.equal(JSON.parse(calls[0].init!.body as string).onlyMainContent, false);
 });
 
 test("scrape result exposes typed document fields", async () => {

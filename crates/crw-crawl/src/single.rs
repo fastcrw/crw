@@ -421,7 +421,9 @@ async fn scrape_url_inner(
             credit_cost: fr.credit_cost,
             warnings: fr.warnings.clone(),
             formats: req.formats.clone(),
-            only_main_content: req.only_main_content,
+            only_main_content: req
+                .only_main_content
+                .unwrap_or(extraction_cfg.only_main_content),
             include_tags: req.include_tags.clone(),
             exclude_tags: req.exclude_tags.clone(),
             css_selector: req.css_selector.clone(),

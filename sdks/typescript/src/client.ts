@@ -122,8 +122,9 @@ export class CrwClient {
   }
 
   async scrape(url: string, opts: ScrapeOptions = {}): Promise<ScrapeResult> {
-    const { formats, onlyMainContent = true, includeTags, excludeTags, renderJs, renderer, waitFor, jsonSchema, ...rest } = opts;
-    const args: Json = { url, onlyMainContent };
+    const { formats, onlyMainContent, includeTags, excludeTags, renderJs, renderer, waitFor, jsonSchema, ...rest } = opts;
+    const args: Json = { url };
+    if (onlyMainContent !== undefined) args.onlyMainContent = onlyMainContent;
     if (formats) args.formats = [...formats];
     if (includeTags) args.includeTags = includeTags;
     if (excludeTags) args.excludeTags = excludeTags;

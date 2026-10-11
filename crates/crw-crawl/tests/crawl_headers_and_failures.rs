@@ -44,7 +44,7 @@ fn request(url: String) -> CrawlRequest {
         max_depth: Some(0),
         max_pages: Some(1),
         formats: vec![OutputFormat::Markdown],
-        only_main_content: false,
+        only_main_content: Some(false),
         json_schema: None,
         render_js: Some(false),
         wait_for: None,
@@ -63,6 +63,15 @@ async fn run(req: CrawlRequest) -> CrawlState {
 
 /// As `run`, but lets a test turn robots.txt enforcement on.
 async fn run_with_robots(req: CrawlRequest, respect_robots: bool) -> CrawlState {
+    run_full(req, respect_robots, true).await
+}
+
+/// As `run_with_robots`, plus the server's `[extraction].only_main_content`.
+async fn run_full(
+    req: CrawlRequest,
+    respect_robots: bool,
+    only_main_content_default: bool,
+) -> CrawlState {
     let id = Uuid::new_v4();
     let (state_tx, state_rx) = tokio::sync::watch::channel(CrawlState {
         id,
@@ -89,6 +98,7 @@ async fn run_with_robots(req: CrawlRequest, respect_robots: bool) -> CrawlState 
         deadline_ms_per_page: 15_000,
         per_host_max_concurrent: 1,
         normalize_tables: false,
+        only_main_content_default,
         http_retry_threshold_bytes: 0,
     })
     .await;
@@ -377,5 +387,51 @@ async fn a_robots_txt_we_cannot_read_does_not_fail_the_crawl() {
         state.error.is_none(),
         "a 503 on robots.txt is logged, not surfaced as a job error: {:?}",
         state.error
+    );
+}
+
+/// A crawl request that omits `onlyMainContent` takes the server default, the
+/// same rule a single scrape applies; an explicit value still wins.
+#[tokio::test]
+async fn omitted_only_main_content_follows_the_server_default() {
+    let server = MockServer::start().await;
+    let para = "Lume Roasters sources single origin coffee from smallholder farms. ";
+    let body = format!(
+        "<html><body><nav><a href=\"#\">Navmarker</a></nav>\
+         <main><article><h1>Coffee</h1><p>{}</p></article></main>\
+         <footer><p>Footermarker</p></footer></body></html>",
+        para.repeat(24)
+    );
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/html"))
+        .mount(&server)
+        .await;
+    let url = format!("{}/", server.uri());
+    let markdown = |state: CrawlState| state.data[0].markdown.clone().unwrap_or_default();
+
+    let omitted = CrawlRequest {
+        only_main_content: None,
+        ..request(url.clone())
+    };
+    let full = markdown(run_full(omitted.clone(), false, false).await);
+    assert!(
+        full.contains("Navmarker") && full.contains("Footermarker"),
+        "{full}"
+    );
+    let main = markdown(run_full(omitted, false, true).await);
+    assert!(
+        !main.contains("Navmarker") && !main.contains("Footermarker"),
+        "{main}"
+    );
+
+    let explicit = CrawlRequest {
+        only_main_content: Some(true),
+        ..request(url)
+    };
+    let main = markdown(run_full(explicit, false, false).await);
+    assert!(
+        !main.contains("Navmarker") && !main.contains("Footermarker"),
+        "{main}"
     );
 }

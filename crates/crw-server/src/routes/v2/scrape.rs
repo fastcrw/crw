@@ -31,8 +31,9 @@ pub struct V2ScrapeRequest {
     pub url: String,
     #[serde(default = "default_v2_formats")]
     pub formats: Vec<FormatSpec>,
-    #[serde(default = "default_true")]
-    pub only_main_content: bool,
+    /// Absent = the server's `[extraction].only_main_content`.
+    #[serde(default)]
+    pub only_main_content: Option<bool>,
     #[serde(default)]
     pub include_tags: Vec<String>,
     #[serde(default)]
@@ -104,9 +105,6 @@ pub struct V2Location {
     pub languages: Option<Vec<String>>,
 }
 
-fn default_true() -> bool {
-    true
-}
 fn default_proxy() -> String {
     "auto".to_string()
 }

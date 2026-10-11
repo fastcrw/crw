@@ -452,7 +452,7 @@ managed cloud has a search backend preconfigured.</p>
 result = client.scrape(
     &quot;https://example.com&quot;,
     formats=[&quot;markdown&quot;, &quot;links&quot;],
-    only_main_content=True,    # default
+    only_main_content=True,    # omit to use the engine default (true)
     render_js=True,            # force JS renderer
     wait_for=1500,             # ms to wait after load
     renderer=&quot;chrome&quot;,         # pin renderer tier
@@ -461,7 +461,7 @@ print(result[&quot;markdown&quot;])</code></pre>
 <pre data-lang="ts"><code class="language-ts">// TypeScript
 const result = await crw.scrape(&quot;https://example.com&quot;, {
   formats: [&quot;markdown&quot;, &quot;links&quot;],
-  onlyMainContent: true,   // default
+  onlyMainContent: true,   // omit to use the engine default (true)
   renderJs: true,
   waitFor: 1500,
   renderer: &quot;chrome&quot;,
@@ -486,7 +486,7 @@ console.log(result.markdown);</code></pre>
 <tr>
 <td><code>only_main_content</code> / <code>onlyMainContent</code></td>
 <td><code>bool</code></td>
-<td><code>true</code></td>
+<td>engine default (<code>true</code>)</td>
 <td>strips nav/boilerplate</td>
 </tr>
 <tr>

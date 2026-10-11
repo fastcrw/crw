@@ -49,6 +49,9 @@ pub struct CrawlOptions<'a> {
     /// a single scrape of the same URL produce the same markdown; leaving it
     /// hardcoded would silently diverge the two paths once the flag is flipped.
     pub normalize_tables: bool,
+    /// From `ExtractionConfig::only_main_content`: what a crawl request that
+    /// omits `onlyMainContent` gets, the same default a single scrape applies.
+    pub only_main_content_default: bool,
     /// From `ExtractionConfig::http_retry_threshold_bytes`. Same reason as
     /// `normalize_tables`: `classify_block` takes it, and a crawl that judged
     /// blocks differently from a single scrape of the same URL would bill the
@@ -192,6 +195,7 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         deadline_ms_per_page,
         per_host_max_concurrent,
         normalize_tables,
+        only_main_content_default,
         http_retry_threshold_bytes,
     } = opts;
 
@@ -486,7 +490,7 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
                 credit_cost: fetch_result.credit_cost,
                 warnings: fetch_result.warnings.clone(),
                 formats: req.formats.clone(),
-                only_main_content: req.only_main_content,
+                only_main_content: req.only_main_content.unwrap_or(only_main_content_default),
                 include_tags: Vec::new(),
                 exclude_tags: Vec::new(),
                 css_selector: None,

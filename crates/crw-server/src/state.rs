@@ -493,6 +493,7 @@ impl AppState {
         let deadline_ms_per_page = self.config.effective_deadline_ms(None, req.wait_for);
         let per_host_max_concurrent = self.config.crawler.per_host_max_concurrent;
         let normalize_tables = self.config.extraction.normalize_tables;
+        let only_main_content_default = self.config.extraction.only_main_content;
         let http_retry_threshold_bytes = self.config.extraction.http_retry_threshold_bytes;
 
         let handle = tokio::spawn(async move {
@@ -533,6 +534,7 @@ impl AppState {
                         deadline_ms_per_page,
                         per_host_max_concurrent,
                         normalize_tables,
+                        only_main_content_default,
                         http_retry_threshold_bytes,
                     })
                     .await;
@@ -1186,7 +1188,7 @@ mod tests {
             max_depth: None,
             max_pages: None,
             formats: vec![crw_core::types::OutputFormat::Markdown],
-            only_main_content: true,
+            only_main_content: None,
             json_schema: None,
             render_js,
             wait_for: None,

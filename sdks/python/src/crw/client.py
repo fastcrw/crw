@@ -252,7 +252,7 @@ class CrwClient:
         self,
         url: str,
         formats: list[str] | None = None,
-        only_main_content: bool = True,
+        only_main_content: bool | None = None,
         include_tags: list[str] | None = None,
         exclude_tags: list[str] | None = None,
         *,
@@ -267,7 +267,8 @@ class CrwClient:
         Args:
             url: The URL to scrape.
             formats: Output formats, e.g. ``["markdown", "html", "json"]``.
-            only_main_content: Strip nav/boilerplate (default True).
+            only_main_content: Strip nav/boilerplate. Omitted: the server default
+                (True unless the server configures otherwise).
             include_tags / exclude_tags: HTML tag allow/deny lists.
             render_js: Force the JS renderer on/off (engine ``renderJs``).
             renderer: Pin a specific renderer tier (engine ``renderer``).
@@ -280,7 +281,9 @@ class CrwClient:
         Returns:
             Dict with keys like 'markdown', 'html', 'json', 'metadata', etc.
         """
-        args: dict[str, Any] = {"url": url, "onlyMainContent": only_main_content}
+        args: dict[str, Any] = {"url": url}
+        if only_main_content is not None:
+            args["onlyMainContent"] = only_main_content
         if formats:
             args["formats"] = list(formats)
         if include_tags:

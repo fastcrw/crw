@@ -140,7 +140,7 @@ Scrape a single URL and return its content.
 result = client.scrape(
     "https://example.com",
     formats=["markdown", "links"],
-    only_main_content=True,    # default
+    only_main_content=True,    # omit to use the engine default (true)
     render_js=True,            # force JS renderer
     wait_for=1500,             # ms to wait after load
     renderer="chrome",         # pin renderer tier
@@ -152,7 +152,7 @@ print(result["markdown"])
 // TypeScript
 const result = await crw.scrape("https://example.com", {
   formats: ["markdown", "links"],
-  onlyMainContent: true,   // default
+  onlyMainContent: true,   // omit to use the engine default (true)
   renderJs: true,
   waitFor: 1500,
   renderer: "chrome",
@@ -165,7 +165,7 @@ Key options (both SDKs):
 | Option | Type | Default | Notes |
 |---|---|---|---|
 | `formats` / `formats` | `string[]` | engine default | `markdown`, `html`, `rawHtml`, `plainText`, `links`, `json`, `summary`, `changeTracking` |
-| `only_main_content` / `onlyMainContent` | `bool` | `true` | strips nav/boilerplate |
+| `only_main_content` / `onlyMainContent` | `bool` | engine default (`true`) | strips nav/boilerplate |
 | `render_js` / `renderJs` | `bool` | — | force JS renderer on/off |
 | `renderer` | `string` | — | `auto`, `lightpanda`, `chrome`, `chrome_proxy` (self-host may also configure `playwright`) |
 | `wait_for` / `waitFor` | `int` | — | milliseconds to wait after page load |

@@ -64,7 +64,6 @@ fn crawler_config_default_values() {
 #[test]
 fn extraction_config_default_values() {
     let config = ExtractionConfig::default();
-    assert_eq!(config.default_format, "markdown");
     assert!(config.only_main_content);
     assert!(config.llm.is_none());
 }

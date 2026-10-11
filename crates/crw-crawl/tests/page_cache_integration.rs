@@ -120,7 +120,7 @@ async fn different_output_options_share_one_fetch() {
 
     let second = run(&ScrapeRequest {
         formats: vec![OutputFormat::Markdown, OutputFormat::Html],
-        only_main_content: false,
+        only_main_content: Some(false),
         include_tags: vec!["p".into()],
         ..req(&url)
     })
