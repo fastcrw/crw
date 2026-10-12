@@ -212,6 +212,7 @@ crw is better because of these people. Thank you, all of you:
   <a href="https://github.com/atirna" title="atirna"><img src="https://github.com/atirna.png?size=96" width="48" height="48" alt="atirna"/></a>
   <a href="https://github.com/cdebled" title="cdebled"><img src="https://github.com/cdebled.png?size=96" width="48" height="48" alt="cdebled"/></a>
   <a href="https://github.com/VIVAAN-DHAWAN" title="VIVAAN-DHAWAN"><img src="https://github.com/VIVAAN-DHAWAN.png?size=96" width="48" height="48" alt="VIVAAN-DHAWAN"/></a>
+  <a href="https://github.com/alkaz-nodemaven" title="alkaz-nodemaven"><img src="https://github.com/alkaz-nodemaven.png?size=96" width="48" height="48" alt="alkaz-nodemaven"/></a>
   <a href="https://github.com/mj520" title="mj520"><img src="https://github.com/mj520.png?size=96" width="48" height="48" alt="mj520"/></a>
 </p>
 <!-- contributors:end -->
