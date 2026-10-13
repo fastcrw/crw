@@ -423,6 +423,30 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
             }
         };
 
+        // A wall no renderer tier could clear. The renderer used to raise it as
+        // an error, which the arm above turned into a failed page; it now
+        // carries the verdict on the result instead, so take the same exit
+        // here: no extraction, no links followed from the wall, and counted in
+        // `blocked` so the caller's `completed - blocked` keeps it unbilled.
+        if let Some(verdict) = fetch_result.block.take() {
+            tracing::warn!(
+                url,
+                reason = %verdict.reason,
+                "Crawl: anti-bot wall no renderer tier could clear"
+            );
+            let mut page = failed_page(&url, fetch_result.status_code, verdict.reason.clone());
+            page.block = Some(verdict);
+            push_failed_page(
+                page,
+                id,
+                &state_tx,
+                &mut results,
+                &mut blocked,
+                visited.len() as u32,
+            );
+            continue;
+        }
+
         // The CDN answered for a dead origin, so this page has no content and no
         // links worth following: its body is the CDN's error page. It is
         // recorded as a blocked page rather than a crawled one: a crawl of a
@@ -570,13 +594,6 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         // recover the page. A crawl does one fetch and no escalation, so the same
         // verdict here would fail JS-hydrated pages that `/v1/scrape` recovers —
         // the cross-surface divergence this change exists to remove, inverted.
-        //
-        // The renderer may also have reached a verdict of its own, for a body it
-        // was about to hand back as a fallback when that body is itself a wall.
-        // A NAMED verdict from the classifier still wins (the routing registry
-        // learns vendors from it); the carried one fills in when the classifier
-        // has nothing. The `structural_failure` exclusion above applies only to
-        // the classifier's leg, which is what produces it.
         data.block = crate::single::classify_block(
             fetch_result.status_code,
             fetch_result.content_type.as_deref(),
@@ -587,8 +604,7 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
             &fetch_result.url,
             fetch_result.final_url.as_deref(),
         )
-        .filter(|b| b.vendor != crw_core::types::STRUCTURAL_FAILURE_VENDOR)
-        .or_else(|| fetch_result.block.clone());
+        .filter(|b| b.vendor != crw_core::types::STRUCTURAL_FAILURE_VENDOR);
         // An origin error page is not the page that was asked for either. One
         // helper, so `/v1/scrape` and a crawl of the same URL agree. It is
         // stamped onto `block` because a crawl returns documents, not an
