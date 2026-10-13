@@ -156,52 +156,108 @@ async fn v2_keeps_a_4xx_page_no_ladder_condemned_as_a_document() {
     assert_eq!(body["data"]["metadata"]["statusCode"], 403, "{body}");
 }
 
-/// A 4xx on a URL whose path names a PDF never reaches the browser ladder: the
-/// auto arm returns the HTTP verdict as is (no browser renders a PDF). So no
-/// tier can condemn it and nothing may carry a wall verdict for it. Its answer
-/// must be exactly the plain HTTP path's, the one an engine with no browser
-/// tier gives, on both surfaces. On `/v2` that means a 4xx document, not the
-/// blocked envelope a ladder-condemned wall gets.
-#[tokio::test]
-async fn a_pdf_4xx_skips_the_ladder_and_answers_like_the_plain_http_path() {
-    let origin = MockServer::start().await;
+/// Serve `body` with `status` at `path` and return its URL.
+async fn serve(origin: &MockServer, at: &str, status: u16, body: &str) -> String {
     Mock::given(method("GET"))
-        .and(path("/files/report.pdf"))
-        .respond_with(ResponseTemplate::new(403).set_body_raw(CAPTCHA_WALL, "text/html"))
-        .mount(&origin)
+        .and(path(at))
+        .respond_with(ResponseTemplate::new(status).set_body_raw(body.to_string(), "text/html"))
+        .mount(origin)
         .await;
-    let url = format!("{}/files/report.pdf", origin.uri());
+    format!("{}{at}", origin.uri())
+}
 
-    let mut answers = Vec::new();
-    for with_browser in [true, false] {
-        let s = app(with_browser);
-        let mut per_surface = Vec::new();
-        for route in ["/v1/scrape", "/v2/scrape"] {
+/// The fields that decide what a scrape answer is and what it costs.
+async fn answer(s: &TestServer, route: &str, url: &str) -> Value {
+    let r = s
+        .post(route)
+        .json(&json!({"url": url, "formats": ["markdown"]}))
+        .await;
+    r.assert_status(StatusCode::OK);
+    let body: Value = r.json();
+    json!({
+        "success": body["success"],
+        "error": body["error"],
+        "errorCode": body["errorCode"],
+        "code": body["code"],
+        "block": body["data"]["block"],
+        "markdown": body["data"]["markdown"],
+        "statusCode": body["data"]["metadata"]["statusCode"],
+        "creditsUsed": body["data"]["metadata"]["creditsUsed"],
+    })
+}
+
+/// The shape of hyatt's `.pdf` 403 (Akamai): a deny page whose wording matches
+/// no wall phrase list, so only its status says what it is.
+const AKAMAI_UNEXPECTED: &str = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+    <title>Hyatt</title></head><body><h1>Your browser did something unexpected.</h1>\
+    <p>Please try again. If the problem persists, contact us and share the reference ID \
+    below.</p><p>Reference ID: 0.8f3e1702.1760400000.1a2b3c4d</p></body></html>";
+
+/// A 4xx on a PDF path never reaches the browser ladder: the auto arm returns
+/// the HTTP verdict, since no browser renders a PDF. A hard-block status used
+/// to send it up the ladder anyway, where every browser failed and it ended as
+/// a refunded error, so skipping the ladder must not start billing it: it is
+/// answered as a wall no tier could clear, on both surfaces, body cleared.
+/// Keyed on the status, so it holds for a deny page no phrase list knows.
+#[tokio::test]
+async fn a_pdf_with_a_hard_block_status_is_answered_like_a_wall_no_tier_could_clear() {
+    for (name, body) in [("akamai", AKAMAI_UNEXPECTED), ("captcha", CAPTCHA_WALL)] {
+        let origin = MockServer::start().await;
+        let url = serve(&origin, "/files/menu.pdf", 403, body).await;
+        let s = app(true);
+
+        let v1 = answer(&s, "/v1/scrape", &url).await;
+        assert_eq!(v1["success"], false, "{name}: {v1}");
+        assert_eq!(v1["errorCode"], "anti_bot", "{name}: {v1}");
+        assert!(v1["markdown"].is_null(), "{name}: deny text leaked: {v1}");
+
+        for route in ["/v2/scrape", "/firecrawl/v2/scrape"] {
             let r = s
                 .post(route)
                 .json(&json!({"url": url, "formats": ["markdown"]}))
                 .await;
             r.assert_status(StatusCode::OK);
             let body: Value = r.json();
-            per_surface.push(json!({
-                "success": body["success"],
-                "error": body["error"],
-                "errorCode": body["errorCode"],
-                "code": body["code"],
-                "block": body["data"]["block"],
-                "markdown": body["data"]["markdown"],
-                "statusCode": body["data"]["metadata"]["statusCode"],
-                "creditsUsed": body["data"]["metadata"]["creditsUsed"],
-            }));
+            let mut keys: Vec<&str> = body
+                .as_object()
+                .expect("an object")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            keys.sort_unstable();
+            assert_eq!(keys, ["data", "error", "success"], "{name} {route}: {body}");
+            assert_eq!(body["success"], false, "{name} {route}: {body}");
+            assert!(body["data"].get("markdown").is_none(), "{name} {route}");
+            assert_eq!(body["data"]["metadata"]["creditsUsed"], 0, "{name} {route}");
         }
-        answers.push(per_surface);
+    }
+}
+
+/// The other side: a PDF path answered with a status outside the hard-block set
+/// (a site's own 404 page, with a script so the gate really skips a ladder) is
+/// answered exactly as before, the same as an engine with no browser tier
+/// answers it. On `/v2` that is a billed 4xx document.
+#[tokio::test]
+async fn a_genuine_pdf_404_is_answered_as_before() {
+    let origin = MockServer::start().await;
+    let not_found = "<!doctype html><html><head><title>Not Found</title>\
+        <script src=\"/assets/app.js\"></script></head><body><h1>Not Found</h1>\
+        <p>The document you asked for is not on this server.</p></body></html>";
+    let url = serve(&origin, "/files/missing.pdf", 404, not_found).await;
+
+    let mut answers = Vec::new();
+    for with_browser in [true, false] {
+        let s = app(with_browser);
+        answers.push([
+            answer(&s, "/v1/scrape", &url).await,
+            answer(&s, "/v2/scrape", &url).await,
+        ]);
     }
 
     assert_eq!(
         answers[0], answers[1],
-        "a browser tier changed the answer for a .pdf 4xx"
+        "a browser tier changed the answer for a genuine .pdf 404"
     );
-    // v2: a 4xx document. A carried wall would have made it success:false.
     assert_eq!(answers[0][1]["success"], true, "{}", answers[0][1]);
-    assert_eq!(answers[0][1]["statusCode"], 403);
+    assert_eq!(answers[0][1]["statusCode"], 404);
 }
