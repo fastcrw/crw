@@ -39,6 +39,11 @@ fn allow_loopback() {
 
 /// A real HTTP tier and one browser tier that always lands on `html`.
 fn walled_renderer(html: &str) -> Arc<FallbackRenderer> {
+    renderer_with_tiers(&[("chrome", 403, html)])
+}
+
+/// A real HTTP tier and the given browser tiers, in ladder order.
+fn renderer_with_tiers(tiers: &[(&'static str, u16, &str)]) -> Arc<FallbackRenderer> {
     allow_loopback();
     let mut cfg = RendererConfig {
         mode: RendererMode::None,
@@ -46,15 +51,20 @@ fn walled_renderer(html: &str) -> Arc<FallbackRenderer> {
     };
     // One plain HTTP tier, so the origin sees a predictable number of requests.
     cfg.impersonated.enabled = false;
-    let browser = Arc::new(StaticTier {
-        name: "chrome",
-        status_code: 403,
-        html: html.to_string(),
-    }) as Arc<dyn PageFetcher>;
+    let tiers = tiers
+        .iter()
+        .map(|(name, status_code, html)| {
+            Arc::new(StaticTier {
+                name,
+                status_code: *status_code,
+                html: html.to_string(),
+            }) as Arc<dyn PageFetcher>
+        })
+        .collect();
     Arc::new(
         FallbackRenderer::new(&cfg, "crw-test", None, &StealthConfig::default())
             .expect("renderer builds")
-            .with_js_tiers(vec![browser]),
+            .with_js_tiers(tiers),
     )
 }
 
@@ -415,11 +425,12 @@ async fn a_verdict_classify_block_reaches_alone_does_not_set_the_flag() {
     assert!(!data.unclearable_wall);
 }
 
-/// `single.rs`'s own escalation (a 2xx whose markdown came out thin) can bring
-/// back a walled render. When that render is accepted as the page, its verdict
-/// comes with it.
+/// `scrape_url`'s own escalation (a 2xx whose markdown came out thin) can bring
+/// back a render the ladder condemned as a wall. That used to arrive as an
+/// error, which kept the original page and its own verdict. It must still,
+/// even when the wall has enough text to pass the acceptance bar.
 #[tokio::test]
-async fn an_accepted_escalation_carries_the_verdict() {
+async fn an_escalation_that_comes_back_walled_is_not_accepted() {
     // No script, so the renderer does not escalate the thin page itself and
     // the second-chance escalation in `scrape_url` is the one that runs. Its
     // fetch then meets the wall.
@@ -437,11 +448,50 @@ async fn an_accepted_escalation_carries_the_verdict() {
         seen >= 2,
         "the escalation never re-fetched: {seen} request(s)"
     );
-    assert!(data.unclearable_wall, "block: {:?}", data.block);
-    assert_eq!(
-        data.block.as_ref().map(|b| b.vendor.as_str()),
-        Some("generic_block")
+    assert!(!data.unclearable_wall, "block: {:?}", data.block);
+    assert!(
+        data.markdown
+            .as_deref()
+            .is_some_and(|m| m.contains("Tiny.")),
+        "the original page is the one kept: {:?}",
+        data.markdown
     );
+    assert!(
+        data.warning
+            .as_deref()
+            .is_some_and(|w| w.contains("JS escalation failed")),
+        "reported the way a failed escalation always was: {:?}",
+        data.warning
+    );
+}
+
+/// A 2xx wall the ladder already condemned, whose kept body came from
+/// LightPanda, looks like a thin low-tier page to `scrape_url`. That wall used
+/// to arrive as an error and never got a second escalation; carried as a
+/// verdict, it must not pay for one (another HTTP fetch plus a Chrome render).
+#[tokio::test]
+async fn a_wall_the_ladder_condemned_gets_no_second_escalation() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(html(200, WALL))
+        .mount(&server)
+        .await;
+    // LightPanda's copy of the wall is the larger body, so the ladder keeps it.
+    let padded = WALL.replace("</body>", &format!("<!-- {} --></body>", "x".repeat(4_000)));
+    let renderer = renderer_with_tiers(&[("lightpanda", 200, &padded), ("chrome", 200, WALL)]);
+    let req = markdown_request(format!("{}/", server.uri()));
+
+    let data = scrape(&renderer, &req, None).await;
+
+    assert_eq!(
+        data.metadata.rendered_with.as_deref(),
+        Some("lightpanda"),
+        "precondition: the kept body came from LightPanda"
+    );
+    assert!(data.unclearable_wall, "block: {:?}", data.block);
+    let seen = server.received_requests().await.unwrap_or_default().len();
+    assert_eq!(seen, 1, "a second escalation re-fetched the origin");
 }
 
 /// ...and when it is NOT accepted, the verdict stays behind with the render

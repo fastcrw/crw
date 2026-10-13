@@ -634,6 +634,12 @@ async fn scrape_url_inner(
         let should_escalate = (md_is_byte_thin || escalate_for_quality)
             && used_low_tier
             && !js_ladder_exhausted
+            // The renderer ladder already spent every tier on this page and
+            // condemned it as a wall. That used to arrive as an error and never
+            // reached here, so it never paid for the second HTTP fetch and
+            // browser render below; a verdict carried in its place must not
+            // either. It matters when the kept body came from LightPanda.
+            && fetch_result.block.is_none()
             && should_escalate_status
             && escalation_eligible
             && has_escalation_budget
@@ -687,7 +693,7 @@ async fn scrape_url_inner(
                 escalate_for_quality,
                 "empty markdown after fetch, escalating to JS renderer"
             );
-            match renderer
+            let escalation = renderer
                 .fetch(
                     &req.url,
                     &req.headers,
@@ -697,7 +703,16 @@ async fn scrape_url_inner(
                     deadline,
                 )
                 .await
-            {
+                .map_err(|e| e.to_string())
+                // A render the ladder condemned as a wall is not a page to
+                // accept. It used to arrive as an error, which the `Err` arm
+                // below answers by keeping the original body and its own
+                // verdict, so it goes there.
+                .and_then(|js| match js.block {
+                    Some(wall) => Err(wall.reason),
+                    None => Ok(js),
+                });
+            match escalation {
                 Ok(mut js_fetch) => {
                     // Accept JS result even if status >= 400, as long as it produced
                     // real content. Anti-bot/UA-detection sites frequently return a
@@ -756,21 +771,6 @@ async fn scrape_url_inner(
                             // browser tier hardcodes it to `None`, and it is read
                             // later for `data.content_type`.
                             fetch_result.html = std::mem::take(&mut js_fetch.html);
-                            // And for the same reason, the wall verdict. This is
-                            // an assignment, not a merge, which is the point: it
-                            // carries a verdict the escalation reached AND clears
-                            // one the discarded tier left behind, so a wall we
-                            // just escaped cannot be stamped onto the page that
-                            // escaped it.
-                            //
-                            // Deliberately inside the `accept` branch only. The
-                            // reject arm below is the case where the HTTP tier
-                            // produced substantial good markdown and the JS
-                            // ladder got walled; carrying the verdict there would
-                            // block a page we can serve, which is a recall
-                            // regression and the exact failure this whole change
-                            // exists to avoid.
-                            fetch_result.block = js_fetch.block.take();
                             // Replace the original "Target returned 4xx" with the JS
                             // fetch's warning (which is None for a clean 2xx render),
                             // so a successful escalation doesn't leak the original
