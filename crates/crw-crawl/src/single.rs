@@ -1155,12 +1155,15 @@ async fn scrape_url_inner(
     // sibling `change_tracking` field. The diff is computed against the
     // caller-supplied `previous` snapshot — opencore stores nothing. The LLM
     // judge is opt-in and runs below: it requires `goal` + `judgeEnabled: true`.
-    // Never diff a page that did not come back. A blocked page is
-    // `success:false` on every surface, so its diff is never read, while
-    // json-mode tracking and the meaningful-change judge below are real model
-    // calls on a request nobody is charged for. The json and summary legs
-    // above skip on the same verdict.
-    if req.formats.contains(&OutputFormat::ChangeTracking) && data.block.is_none() {
+    // Never diff a wall no renderer tier could clear. It used to stop before
+    // this phase as an error, and it is `success:false` on every surface, so its
+    // diff is never read, while json-mode tracking and the meaningful-change
+    // judge below are real model calls on a request nobody is charged for.
+    //
+    // Keyed on `unclearable_wall`, not on `block`: a 4xx page `classify_block`
+    // labelled is still a billed `success:true` document on `/v2`, and it has
+    // always had its change tracking (and the judge's `llmUsage`) there.
+    if req.formats.contains(&OutputFormat::ChangeTracking) && !data.unclearable_wall {
         let Some(ct_opts) = &req.change_tracking else {
             return Err(crw_core::error::CrwError::InvalidRequest(
                 "formats includes 'changeTracking' but no 'changeTracking' options were provided."
