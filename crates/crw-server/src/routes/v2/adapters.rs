@@ -466,6 +466,7 @@ mod tests {
             change_tracking: None,
             screenshot: None,
             block: None,
+            unclearable_wall: false,
             truncated: false,
             cached: false,
         }

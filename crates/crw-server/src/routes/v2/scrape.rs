@@ -144,7 +144,8 @@ pub(crate) enum V2Verdict {
     Document,
     /// No engine produced anything usable → a 500 `SCRAPE_ALL_ENGINES_FAILED`.
     NothingUsable,
-    /// A real anti-bot wall on an otherwise-fine response → `success: false`.
+    /// A real anti-bot wall on an otherwise-fine response, or a wall no
+    /// renderer tier could clear at any status → `success: false`.
     Blocked,
 }
 
@@ -179,11 +180,23 @@ pub(crate) enum V2Verdict {
 ///
 /// `/v1` is untouched: `http_error()` is still what the native surface, crawl
 /// and batch consult. Only this Firecrawl-compat surface stops asking.
+///
+/// One input outranks the status: `unclearable_wall`, a wall the renderer
+/// ladder spent every tier on and could not clear (`ScrapeData::unclearable_wall`).
+/// That page used to reach the caller as a 500 `SCRAPE_ALL_ENGINES_FAILED`,
+/// refunded. Read as a 4xx document it would become `success: true`, billed,
+/// with the wall text as content, so it is `Blocked` whatever the origin's
+/// status was. Firecrawl would return it as a billed document; this is the
+/// second deliberate deviation recorded in `conformance/FIRECRAWL-DIFF.md`.
 pub(crate) fn v2_verdict(
     status_code: u16,
     block: Option<&crw_core::types::BlockOutcome>,
     has_no_content: bool,
+    unclearable_wall: bool,
 ) -> V2Verdict {
+    if unclearable_wall {
+        return V2Verdict::Blocked;
+    }
     // A 4xx/5xx page is a document, full stop. The status explains it.
     if status_code >= 400 {
         return V2Verdict::Document;
@@ -393,6 +406,7 @@ pub async fn scrape(
         data.metadata.status_code,
         data.block.as_ref(),
         data.has_no_content(&req.formats),
+        data.unclearable_wall,
     );
     let mut data = data;
     let (success, error) = match verdict {
@@ -602,6 +616,7 @@ mod tests {
             change_tracking: None,
             screenshot: None,
             block: None,
+            unclearable_wall: false,
             truncated: false,
             cached: false,
         };
@@ -669,7 +684,7 @@ mod verdict_tests {
     fn origin_error_statuses_are_documents_not_failures() {
         for code in [400, 401, 403, 404, 410, 429, 500, 502, 503] {
             assert_eq!(
-                v2_verdict(code, None, false),
+                v2_verdict(code, None, false, false),
                 V2Verdict::Document,
                 "HTTP {code} must be returned as a document"
             );
@@ -680,8 +695,8 @@ mod verdict_tests {
     /// alternatives, so an empty body only fails on a GOOD status.
     #[test]
     fn empty_body_fails_on_200_but_not_on_404() {
-        assert_eq!(v2_verdict(200, None, true), V2Verdict::NothingUsable);
-        assert_eq!(v2_verdict(404, None, true), V2Verdict::Document);
+        assert_eq!(v2_verdict(200, None, true, false), V2Verdict::NothingUsable);
+        assert_eq!(v2_verdict(404, None, true, false), V2Verdict::Document);
     }
 
     /// The old gate fired only under ERROR_PAGE_MAX_TEXT (200 bytes), so the
@@ -690,7 +705,10 @@ mod verdict_tests {
     /// there is no length input at all.
     #[test]
     fn verdict_does_not_depend_on_body_size() {
-        assert_eq!(v2_verdict(404, None, true), v2_verdict(404, None, false));
+        assert_eq!(
+            v2_verdict(404, None, true, false),
+            v2_verdict(404, None, false, false)
+        );
     }
 
     /// `structural_failure` is "we got a page with nothing in it", which is
@@ -699,11 +717,11 @@ mod verdict_tests {
     #[test]
     fn thin_and_parked_pages_are_engine_failures_not_walls() {
         assert_eq!(
-            v2_verdict(200, Some(&block(STRUCTURAL_FAILURE_VENDOR)), false),
+            v2_verdict(200, Some(&block(STRUCTURAL_FAILURE_VENDOR)), false, false),
             V2Verdict::NothingUsable
         );
         assert_eq!(
-            v2_verdict(200, Some(&block(PARKED_DOMAIN_VENDOR)), false),
+            v2_verdict(200, Some(&block(PARKED_DOMAIN_VENDOR)), false, false),
             V2Verdict::NothingUsable
         );
     }
@@ -714,7 +732,7 @@ mod verdict_tests {
     #[test]
     fn vendor_wall_on_a_200_still_fails() {
         assert_eq!(
-            v2_verdict(200, Some(&block("cloudflare")), false),
+            v2_verdict(200, Some(&block("cloudflare")), false, false),
             V2Verdict::Blocked
         );
     }
@@ -724,7 +742,47 @@ mod verdict_tests {
     #[test]
     fn vendor_wall_on_a_403_is_a_document() {
         assert_eq!(
-            v2_verdict(403, Some(&block("cloudflare")), false),
+            v2_verdict(403, Some(&block("cloudflare")), false, false),
+            V2Verdict::Document
+        );
+    }
+
+    /// A wall the renderer ladder could not clear, served with a 403 (the
+    /// shape of `mock.fastcrw.com/wall/captcha`). Without the flag outranking
+    /// the status it would be a `success:true` document carrying the wall
+    /// text, and billed, where it used to be a refunded 500.
+    #[test]
+    fn unclearable_wall_on_a_403_is_blocked_not_a_document() {
+        for vendor in ["generic_block", "cloudflare"] {
+            assert_eq!(
+                v2_verdict(403, Some(&block(vendor)), false, true),
+                V2Verdict::Blocked,
+                "vendor {vendor}"
+            );
+        }
+    }
+
+    #[test]
+    fn unclearable_wall_on_a_200_is_blocked() {
+        assert_eq!(
+            v2_verdict(200, Some(&block("generic_block")), false, true),
+            V2Verdict::Blocked
+        );
+        // Even with nothing left in the body: it is a wall, not an engine failure.
+        assert_eq!(
+            v2_verdict(200, Some(&block("generic_block")), true, true),
+            V2Verdict::Blocked
+        );
+    }
+
+    /// The other side of the flag: `classify_block`'s own `generic_block` on a
+    /// 4xx page, which no renderer ladder condemned, stays a document. Those
+    /// pages are billed today, and keying on the label instead of the flag
+    /// would quietly start refunding them.
+    #[test]
+    fn classify_generic_block_on_a_403_without_the_flag_is_still_a_document() {
+        assert_eq!(
+            v2_verdict(403, Some(&block("generic_block")), false, false),
             V2Verdict::Document
         );
     }

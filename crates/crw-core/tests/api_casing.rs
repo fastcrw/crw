@@ -96,6 +96,7 @@ fn sample_scrape_data() -> ScrapeData {
         change_tracking: None,
         screenshot: Some("data:image/png;base64,AAAA".into()),
         block: None,
+        unclearable_wall: true,
         truncated: false,
         cached: false,
     }
@@ -139,4 +140,16 @@ fn scrape_response_is_camel_case() {
         "scrape response serializes snake_case keys (should be camelCase): {:?}",
         snakes
     );
+}
+
+/// `unclearable_wall` only steers `/v2`'s verdict inside the engine. If it
+/// reached the wire, both the native and the Firecrawl-compatible scrape shapes
+/// would gain a key, and the v2 shape must not change.
+#[test]
+fn unclearable_wall_is_never_serialized() {
+    let data = sample_scrape_data();
+    assert!(data.unclearable_wall);
+    let v = serde_json::to_value(&data).unwrap();
+    assert!(v.get("unclearableWall").is_none(), "camelCase key leaked");
+    assert!(v.get("unclearable_wall").is_none(), "snake_case key leaked");
 }

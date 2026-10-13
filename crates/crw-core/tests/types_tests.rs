@@ -225,6 +225,7 @@ fn scrape_data_skip_serializing_none() {
         change_tracking: None,
         screenshot: None,
         block: None,
+        unclearable_wall: false,
         truncated: false,
         cached: false,
     };
@@ -347,6 +348,7 @@ fn scrape_data_serializes_debug_extraction_as_camel_case() {
         change_tracking: None,
         screenshot: None,
         block: None,
+        unclearable_wall: false,
         truncated: false,
         cached: false,
     };

@@ -76,7 +76,7 @@ after:  21/21 match Firecrawl v2      (4 rows recorded, not asserted — §4)
 
 ---
 
-## 3. The one deliberate deviation
+## 3. The deliberate deviations
 
 **A vendor wall served with HTTP 200 still fails for us; Firecrawl returns it.**
 
@@ -94,6 +94,20 @@ wall does *not* fail — the status already explains the page, which is the case
 this whole change is about. Pinned by
 `v2_verdict::vendor_wall_on_a_200_still_fails` and its `_on_a_403_` sibling.
 
+**A wall no renderer tier could clear fails at any status; Firecrawl bills it.**
+
+When the HTTP body and every browser tier the ladder tried all come back as an
+anti-bot wall, Firecrawl's `!isGoodStatusCode` term accepts the 403 shell as the
+page and bills it as a `success: true` document. We answer HTTP 200
+`{success: false, data, error}` with the body cleared, whatever status the origin
+sent. That class used to reach the caller as a 500 `SCRAPE_ALL_ENGINES_FAILED`,
+which was never billed, and following Firecrawl here would start charging for a
+page we could not get past. Only a wall the ladder itself condemned qualifies:
+`classify_block`'s own verdict on a 4xx page that never went through the ladder
+is still a document, as above. Pinned by
+`v2_verdict::unclearable_wall_on_a_403_is_blocked_not_a_document` and
+`classify_generic_block_on_a_403_without_the_flag_is_still_a_document`.
+
 ---
 
 ## 4. Rows recorded but not matched
@@ -106,7 +120,7 @@ Matching Firecrawl's *contract* does not mean copying its extraction failures.
 | `/csv` — a 3-line valid CSV | **500** `SCRAPE_RETRY_LIMIT (document_antibot)` | parsed, 200 |
 | `/html/malformed` — real prose behind unclosed tags | **500** `SCRAPE_ALL_ENGINES_FAILED` | parsed, 200 |
 | `/redirect/loop` | never answered; held the connection past a 120s read timeout | 500 `SCRAPE_ALL_ENGINES_FAILED`, promptly |
-| `/wall/captcha` | 408 `CONCURRENCY_QUEUE_TIMEOUT` — a capacity artifact of their side, not a verdict | 200, `success:true`, statusCode 403 |
+| `/wall/captcha` | 408 `CONCURRENCY_QUEUE_TIMEOUT`, a capacity artifact of their side, not a verdict | 200, `success:true`, statusCode 403 on an engine with no browser tier; 200 `success:false` once a browser ladder ran and could not clear it (section 3) |
 
 The `/wall/captcha` row needs a clean re-capture. Its 401 and 429 siblings both
 captured cleanly and both confirm the status-code rule, so nothing here is
