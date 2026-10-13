@@ -16,6 +16,22 @@ use uuid::Uuid;
 
 use crate::state::{AppState, validate_crawl_renderer};
 
+/// The tool error for a scrape the HTTP route answers with `anti_bot`.
+///
+/// Same exemption as the CLI: `structural_failure` and `parked_domain` are
+/// verdicts about a page we did fetch, not walls, and they keep their body,
+/// exactly as an MCP caller always got it. Neither ever outranks
+/// `http_error()`, so leaving them out also keeps a small 404 readable.
+fn wall_error(data: &crw_core::types::ScrapeData) -> Option<String> {
+    data.block
+        .as_ref()
+        .filter(|b| {
+            b.vendor != crw_core::types::STRUCTURAL_FAILURE_VENDOR
+                && b.vendor != crw_core::types::PARKED_DOMAIN_VENDOR
+        })
+        .map(crw_core::types::BlockOutcome::message)
+}
+
 const SERVER_NAME: &str = "crw";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -75,27 +91,13 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
             .await
             .map_err(|e| format!("{e}"))?;
             // Mirror the HTTP route's block contract. `routes/scrape.rs` turns a
-            // block verdict into `success: false` + `anti_bot` with the body
-            // cleared, and `crw-mcp`'s PROXY backend turns that envelope into a
-            // tool error. This arm serializes `ScrapeData` straight to JSON, so
-            // it carries no `success` field for that guard to read, and the
-            // agent was handed the wall as `isError: false` with the wall text
-            // still sitting in `markdown`. `embedded` is the DEFAULT feature
-            // (`crw-mcp/Cargo.toml`), so that was the shape `npx crw-mcp` shipped.
-            //
-            // Order matters, and it is the route's order: `routes/scrape.rs`
-            // tests `http_error()` BEFORE the block branch, and `http_error()`
-            // yields `Some` precisely when the block vendor is
-            // `structural_failure`. That is deliberate there ("letting it
-            // short-circuit would turn every small 404 into no_usable_content
-            // with its body cleared, when today the caller can read the error
-            // page"). Checking `block` alone here would throw away a 404's body
-            // and its `metadata.statusCode`, the same regression the proxy
-            // guard was just narrowed to avoid, reintroduced on this backend.
-            if data.http_error().is_none()
-                && let Some(block) = &data.block
-            {
-                return Err(block.message());
+            // wall into `success: false` + `anti_bot` with the body cleared, and
+            // `crw-mcp`'s PROXY backend turns that envelope into a tool error.
+            // This arm serializes `ScrapeData` straight to JSON, so it carries
+            // no `success` field for that guard to read, and the agent would be
+            // handed the wall as `isError: false` with its text in `markdown`.
+            if let Some(reason) = wall_error(&data) {
+                return Err(reason);
             }
             serde_json::to_value(&data).map_err(|e| format!("serialize error: {e}"))
         }
@@ -373,5 +375,40 @@ pub async fn mcp_handler(
             [("content-type", "application/json")],
             String::new(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crw_core::types::{BlockOutcome, ScrapeData};
+
+    fn blocked(vendor: &str) -> ScrapeData {
+        ScrapeData {
+            markdown: Some("page text".into()),
+            block: Some(BlockOutcome {
+                vendor: vendor.into(),
+                reason: "reason".into(),
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_wall_is_a_tool_error() {
+        for vendor in ["generic_block", "cloudflare"] {
+            let err = wall_error(&blocked(vendor)).expect(vendor);
+            assert!(err.contains("anti-bot"), "{vendor}: {err}");
+        }
+    }
+
+    /// Same exemption as the CLI: these are pages we did fetch, and an MCP
+    /// caller has always received them as data.
+    #[test]
+    fn structural_and_parked_verdicts_stay_data() {
+        for vendor in ["structural_failure", "parked_domain"] {
+            assert_eq!(wall_error(&blocked(vendor)), None, "{vendor}");
+        }
+        assert_eq!(wall_error(&ScrapeData::default()), None);
     }
 }
