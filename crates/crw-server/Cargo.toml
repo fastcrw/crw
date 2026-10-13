@@ -53,6 +53,9 @@ wiremock = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 crw-server = { path = ".", features = ["test-utils"] }
+# StaticTier + FallbackRenderer::with_js_tiers, so tests/anti_bot_wall.rs can
+# reach the renderer ladder tail without a browser.
+crw-renderer = { workspace = true, features = ["test-utils"] }
 # Validates emitted structuredContent against crw_search's declared outputSchema
 # using the REAL SearchResponse serializer (issue #89). Same 0.28 line as crw-extract.
 jsonschema = "0.54"
