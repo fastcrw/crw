@@ -65,6 +65,8 @@ pub mod http_only;
 pub mod impersonated;
 pub mod locale;
 pub mod preference;
+#[cfg(feature = "test-utils")]
+pub mod test_utils;
 pub mod traits;
 
 use crate::breaker::{

@@ -26,6 +26,10 @@ cloak = ["crw-core/cloak"]
 # build never links the wreq/btls TLS stack. Forwards to `crw-core/impersonated`
 # for the config-level predicate and deadline math.
 impersonated = ["crw-core/impersonated", "dep:wreq", "dep:wreq-util"]
+# Test seam for crates that drive a FallbackRenderer from outside this crate
+# (crw-crawl, crw-server). Only their dev-dependencies turn it on, so it never
+# reaches a shipped binary.
+test-utils = []
 
 [dependencies]
 crw-core = { workspace = true }
