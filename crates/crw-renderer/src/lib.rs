@@ -542,7 +542,10 @@ fn demote_wall_to_ladder_failure(
     }
 }
 
-/// The verdict for a ladder whose every tier came back with an anti-bot wall.
+/// The verdict for a wall no browser tier could clear: either every tier the
+/// ladder ran came back with it, or the PDF gate skipped a ladder that a
+/// hard-block status would have run and that no browser could have cleared,
+/// since none renders a PDF.
 ///
 /// The ladder tail used to express it as `Err(CrwError::HttpError(..))`, which
 /// `crw-server` maps to 502. A target refusing us is not our gateway failing,
@@ -2731,6 +2734,21 @@ impl FallbackRenderer {
                         "HTTP {} on a PDF URL, returning it without JS escalation",
                         result.status_code
                     );
+                    // Skipping the ladder must not change what the caller is
+                    // charged. A hard-block status (401, 403, 429, 503, 52x)
+                    // used to send this request up the whole ladder, where no
+                    // browser could clear it (none renders a PDF) and it ended
+                    // as a refunded error. Carry the verdict the tail carries
+                    // for a wall no tier could clear, so every surface still
+                    // answers it that way. Keyed on the status, not the body:
+                    // a deny page's wording varies by vendor (hyatt's Akamai
+                    // "Your browser did something unexpected" matches no phrase
+                    // list), and it is the status that sent it up the ladder.
+                    // Any other status (a 404 or 410 page, a 500) is returned
+                    // exactly as main returns it.
+                    if is_hard_block_status(result.status_code) {
+                        result.block = Some(unclearable_wall_verdict());
+                    }
                 }
 
                 if !self.js_renderers.is_empty() && !is_document_verdict && would_escalate {

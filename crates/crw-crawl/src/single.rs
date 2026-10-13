@@ -824,9 +824,10 @@ async fn scrape_url_inner(
     // own "this is a wall no tier could clear", and it would route the page to
     // the `http_error` branch of `routes/scrape.rs` instead of `anti_bot`.
     //
-    // `fetch_result.block` is set only at the tail of the renderer ladder,
-    // when the tiers that ran all came back with an anti-bot wall. It used to
-    // be raised as an error that the server mapped to 502.
+    // `fetch_result.block` is set only by the renderer, for a wall no browser
+    // tier could clear: at the ladder tail, or at the PDF gate when a
+    // hard-block status would have run a ladder no browser could help. It used
+    // to be raised as an error that the server mapped to 502.
     let classified = classify_block(
         fetch_result.status_code,
         fetch_result.content_type.as_deref(),
