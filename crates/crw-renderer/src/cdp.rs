@@ -172,13 +172,17 @@ window.navigator.permissions.query = (params) =>
         ? Promise.resolve({ state: Notification.permission })
         : originalQuery(params);
 
-// 6. Prevent detection via iframe contentWindow
+// 6. Prevent detection via iframe contentWindow. Reading `chrome` on a
+// cross-origin frame throws SecurityError, which killed the page script that
+// asked for `iframe.contentWindow` (Turnstile, reCAPTCHA, embeds), so the read
+// is guarded. Kept rather than removed: without it Cloudflare's challenge on
+// ccg.ai and automaticcss.com stopped clearing (measured on staging 2026-10-13).
 const origHTMLElement = HTMLIFrameElement.prototype.__lookupGetter__('contentWindow');
 if (origHTMLElement) {
     Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
         get: function() {
             const w = origHTMLElement.call(this);
-            if (w && !w.chrome) w.chrome = window.chrome;
+            try { if (w && !w.chrome) w.chrome = window.chrome; } catch (_) {}
             return w;
         }
     });
@@ -4080,6 +4084,20 @@ mod tests {
         assert!(safe.contains("Chrome/150"));
         // A UA without the prefix is returned unchanged (no double-strip).
         assert_eq!(lightpanda_safe_ua("Chrome/150.0.0.0"), "Chrome/150.0.0.0");
+    }
+
+    #[test]
+    fn stealth_js_iframe_patch_never_throws_on_a_cross_origin_frame() {
+        // The getter touches the frame's `chrome`, which throws SecurityError on a
+        // cross-origin frame and killed the page script reading `contentWindow`
+        // (31,540 such errors in 14 days of prod). The touch must stay guarded.
+        assert!(
+            STEALTH_JS
+                .contains("try { if (w && !w.chrome) w.chrome = window.chrome; } catch (_) {}")
+        );
+        assert!(
+            !STEALTH_JS.contains("\n            if (w && !w.chrome) w.chrome = window.chrome;")
+        );
     }
 
     #[test]
