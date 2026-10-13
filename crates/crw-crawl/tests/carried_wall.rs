@@ -257,10 +257,27 @@ async fn scrape(
     .expect("a wall is a verdict on the page, not a scrape error")
 }
 
-/// Change tracking on a wall is a diff of the wall text that no surface ever
-/// returns, and in json mode or with the judge it is a real model call on a
-/// request nobody is charged for. Before the verdict was carried, a generic
-/// wall never got this far; now it must stop here instead.
+fn change_tracking_request(url: String, previous: &str) -> ScrapeRequest {
+    ScrapeRequest {
+        url,
+        formats: vec![OutputFormat::Markdown, OutputFormat::ChangeTracking],
+        change_tracking: Some(ChangeTrackingOptions {
+            modes: vec![ChangeTrackingMode::GitDiff],
+            previous: Some(ChangeTrackingSnapshot {
+                markdown: Some(previous.to_string()),
+                content_hash: crw_diff::snapshot::hash_markdown(previous),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// Change tracking on a wall no tier could clear is a diff of the wall text
+/// that no surface ever returns, and in json mode or with the judge it is a
+/// real model call on a request nobody is charged for. That wall used to stop
+/// before this phase as an error; it must still stop here.
 #[tokio::test]
 async fn change_tracking_never_runs_on_a_wall() {
     let server = walled_origin().await;
@@ -455,4 +472,19 @@ async fn an_escalation_that_is_not_accepted_leaves_its_verdict_behind() {
         "the first body is the one kept: {:?}",
         data.markdown
     );
+}
+
+/// The other side of the change-tracking gate. With no browser tier, this 403
+/// is a page `classify_block` labelled and nothing more: `/v2` still returns it
+/// as a billed `success:true` document, and it has always had its diff there.
+#[tokio::test]
+async fn change_tracking_still_runs_on_a_page_only_classify_block_labelled() {
+    let server = walled_origin().await;
+    let req = change_tracking_request(format!("{}/", server.uri()), "# Earlier page");
+
+    let data = scrape(&http_only_renderer(), &req, None).await;
+
+    assert!(data.block.is_some(), "the 403 is still labelled");
+    assert!(!data.unclearable_wall);
+    assert!(data.change_tracking.is_some(), "the diff must still run");
 }
