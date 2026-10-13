@@ -7583,10 +7583,11 @@ mod tests {
                 tdl(),
             )
             .await;
+        let out = out.expect("a thin but wall-free body must still be returned");
         assert!(
-            out.is_ok(),
-            "a thin but wall-free body must still be returned, got {:?}",
-            out.err()
+            out.block.is_none(),
+            "a thin page with no wall phrasing must not carry a verdict: {:?}",
+            out.block
         );
     }
 
