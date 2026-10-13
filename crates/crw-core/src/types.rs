@@ -842,6 +842,17 @@ pub struct ScrapeData {
     /// `None` (skipped when serializing) = a real page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<BlockOutcome>,
+    /// The renderer ladder itself condemned this page: every tier it tried hit
+    /// a wall and none could clear it (`FetchResult.block`). Implies `block`
+    /// is `Some`.
+    ///
+    /// `/v2` needs this apart from `block`, because there a page served with a
+    /// 4xx is a billed document even when `classify_block` labelled it, and
+    /// keying on the label would change what those pages cost. Only this flag
+    /// makes a walled 4xx `success:false`, the shape a wall had when it was a
+    /// refunded 5xx. Never serialized, so no surface gains a key.
+    #[serde(skip)]
+    pub unclearable_wall: bool,
     /// The renderer snapshotted a partial DOM because the navigation budget
     /// elapsed (`FetchResult.truncated`). The content is usable but incomplete,
     /// and a caller cannot otherwise tell it apart from a page that genuinely
@@ -1379,6 +1390,7 @@ mod tests {
                 vendor: "cloudflare".into(),
                 reason: "cloudflare challenge interstitial".into(),
             }),
+            unclearable_wall: false,
             truncated: false,
             cached: false,
         }
@@ -1659,6 +1671,7 @@ mod tests {
                 vendor: "cloudflare".into(),
                 reason: "cloudflare challenge interstitial".into(),
             }),
+            unclearable_wall: false,
             truncated: false,
             cached: false,
         };
@@ -2047,6 +2060,7 @@ mod tests {
             change_tracking: None,
             screenshot: None,
             block: None,
+            unclearable_wall: false,
             truncated: false,
             cached: false,
         }

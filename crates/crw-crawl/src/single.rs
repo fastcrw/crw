@@ -842,6 +842,7 @@ async fn scrape_url_inner(
         (Some(c), _) => Some(c),
         (None, carried) => carried,
     };
+    data.unclearable_wall = fetch_result.block.is_some();
     // The URL actually read, for `/v2`'s Firecrawl-compatible `metadata.url`.
     // Stamped unconditionally, NOT gated on `redirect_is_material`: that gate
     // exists to decide whether a redirect is worth WARNING about (it ignores a

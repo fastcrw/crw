@@ -578,6 +578,7 @@ fn build_scrape_data(
         screenshot: None,
         // PDFs are the content, never an anti-bot shell.
         block: None,
+        unclearable_wall: false,
         // The PDF parser reads whole documents; there is no partial-DOM snapshot.
         truncated: false,
         cached: false,
