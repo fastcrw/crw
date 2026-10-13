@@ -506,22 +506,6 @@ fn is_origin_navigation_failure(e: &CrwError) -> bool {
     }
 }
 
-/// Is this failure the ORIGIN's fault, for breaker-scoping purposes only?
-///
-/// Deliberately narrower than [`is_origin_navigation_failure`], which exists to
-/// decide error ATTRIBUTION and is generous about `net::ERR_*` on purpose. The
-/// breaker asks a different question: does this failure say anything about the
-/// TIER's own health? Chromium reports a proxy tunnel that will not open, and a
-/// box that lost its network, with the same `net::ERR_` shape as a dead origin,
-/// but those are ours and must keep reaching the global window or nothing ever
-/// concludes the tier is sick. `cdp.rs::is_proxy_tunnel_error` already draws
-/// this exact line for its country-retry, with the same reasoning.
-///
-/// `ERR_NAME_NOT_RESOLVED` stays on the origin side. A resolver brown-out would
-/// produce it on every host, but so does a dead domain on one host, and the
-/// customer workloads that drive this code are full of the latter. The HTTP
-/// tier sees the same failure independently and reports `TargetUnreachable`, so
-/// a genuine resolver fault is not invisible.
 /// A ladder result that is nothing but a wall loses to a usable fallback body.
 ///
 /// While the wall verdict was an error this preference was automatic: the ladder
@@ -575,6 +559,22 @@ fn unclearable_wall_verdict() -> crw_core::types::BlockOutcome {
     }
 }
 
+/// Is this failure the ORIGIN's fault, for breaker-scoping purposes only?
+///
+/// Deliberately narrower than [`is_origin_navigation_failure`], which exists to
+/// decide error ATTRIBUTION and is generous about `net::ERR_*` on purpose. The
+/// breaker asks a different question: does this failure say anything about the
+/// TIER's own health? Chromium reports a proxy tunnel that will not open, and a
+/// box that lost its network, with the same `net::ERR_` shape as a dead origin,
+/// but those are ours and must keep reaching the global window or nothing ever
+/// concludes the tier is sick. `cdp.rs::is_proxy_tunnel_error` already draws
+/// this exact line for its country-retry, with the same reasoning.
+///
+/// `ERR_NAME_NOT_RESOLVED` stays on the origin side. A resolver brown-out would
+/// produce it on every host, but so does a dead domain on one host, and the
+/// customer workloads that drive this code are full of the latter. The HTTP
+/// tier sees the same failure independently and reports `TargetUnreachable`, so
+/// a genuine resolver fault is not invisible.
 /// Did the cloak tier reject a body on CONTENT grounds rather than fail?
 ///
 /// `cloak.rs` answers `Err` for two different things. A transport failure
