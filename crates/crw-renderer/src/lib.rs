@@ -4067,18 +4067,9 @@ impl FallbackRenderer {
         // is a cfg-const that folds to `false` in a lean build → chrome_proxy
         // firing is byte-identical there.
         #[cfg(feature = "cloak")]
-        // The firewall-block veto is scoped to THIS decision on purpose.
-        // `looks_like_cloudflare_challenge` has a dozen other callers that use it
-        // as an "is this body still bad" accept gate, where a 1020 must keep
-        // reading as bad; changing it there would let a block page ship as
-        // content. The only decision it gets wrong is this one: whether to spend
-        // a Turnstile solve, which a 1020 can never satisfy.
         let saw_cf_challenge = thin_result
             .as_ref()
-            .map(|r| {
-                detector::looks_like_cloudflare_challenge(&r.html)
-                    && !detector::looks_like_cloudflare_firewall_block(&r.html)
-            })
+            .map(|r| detector::looks_like_cloudflare_challenge(&r.html))
             .unwrap_or(false);
         let route_to_cloak = {
             #[cfg(feature = "cloak")]
