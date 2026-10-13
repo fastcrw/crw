@@ -34,11 +34,21 @@ async fn main() {
     }
 }
 
+/// Filter used when `RUST_LOG` is unset (an explicit `RUST_LOG` always wins).
+/// `html5ever` warns "foster parenting not implemented" once per token of a
+/// mis-nested `<table>` page: 27,354 lines in 14 days of prod, 62% of all WARN
+/// lines, with no engine signal in any of them.
+const DEFAULT_LOG_FILTER: &str = "info,html5ever=error";
+
 async fn run_server() {
-    // Initialize tracing.
+    // Initialize tracing. ANSI colours only on a terminal: under docker the
+    // escape codes were 30% of the log bytes and split tokens, so a multi-word
+    // search such as `ERROR tower_http` never matched.
     tracing_subscriber::fmt()
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER)),
         )
         .init();
 
@@ -323,5 +333,15 @@ mod tests {
     #[test]
     fn guard_on_skips_when_no_model_configured() {
         assert!(managed_model_prefix_ok(true, None));
+    }
+
+    /// `EnvFilter::new` drops a directive it cannot parse with only a warning,
+    /// so a typo here would silently bring the noise back. `try_new` fails loudly.
+    #[test]
+    fn default_log_filter_parses_and_quiets_html5ever() {
+        let filter = tracing_subscriber::EnvFilter::try_new(super::DEFAULT_LOG_FILTER)
+            .expect("the default filter must parse");
+        let shown = filter.to_string();
+        assert!(shown.contains("html5ever=error"), "{shown}");
     }
 }
