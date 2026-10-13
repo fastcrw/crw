@@ -7639,6 +7639,64 @@ mod tests {
         }
     }
 
+    /// The production default path: no `renderJs`, a 403 that still serves the
+    /// real page, and a ladder that only ever meets a wall. The walled ladder
+    /// result must lose to the real HTTP body, which ships with no verdict.
+    /// This is the recall guard (`demote_wall_to_ladder_failure`) on the arm
+    /// most traffic takes.
+    #[tokio::test]
+    async fn auto_mode_403_with_real_content_beats_a_walled_ladder() {
+        let wall = "<html><body><h1>Security Check</h1>\
+                    <p>Checking your browser before accessing the site</p></body></html>";
+        let article = format!(
+            "<html><body><article><h1>Real page</h1><p>{}</p></article></body></html>",
+            "Genuine prose that no detector could mistake for an interstitial. ".repeat(20)
+        );
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(wall.to_string()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(wall.to_string()),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![lp, chrome]);
+        r.http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::OkStatus(403, article.clone()),
+        });
+
+        let out = r
+            .fetch(
+                "https://example.com",
+                &HashMap::new(),
+                None,
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .expect("the real HTTP body must ship");
+
+        assert!(
+            out.html.contains("Real page"),
+            "the wall displaced the page"
+        );
+        assert_eq!(out.status_code, 403);
+        assert!(
+            out.block.is_none(),
+            "a real page carries no verdict: {:?}",
+            out.block
+        );
+        assert!(
+            out.warning
+                .as_deref()
+                .is_some_and(|w| w.contains(JS_ESCALATION_FAILED)),
+            "precondition: the ladder ran and lost, warning={:?}",
+            out.warning
+        );
+    }
+
     #[tokio::test]
     async fn user_pinned_failed_render_emits_warning() {
         // Pin lightpanda. It returns failed-render HTML (Next.js error
