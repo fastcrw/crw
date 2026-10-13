@@ -155,3 +155,53 @@ async fn v2_keeps_a_4xx_page_no_ladder_condemned_as_a_document() {
     assert_eq!(body["success"], true, "{body}");
     assert_eq!(body["data"]["metadata"]["statusCode"], 403, "{body}");
 }
+
+/// A 4xx on a URL whose path names a PDF never reaches the browser ladder: the
+/// auto arm returns the HTTP verdict as is (no browser renders a PDF). So no
+/// tier can condemn it and nothing may carry a wall verdict for it. Its answer
+/// must be exactly the plain HTTP path's, the one an engine with no browser
+/// tier gives, on both surfaces. On `/v2` that means a 4xx document, not the
+/// blocked envelope a ladder-condemned wall gets.
+#[tokio::test]
+async fn a_pdf_4xx_skips_the_ladder_and_answers_like_the_plain_http_path() {
+    let origin = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/files/report.pdf"))
+        .respond_with(ResponseTemplate::new(403).set_body_raw(CAPTCHA_WALL, "text/html"))
+        .mount(&origin)
+        .await;
+    let url = format!("{}/files/report.pdf", origin.uri());
+
+    let mut answers = Vec::new();
+    for with_browser in [true, false] {
+        let s = app(with_browser);
+        let mut per_surface = Vec::new();
+        for route in ["/v1/scrape", "/v2/scrape"] {
+            let r = s
+                .post(route)
+                .json(&json!({"url": url, "formats": ["markdown"]}))
+                .await;
+            r.assert_status(StatusCode::OK);
+            let body: Value = r.json();
+            per_surface.push(json!({
+                "success": body["success"],
+                "error": body["error"],
+                "errorCode": body["errorCode"],
+                "code": body["code"],
+                "block": body["data"]["block"],
+                "markdown": body["data"]["markdown"],
+                "statusCode": body["data"]["metadata"]["statusCode"],
+                "creditsUsed": body["data"]["metadata"]["creditsUsed"],
+            }));
+        }
+        answers.push(per_surface);
+    }
+
+    assert_eq!(
+        answers[0], answers[1],
+        "a browser tier changed the answer for a .pdf 4xx"
+    );
+    // v2: a 4xx document. A carried wall would have made it success:false.
+    assert_eq!(answers[0][1]["success"], true, "{}", answers[0][1]);
+    assert_eq!(answers[0][1]["statusCode"], 403);
+}
