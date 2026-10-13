@@ -8,8 +8,12 @@
 
 use std::sync::Arc;
 
-use crw_core::config::{RendererConfig, RendererMode, StealthConfig};
-use crw_core::types::{CrawlRequest, CrawlState, CrawlStatus, OutputFormat};
+use crw_core::Deadline;
+use crw_core::config::{ExtractionConfig, LlmConfig, RendererConfig, RendererMode, StealthConfig};
+use crw_core::types::{
+    ChangeTrackingMode, ChangeTrackingOptions, ChangeTrackingSnapshot, CrawlRequest, CrawlState,
+    CrawlStatus, OutputFormat, ScrapeData, ScrapeRequest,
+};
 use crw_crawl::crawl::{CrawlOptions, run_crawl};
 use crw_renderer::FallbackRenderer;
 use crw_renderer::test_utils::StaticTier;
@@ -235,5 +239,77 @@ async fn sitemap_escalation_never_reads_a_carried_wall_as_xml() {
         !result.urls.iter().any(|u| u.contains("from-the-wall")),
         "an entry from the walled render was listed: {:?}",
         result.urls
+    );
+}
+
+async fn scrape(
+    renderer: &Arc<FallbackRenderer>,
+    req: &ScrapeRequest,
+    llm: Option<&LlmConfig>,
+) -> ScrapeData {
+    crw_crawl::single::scrape_url(
+        req,
+        renderer,
+        llm,
+        &ExtractionConfig::default(),
+        "crw-test",
+        false,
+        None,
+        Deadline::from_request_ms(30_000),
+    )
+    .await
+    .expect("a wall is a verdict on the page, not a scrape error")
+}
+
+/// Change tracking on a wall is a diff of the wall text that no surface ever
+/// returns, and in json mode or with the judge it is a real model call on a
+/// request nobody is charged for. Before the verdict was carried, a generic
+/// wall never got this far; now it must stop here instead.
+#[tokio::test]
+async fn change_tracking_never_runs_on_a_wall() {
+    let server = walled_origin().await;
+    // No route mounted: any model call is recorded, and fails the scrape.
+    let llm_server = MockServer::start().await;
+    let llm = LlmConfig {
+        provider: "openai".into(),
+        api_key: "test-key".into(),
+        model: "gpt-4o-mini".into(),
+        base_url: Some(format!("{}/v1", llm_server.uri())),
+        ..Default::default()
+    };
+    let previous = "# Pro plan costs 49 USD";
+    let req = ScrapeRequest {
+        url: format!("{}/", server.uri()),
+        formats: vec![OutputFormat::Markdown, OutputFormat::ChangeTracking],
+        change_tracking: Some(ChangeTrackingOptions {
+            modes: vec![ChangeTrackingMode::GitDiff, ChangeTrackingMode::Json],
+            schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": { "price": { "type": "string" } }
+            })),
+            previous: Some(ChangeTrackingSnapshot {
+                markdown: Some(previous.to_string()),
+                content_hash: crw_diff::snapshot::hash_markdown(previous),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+        goal: Some("Alert me when pricing changes".into()),
+        judge_enabled: Some(true),
+        ..Default::default()
+    };
+
+    let data = scrape(&walled_renderer(WALL), &req, Some(&llm)).await;
+
+    assert!(data.block.is_some(), "the wall verdict is stamped");
+    assert!(data.unclearable_wall);
+    assert!(data.change_tracking.is_none(), "a wall got a diff");
+    assert!(
+        llm_server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty(),
+        "a model was called for a wall"
     );
 }
