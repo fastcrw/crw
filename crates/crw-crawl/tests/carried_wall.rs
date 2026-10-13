@@ -65,9 +65,8 @@ async fn walled_origin() -> MockServer {
     Mock::given(method("GET"))
         .and(path("/"))
         .respond_with(
-            ResponseTemplate::new(403)
-                .insert_header("content-type", "text/html")
-                .set_body_string(WALL),
+            // `set_body_string` would reset the type to text/plain.
+            ResponseTemplate::new(403).set_body_raw(WALL, "text/html"),
         )
         .mount(&server)
         .await;
@@ -212,15 +211,12 @@ async fn sitemap_escalation_never_reads_a_carried_wall_as_xml() {
     // substituting this body).
     Mock::given(method("GET"))
         .and(path("/sitemap.xml"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .insert_header("content-type", "text/html")
-                .set_body_string(
-                    "<html><head><title>Just a moment...</title></head><body>\
-                     <h1>Security Check</h1>\
-                     <p>Checking your browser before accessing the site</p></body></html>",
-                ),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            "<html><head><title>Just a moment...</title></head><body>\
+                 <h1>Security Check</h1>\
+                 <p>Checking your browser before accessing the site</p></body></html>",
+            "text/html",
+        ))
         .mount(&server)
         .await;
     let base = server.uri();
@@ -311,5 +307,152 @@ async fn change_tracking_never_runs_on_a_wall() {
             .unwrap_or_default()
             .is_empty(),
         "a model was called for a wall"
+    );
+}
+
+/// The same real HTTP tier with no browser tier at all.
+fn http_only_renderer() -> Arc<FallbackRenderer> {
+    allow_loopback();
+    let mut cfg = RendererConfig {
+        mode: RendererMode::None,
+        ..Default::default()
+    };
+    cfg.impersonated.enabled = false;
+    Arc::new(
+        FallbackRenderer::new(&cfg, "crw-test", None, &StealthConfig::default())
+            .expect("renderer builds"),
+    )
+}
+
+fn markdown_request(url: String) -> ScrapeRequest {
+    ScrapeRequest {
+        url,
+        formats: vec![OutputFormat::Markdown],
+        ..Default::default()
+    }
+}
+
+async fn serve_once_then(first: ResponseTemplate, then: ResponseTemplate) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(first)
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(then)
+        .mount(&server)
+        .await;
+    server
+}
+
+fn html(status: u16, body: &str) -> ResponseTemplate {
+    ResponseTemplate::new(status).set_body_raw(body.to_string(), "text/html")
+}
+
+/// A wall wordy enough that its markdown clears the substantial-content guard,
+/// so `classify_block` alone answers "not a block". Still short enough, and
+/// phrased enough, to be a generic wall for the renderer.
+const WORDY_WALL: &str = "<html><body><h1>Verify you are human</h1>\
+    <p>Please complete the security check to continue to the site. This keeps \
+    the service safe for everyone, and we appreciate your patience while your \
+    browser is verified.</p></body></html>";
+
+/// The carried verdict has to win where `classify_block` stays silent, or a
+/// wall with a paragraph of copy on it ships as the page.
+#[tokio::test]
+async fn carried_verdict_beats_the_substantial_markdown_guard() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/"))
+        .respond_with(html(403, WORDY_WALL))
+        .mount(&server)
+        .await;
+    let req = markdown_request(format!("{}/", server.uri()));
+
+    // Without a ladder this page is not a block at all: the markdown guard
+    // waves it through. That is what makes the carried verdict load-bearing.
+    let plain = scrape(&http_only_renderer(), &req, None).await;
+    assert!(plain.block.is_none(), "control: {:?}", plain.block);
+
+    let walled = scrape(&walled_renderer(WORDY_WALL), &req, None).await;
+    let block = walled.block.as_ref().expect("the carried verdict applies");
+    assert_eq!(block.vendor, "generic_block");
+    assert!(walled.unclearable_wall);
+}
+
+/// `unclearable_wall` means the ladder condemned the page, nothing else. A
+/// verdict `classify_block` reaches on its own must not set it, or `/v2` would
+/// start refunding 4xx pages it bills today.
+#[tokio::test]
+async fn a_verdict_classify_block_reaches_alone_does_not_set_the_flag() {
+    let server = walled_origin().await;
+    let req = markdown_request(format!("{}/", server.uri()));
+
+    let data = scrape(&http_only_renderer(), &req, None).await;
+
+    assert!(data.block.is_some(), "the 403 wall is still classified");
+    assert!(!data.unclearable_wall);
+}
+
+/// `single.rs`'s own escalation (a 2xx whose markdown came out thin) can bring
+/// back a walled render. When that render is accepted as the page, its verdict
+/// comes with it.
+#[tokio::test]
+async fn an_accepted_escalation_carries_the_verdict() {
+    // No script, so the renderer does not escalate the thin page itself and
+    // the second-chance escalation in `scrape_url` is the one that runs. Its
+    // fetch then meets the wall.
+    let server = serve_once_then(
+        html(200, "<html><body><p>Tiny.</p></body></html>"),
+        html(403, WORDY_WALL),
+    )
+    .await;
+    let req = markdown_request(format!("{}/", server.uri()));
+
+    let data = scrape(&walled_renderer(WORDY_WALL), &req, None).await;
+
+    let seen = server.received_requests().await.unwrap_or_default().len();
+    assert!(
+        seen >= 2,
+        "the escalation never re-fetched: {seen} request(s)"
+    );
+    assert!(data.unclearable_wall, "block: {:?}", data.block);
+    assert_eq!(
+        data.block.as_ref().map(|b| b.vendor.as_str()),
+        Some("generic_block")
+    );
+}
+
+/// ...and when it is NOT accepted, the verdict stays behind with the render
+/// that was thrown away. Carrying it would condemn the page we kept.
+#[tokio::test]
+async fn an_escalation_that_is_not_accepted_leaves_its_verdict_behind() {
+    // `WALL`'s markdown is under the acceptance threshold, so the escalated
+    // render loses and the first body stays.
+    let server = serve_once_then(
+        html(200, "<html><body><p>Tiny.</p></body></html>"),
+        html(403, WALL),
+    )
+    .await;
+    let req = markdown_request(format!("{}/", server.uri()));
+
+    let data = scrape(&walled_renderer(WALL), &req, None).await;
+
+    let seen = server.received_requests().await.unwrap_or_default().len();
+    assert!(
+        seen >= 2,
+        "the escalation never re-fetched: {seen} request(s)"
+    );
+    assert!(!data.unclearable_wall, "block: {:?}", data.block);
+    assert!(
+        data.markdown
+            .as_deref()
+            .is_some_and(|m| m.contains("Tiny.")),
+        "the first body is the one kept: {:?}",
+        data.markdown
     );
 }
