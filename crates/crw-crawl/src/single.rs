@@ -1102,7 +1102,10 @@ async fn scrape_url_inner(
             elapsed_ms = fetch_result.elapsed_ms,
             "render budget expired with no extractable content; failing instead of billing an empty page"
         );
-        return Err(crw_core::error::CrwError::Timeout(fetch_result.elapsed_ms));
+        // The caller's budget, not `elapsed_ms`: that is when the partial render
+        // was taken (about 2.5s into a 30s request), and reporting it told callers
+        // their `timeout` had been ignored.
+        return Err(crw_core::error::CrwError::Timeout(deadline.requested_ms()));
     }
 
     // Wrap the raw base64 screenshot in a `data:image/png;base64,` URL exactly
