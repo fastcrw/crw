@@ -1594,19 +1594,19 @@ async fn enrich_with_scrape(
 }
 
 fn apply_scrape_to_result(slot: &mut SearchResult, data: ScrapeData, formats: &[OutputFormat]) {
-    // A blocked page is not enrichment. `scrape_url` reports a wall as a verdict
-    // on the document rather than an `Err`, and `clear_body()` runs in the scrape
-    // ROUTE, not here, so without this the interstitial ("Checking your browser",
-    // a CloudFront deny page) lands in `slot.markdown` as if it were the result.
-    // Downstream that is worse than an empty slot: the SaaS counts a result
-    // successful on body presence alone, so the caller is billed for it, and
-    // answer synthesis takes the wall text as evidence.
+    // A wall no renderer tier could clear used to reach this function as an
+    // `Err`, which the caller's `Err(msg)` arm turned into an error slot with no
+    // body. It now arrives as `Ok(data)` carrying the verdict, so give it that
+    // same slot: the reason, and nothing else. Without this the interstitial
+    // text would land in `slot.markdown`, where the SaaS counts it as a scraped
+    // (billed) result and answer synthesis reads it as evidence.
     //
-    // Same shape as the `Err(msg)` arm in the caller: name the reason, leave the
-    // body unset.
-    if let Some(block) = &data.block {
-        slot.error = Some(block.message());
-        slot.metadata = Some(data.metadata);
+    // Keyed on `unclearable_wall`, not on `block`, on purpose. Every other
+    // verdict (a named vendor shell, `structural_failure`, `parked_domain`)
+    // always reached this function as `Ok` with its body, and still does, so
+    // what those results cost and what synthesis sees stays exactly as it was.
+    if data.unclearable_wall {
+        slot.error = data.block.as_ref().map(|b| b.message());
         return;
     }
     if formats.contains(&OutputFormat::Markdown) {
@@ -1662,31 +1662,54 @@ mod tests {
         }
     }
 
-    #[test]
-    fn blocked_enrichment_reports_the_reason_and_ships_no_body() {
-        // A wall reaches `apply_scrape_to_result` as `Ok(data)` carrying a block
-        // verdict, because `clear_body()` runs in the scrape route and not here.
-        // Copying its markdown into the slot makes the interstitial look like the
-        // page: the SaaS counts a result successful on body presence alone, so it
-        // bills, and answer synthesis reads the wall as evidence.
-        let mut slot = blank_slot("https://example.com/walled");
-        let data = ScrapeData {
+    fn walled(vendor: &str, unclearable_wall: bool) -> ScrapeData {
+        ScrapeData {
             markdown: Some("Checking your browser before you access...".to_string()),
             block: Some(crw_core::types::BlockOutcome {
-                vendor: "generic_block".to_string(),
+                vendor: vendor.to_string(),
                 reason: "anti-bot wall that no renderer tier could clear".to_string(),
             }),
+            unclearable_wall,
             ..Default::default()
-        };
+        }
+    }
 
-        apply_scrape_to_result(&mut slot, data, &[OutputFormat::Markdown]);
+    #[test]
+    fn unclearable_wall_enrichment_is_an_error_slot_with_no_body() {
+        // This wall used to arrive as `Err` and become an error slot. Copying its
+        // markdown instead would make the SaaS count the interstitial as a scraped
+        // result, and bill it, and hand it to answer synthesis as evidence.
+        let mut slot = blank_slot("https://example.com/walled");
+
+        apply_scrape_to_result(
+            &mut slot,
+            walled("generic_block", true),
+            &[OutputFormat::Markdown],
+        );
 
         assert!(
             slot.markdown.is_none(),
             "wall text must not become the body"
         );
-        let err = slot.error.expect("a blocked slot names its reason");
+        assert!(slot.metadata.is_none(), "same slot the error arm builds");
+        let err = slot.error.expect("a walled slot names its reason");
         assert!(err.contains("anti-bot"), "got {err}");
+    }
+
+    #[test]
+    fn a_verdict_the_ladder_did_not_reach_keeps_its_body() {
+        // A named vendor shell, `structural_failure` and `parked_domain` always
+        // reached this function as `Ok` with their body. Dropping it now would
+        // make those results newly free on the SaaS (it refunds a result with no
+        // body) and pull them out of answer synthesis.
+        for vendor in ["cloudflare", "structural_failure", "parked_domain"] {
+            let mut slot = blank_slot("https://example.com/labelled");
+
+            apply_scrape_to_result(&mut slot, walled(vendor, false), &[OutputFormat::Markdown]);
+
+            assert!(slot.markdown.is_some(), "{vendor}: body was dropped");
+            assert!(slot.error.is_none(), "{vendor}");
+        }
     }
 
     #[test]
