@@ -5141,8 +5141,8 @@ pub struct FetchResult {
     pub screenshot: Option<String>,
     /// A wall verdict the renderer already reached, carried forward as data.
     ///
-    /// Set in exactly one situation: the JS ladder was spent and the body that
-    /// would otherwise be handed back as a fallback is itself an anti-bot wall
+    /// Set in exactly one situation: the JS ladder was spent, a tier did run
+    /// against the page, and the best body it got back is an anti-bot wall
     /// (`detector::looks_like_generic_bot_wall`). That predicate is much
     /// narrower than `classify_block` and is deliberately not run on every
     /// page, so the verdict has to travel rather than be recomputed at the
@@ -5156,7 +5156,7 @@ pub struct FetchResult {
     /// other wall already becomes `success: false` + `anti_bot` at HTTP 200.
     ///
     /// `None` on every path that existed before, and on every renderer: only
-    /// the fallback arms in `crw_renderer::Renderer::fetch` ever set it.
+    /// the ladder tail in `crw_renderer::FallbackRenderer` ever sets it.
     pub block: Option<BlockOutcome>,
 }
 

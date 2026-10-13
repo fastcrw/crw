@@ -542,13 +542,12 @@ fn demote_wall_to_ladder_failure(
     }
 }
 
-/// The verdict for a fallback body that is itself an anti-bot wall.
+/// The verdict for a ladder whose every tier came back with an anti-bot wall.
 ///
-/// Both fallback arms in [`Renderer::fetch`] reach this conclusion about a
-/// different variable, and both used to express it as
-/// `Err(CrwError::HttpError(..))`, which `crw-server` maps to 502. A target
-/// refusing us is not our gateway failing, so the verdict now travels on the
-/// `FetchResult` and `crw_crawl::single` stamps it at the shared scrape choke.
+/// The ladder tail used to express it as `Err(CrwError::HttpError(..))`, which
+/// `crw-server` maps to 502. A target refusing us is not our gateway failing,
+/// so the verdict now travels on the `FetchResult` and `crw_crawl::single`
+/// stamps it at the shared scrape choke.
 ///
 /// `generic_block` is load-bearing rather than cosmetic: `ScrapeData::http_error()`
 /// yields to any NON-structural block, so this vendor is what routes a wall
@@ -2438,35 +2437,30 @@ impl FallbackRenderer {
                         // pixels), and an explicit renderer pin is a caller
                         // contract that forbids silent substitution. Both fail
                         // closed, matching the no-renderer arm directly above.
-                        Err(e) if screenshot_requested() || is_hard_pinned => Err(e),
+                        // The HTTP shell substitutes for a failed ladder so the
+                        // caller gets content instead of nothing. But when that
+                        // shell IS a wall, returning it hands back a wall as a
+                        // billed success. Fail with the ladder's own error
+                        // instead; a shell that is not a wall still substitutes
+                        // as before.
+                        //
+                        // A ladder that ran into the wall does not land here:
+                        // its tail answers `Ok` carrying the verdict, which the
+                        // arm above passes through. An `Err` means no tier
+                        // produced a body at all (a timeout, a full pool, every
+                        // breaker open), so the failure is ours and keeps its
+                        // 504/500, visible to 5xx alerting, not `anti_bot`.
+                        Err(e)
+                            if screenshot_requested()
+                                || is_hard_pinned
+                                || detector::looks_like_generic_bot_wall(
+                                    &http_result.html,
+                                    http_result.truncated,
+                                ) =>
+                        {
+                            Err(e)
+                        }
                         Err(e) => {
-                            // The HTTP shell substitutes for a failed ladder so
-                            // the caller gets content instead of nothing. But
-                            // when that shell IS the wall the ladder just
-                            // refused to clear, returning it as content hands
-                            // back exactly what every tier rejected.
-                            //
-                            // That used to `Err(e)` out of the guard above, which
-                            // was right about the body and wrong about the
-                            // status: `CrwError::HttpError` maps to 502, so a
-                            // target refusing us was reported as our own gateway
-                            // failing. The caller saw "Bad Gateway", the SaaS
-                            // booked `upstream_5xx`, and the watchdog paged for a
-                            // platform incident that was not happening.
-                            //
-                            // Carry the verdict instead and keep every other
-                            // decision on this path untouched: the shell still
-                            // travels, and `crw_crawl::single` stamps it at the
-                            // shared choke, so the request ends as
-                            // `success: false` + `anti_bot` with no credit, like
-                            // every other wall. A shell that is not a wall still
-                            // substitutes exactly as before.
-                            if detector::looks_like_generic_bot_wall(
-                                &http_result.html,
-                                http_result.truncated,
-                            ) {
-                                http_result.block = Some(unclearable_wall_verdict());
-                            }
                             if is_auth_blocked {
                                 tracing::error!(
                                     url,
@@ -2782,17 +2776,20 @@ impl FallbackRenderer {
                         demote_wall_to_ladder_failure(js_outcome, &result, !is_hard_pinned);
                     match js_outcome {
                         Ok(js_result) => Ok(js_result),
-                        // Pinned: the caller's contract forbids substitution.
-                        Err(e) if is_hard_pinned => Err(e),
+                        Err(e)
+                            if is_hard_pinned
+                                || detector::looks_like_generic_bot_wall(
+                                    &result.html,
+                                    result.truncated,
+                                ) =>
+                        {
+                            // Pinned: the caller's contract forbids substitution.
+                            // Wall: see the sibling arm. The shell is not a
+                            // fallback, and an `Err` here is our own failure,
+                            // not the ladder's verdict on the wall.
+                            Err(e)
+                        }
                         Err(e) => {
-                            // The shell is the very thing the ladder rejected, so
-                            // it is not a fallback. See the sibling arm above for
-                            // why that verdict now travels as data instead of as
-                            // a `CrwError::HttpError` the server turns into 502.
-                            if detector::looks_like_generic_bot_wall(&result.html, result.truncated)
-                            {
-                                result.block = Some(unclearable_wall_verdict());
-                            }
                             // For `is_auth_blocked` (4xx/5xx soft-block status codes), the
                             // HTTP body is almost certainly an error shell — falling back
                             // to it silently misleads the caller. For `needs_js` /
@@ -7589,6 +7586,57 @@ mod tests {
             "a thin page with no wall phrasing must not carry a verdict: {:?}",
             out.block
         );
+    }
+
+    /// A walled HTTP shell behind a ladder that failed for OUR reasons: no tier
+    /// produced a body at all (a timeout, a full pool, every breaker open). That
+    /// is not a verdict on the wall, so it must not become `anti_bot`; it keeps
+    /// the ladder's own error, a 504 or 500 that 5xx alerting still sees.
+    /// Covers both fallback arms: forced JS, and the auto arm a 403 escalates
+    /// through.
+    #[tokio::test]
+    async fn a_ladder_that_never_reached_the_wall_keeps_its_own_error() {
+        let wall = "<html><body><h1>Security Check</h1>\
+                    <p>Checking your browser before accessing the site</p></body></html>";
+        for (render_js, http) in [
+            (Some(true), MockBehavior::Ok(wall.to_string())),
+            (None, MockBehavior::OkStatus(403, wall.to_string())),
+        ] {
+            for (tier, expect_timeout) in [
+                (MockBehavior::Timeout, true),
+                (MockBehavior::Err("cdp pool exhausted".into()), false),
+            ] {
+                let chrome = Arc::new(MockFetcher {
+                    name: "chrome",
+                    behavior: tier,
+                }) as Arc<dyn PageFetcher>;
+                let mut r = make_renderer_with_mocks(vec![chrome]);
+                r.http = Arc::new(MockFetcher {
+                    name: "http",
+                    behavior: http.clone(),
+                });
+
+                let out = r
+                    .fetch(
+                        "https://example.com",
+                        &HashMap::new(),
+                        render_js,
+                        None,
+                        None,
+                        tdl(),
+                    )
+                    .await;
+
+                match out {
+                    Err(CrwError::Timeout(_)) if expect_timeout => {}
+                    Err(CrwError::RendererError(_)) if !expect_timeout => {}
+                    other => panic!(
+                        "render_js={render_js:?}: expected the ladder's own error, got {:?}",
+                        other.map(|r| r.block)
+                    ),
+                }
+            }
+        }
     }
 
     #[tokio::test]
