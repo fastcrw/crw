@@ -626,6 +626,26 @@ fn is_hard_block_status(status_code: u16) -> bool {
     matches!(status_code, 401 | 403 | 429 | 503) || (520..=530).contains(&status_code)
 }
 
+/// Does this URL's path name a PDF? Only the lower-cased path is read, so a
+/// query string or fragment (`?download=1`, `#page=3`) neither hides nor fakes
+/// the extension. A URL that does not parse is not treated as one.
+fn url_path_is_pdf(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
+}
+
+/// An HTTP-tier error that says the body is a document no other client can turn
+/// into a page: not a web page at all (`UnsupportedContentType`: a .docx ZIP, an
+/// image), or over the size cap (every cap site's message starts with
+/// "Response too large"). Single owner for the set the JS escalation arms and
+/// the impersonated hop all exclude. Escalating one costs a full browser climb
+/// that still fails: the ladder re-downloads the same document in a tier that
+/// cannot render it. Measured over 14 days of prod: 59 oversize escalations,
+/// every one a PDF, every one ending in `net::ERR_ABORTED` or empty markdown.
+fn is_unrenderable_body_error(e: &CrwError) -> bool {
+    matches!(e, CrwError::UnsupportedContentType(_))
+        || matches!(e, CrwError::HttpError(m) if m.starts_with("Response too large"))
+}
+
 /// Cap on the warm per-proxy fetcher caches (see
 /// `cached_per_proxy_fetcher`): bound growth under arbitrary BYOP proxies,
 /// where config pools are small but the space of raw proxy URLs is not.
@@ -2251,16 +2271,14 @@ impl FallbackRenderer {
                     .await
                 {
                     Ok(r) => r,
-                    // `UnsupportedContentType` is excluded on purpose: it means
-                    // the body is not a web page at all (a .docx ZIP, an image),
-                    // which no renderer can fix. Escalating one costs a full
-                    // lightpanda -> chrome -> camoufox climb (measured ~23s and a
-                    // Camoufox session) and still fails, with the precise content
-                    // type lost behind the ladder's generic "no usable content".
-                    Err(e)
-                        if !self.js_renderers.is_empty()
-                            && !matches!(e, CrwError::UnsupportedContentType(_)) =>
-                    {
+                    // `is_unrenderable_body_error` is excluded on purpose: the
+                    // body is not a web page at all (a .docx ZIP, an image) or is
+                    // over the size cap, which no renderer can fix. Escalating one
+                    // costs a full lightpanda -> chrome -> camoufox climb (measured
+                    // ~23s and a Camoufox session) and still fails, with the
+                    // precise cause lost behind the ladder's generic "no usable
+                    // content".
+                    Err(e) if !self.js_renderers.is_empty() && !is_unrenderable_body_error(&e) => {
                         tracing::info!(
                             url,
                             error = %e,
@@ -2417,8 +2435,9 @@ impl FallbackRenderer {
             }
             None => {
                 // In auto mode, an HTTP-layer failure (TargetUnreachable, body
-                // decode mid-stream, oversize response, transient network) is
-                // not terminal: if a JS renderer is available, escalate. Many
+                // decode mid-stream, transient network) is not terminal: if a JS
+                // renderer is available, escalate. An oversize or non-page body
+                // is the exception (`is_unrenderable_body_error`). Many
                 // sites that reject reqwest's TLS/UA fingerprint succeed via a
                 // real Chromium navigation. Bench analysis: 10/147 false
                 // "unreachable" + 5/147 "http_502" map to this branch.
@@ -2444,10 +2463,9 @@ impl FallbackRenderer {
                 // would only spend the ladder's remaining budget re-learning
                 // that the origin is slow.
                 let fingerprint_shaped = |e: &CrwError| {
-                    !matches!(e, CrwError::UnsupportedContentType(_))
+                    !is_unrenderable_body_error(e)
                         && !matches!(e, CrwError::TargetUnreachable(_))
                         && !matches!(e, CrwError::Timeout(_))
-                        && !matches!(e, CrwError::HttpError(m) if m.starts_with("Response too large"))
                 };
                 let fetched = match fetched {
                     Err(e) if fingerprint_shaped(&e) => {
@@ -2469,16 +2487,11 @@ impl FallbackRenderer {
                 };
                 let mut result = match fetched {
                     Ok(r) => r,
-                    // `UnsupportedContentType` is excluded on purpose: it means
-                    // the body is not a web page at all (a .docx ZIP, an image),
-                    // which no renderer can fix. Escalating one costs a full
-                    // lightpanda -> chrome -> camoufox climb (measured ~23s and a
-                    // Camoufox session) and still fails, with the precise content
-                    // type lost behind the ladder's generic "no usable content".
-                    Err(e)
-                        if !self.js_renderers.is_empty()
-                            && !matches!(e, CrwError::UnsupportedContentType(_)) =>
-                    {
+                    // `is_unrenderable_body_error` is excluded on purpose, for the
+                    // same reason as the `renderJs:true` arm above: a body that is
+                    // not a web page, or one over the size cap, is one no renderer
+                    // can fix, and the climb only hides the precise cause.
+                    Err(e) if !self.js_renderers.is_empty() && !is_unrenderable_body_error(&e) => {
                         tracing::info!(
                             url,
                             error = %e,
@@ -2618,13 +2631,40 @@ impl FallbackRenderer {
                     return Ok(r);
                 }
 
-                if !self.js_renderers.is_empty()
-                    && (needs_js
-                        || is_blocked
-                        || is_auth_blocked
-                        || is_thin_content
-                        || is_empty_2xx)
-                {
+                // A 4xx/5xx from a URL whose path names a PDF is the origin's
+                // verdict on a document, and no browser tier renders a PDF:
+                // chrome aborts the navigation as a download (`net::ERR_ABORTED`),
+                // and a browser result carries `content_type: None`, so the PDF
+                // parser never sees one either. Measured over 14 days of prod: 164
+                // such escalations, 138 of them one host's 403 on its document CDN
+                // that each ran both browsers into a ~54s 504, and one of the two
+                // global chrome_proxy breaker trips of that window.
+                //
+                // Exception: a JS challenge in front of a path that only LOOKS
+                // like a PDF. academia.edu answers `/download/<id>/<name>.pdf`
+                // with a Cloudflare challenge, and chrome cleared it into the
+                // paper's HTML page, the one real success among those 164. So a
+                // Cloudflare challenge body or a challenge header keeps the
+                // ladder. The URL judged is the one the status came from, so a
+                // `.pdf` link redirected to an HTML page is judged as that page.
+                // A hard pin keeps its own contract and is left untouched.
+                let is_document_verdict = !is_hard_pinned
+                    && result.status_code >= 400
+                    && url_path_is_pdf(result.final_url.as_deref().unwrap_or(url))
+                    && !is_cf_challenge
+                    && !challenge_header_signal;
+                let would_escalate =
+                    needs_js || is_blocked || is_auth_blocked || is_thin_content || is_empty_2xx;
+                if is_document_verdict && would_escalate && !self.js_renderers.is_empty() {
+                    tracing::info!(
+                        url,
+                        status_code = result.status_code,
+                        "HTTP {} on a PDF URL, returning it without JS escalation",
+                        result.status_code
+                    );
+                }
+
+                if !self.js_renderers.is_empty() && !is_document_verdict && would_escalate {
                     if is_auth_blocked {
                         tracing::info!(
                             url,
@@ -5823,6 +5863,314 @@ mod tests {
             matches!(err, CrwError::UnsupportedContentType(_)),
             "got {err:?}"
         );
+    }
+
+    /// An HTTP tier whose origin refused a body over the size cap.
+    struct OversizeBody;
+    #[async_trait::async_trait]
+    impl PageFetcher for OversizeBody {
+        async fn fetch(
+            &self,
+            _url: &str,
+            _h: &HashMap<String, String>,
+            _w: Option<u64>,
+            _d: crw_core::Deadline,
+        ) -> CrwResult<FetchResult> {
+            Err(CrwError::HttpError(
+                "Response too large: 62914560 bytes (max 52428800)".to_string(),
+            ))
+        }
+        fn name(&self) -> &str {
+            "http"
+        }
+        fn supports_js(&self) -> bool {
+            false
+        }
+        async fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    /// Same rule as the binary body, for the size cap: the prod shape is a
+    /// 52 to 78 MB PDF, which chrome aborts as a download (`net::ERR_ABORTED`)
+    /// after the whole ladder has run. Both arms share the guard.
+    #[tokio::test]
+    async fn oversize_body_does_not_climb_the_ladder() {
+        for render_js in [None, Some(true)] {
+            let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let js = Arc::new(CountingFetcher {
+                name: "chrome",
+                calls: calls.clone(),
+            });
+            let mut r = make_renderer_with_mocks(vec![js]);
+            r.http = Arc::new(OversizeBody);
+            r.render_js_default = None;
+
+            let err = r
+                .fetch(
+                    "https://example.com/files/report",
+                    &HashMap::new(),
+                    render_js,
+                    None,
+                    None,
+                    tdl(),
+                )
+                .await
+                .expect_err("an oversize body has nothing to extract");
+
+            assert_eq!(
+                calls.load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "render_js={render_js:?}: no browser may be spent on an oversize body"
+            );
+            assert!(
+                matches!(&err, CrwError::HttpError(m) if m.starts_with("Response too large")),
+                "render_js={render_js:?}: the size verdict must reach the caller; got {err:?}"
+            );
+        }
+    }
+
+    /// An HTTP tier that answered with a caller-chosen status, body, challenge
+    /// header marker and post-redirect URL.
+    struct HttpAnswer {
+        status: u16,
+        html: String,
+        warning: Option<&'static str>,
+        final_url: Option<&'static str>,
+    }
+    #[async_trait::async_trait]
+    impl PageFetcher for HttpAnswer {
+        async fn fetch(
+            &self,
+            url: &str,
+            _h: &HashMap<String, String>,
+            _w: Option<u64>,
+            _d: crw_core::Deadline,
+        ) -> CrwResult<FetchResult> {
+            Ok(FetchResult {
+                url: url.to_string(),
+                final_url: self.final_url.map(str::to_string),
+                status_code: self.status,
+                html: self.html.clone(),
+                content_type: Some("text/html".to_string()),
+                raw_bytes: None,
+                rendered_with: Some("http".to_string()),
+                elapsed_ms: 0,
+                warning: self.warning.map(str::to_string),
+                render_decision: None,
+                credit_cost: 0,
+                warnings: Vec::new(),
+                truncated: false,
+                deadline_exceeded: false,
+                captured_responses: Vec::new(),
+                screenshot: None,
+            })
+        }
+        fn name(&self) -> &str {
+            "http"
+        }
+        fn supports_js(&self) -> bool {
+            false
+        }
+        async fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    /// Auto-mode fetch of `url` against a stubbed HTTP answer and one counting
+    /// browser tier. Returns the result and how many times the browser ran.
+    async fn auto_fetch_counting_js(
+        url: &str,
+        answer: HttpAnswer,
+        requested_renderer: Option<&str>,
+    ) -> (FetchResult, usize) {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let js = Arc::new(CountingFetcher {
+            name: "chrome",
+            calls: calls.clone(),
+        });
+        let mut r = make_renderer_with_mocks(vec![js]);
+        r.http = Arc::new(answer);
+        r.render_js_default = None;
+        let res = r
+            .fetch(url, &HashMap::new(), None, None, requested_renderer, tdl())
+            .await
+            .expect("both outcomes are an Ok result");
+        (res, calls.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    const DENIED_HTML: &str = "<html><body><h1>Access Denied</h1>\
+        <p>You don't have permission to access this resource.</p></body></html>";
+
+    /// The prod shape: a `.pdf` URL answered 4xx/5xx, which no browser can turn
+    /// into a document. Every soft-block status that used to escalate, including
+    /// a wall body and a hydratable 404, now returns the HTTP verdict as is.
+    #[tokio::test]
+    async fn pdf_url_error_status_returns_the_http_verdict_without_a_browser() {
+        let cases: [(u16, String); 5] = [
+            (
+                401,
+                "<html><body><h1>401 Authorization Required</h1></body></html>".into(),
+            ),
+            (403, DENIED_HTML.into()),
+            (
+                404,
+                r#"<html><body><div id="x"></div><script src="/app.js"></script></body></html>"#
+                    .into(),
+            ),
+            (429, "<html><body>Too Many Requests</body></html>".into()),
+            (503, DENIED_HTML.into()),
+        ];
+        for (status, html) in cases {
+            let answer = HttpAnswer {
+                status,
+                html: html.clone(),
+                warning: None,
+                final_url: None,
+            };
+            let (res, calls) = auto_fetch_counting_js(
+                "https://example.com/menus/Dinner-Menu.PDF?v=2",
+                answer,
+                None,
+            )
+            .await;
+            assert_eq!(
+                calls, 0,
+                "HTTP {status} on a PDF URL must not reach a browser"
+            );
+            assert_eq!(res.status_code, status);
+            assert_eq!(res.html, html);
+            assert!(
+                matches!(
+                    res.render_decision,
+                    Some(RenderDecision::AutoDefault {
+                        chosen: RendererKind::Http
+                    })
+                ),
+                "HTTP {status}: got {:?}",
+                res.render_decision
+            );
+        }
+    }
+
+    /// Controls: the exceptions that keep the ladder. A non-PDF URL, a Cloudflare
+    /// challenge (body or `cf-mitigated` header) in front of a path that only
+    /// looks like a PDF (the academia.edu shape, which chrome cleared into a real
+    /// page), a `.pdf` link that redirected to an HTML page, and a hard pin.
+    #[tokio::test]
+    async fn pdf_url_error_status_still_escalates_where_a_browser_can_help() {
+        let cf_challenge = "<html><head><title>Just a moment...</title></head><body>\
+            <script>window._cf_chl_opt={cvId:'3'};</script></body></html>";
+        let pdf = "https://example.com/download/88637472/paper.pdf";
+        let cases: [(&str, &str, HttpAnswer, Option<&str>); 5] = [
+            (
+                "non-PDF URL",
+                "https://example.com/docs/menu",
+                HttpAnswer {
+                    status: 403,
+                    html: DENIED_HTML.into(),
+                    warning: None,
+                    final_url: None,
+                },
+                None,
+            ),
+            (
+                "Cloudflare challenge body",
+                pdf,
+                HttpAnswer {
+                    status: 403,
+                    html: cf_challenge.into(),
+                    warning: None,
+                    final_url: None,
+                },
+                None,
+            ),
+            (
+                "cf-mitigated header",
+                pdf,
+                HttpAnswer {
+                    status: 403,
+                    html: DENIED_HTML.into(),
+                    warning: Some("cloudflare_mitigated"),
+                    final_url: None,
+                },
+                None,
+            ),
+            (
+                "redirected to an HTML page",
+                pdf,
+                HttpAnswer {
+                    status: 403,
+                    html: DENIED_HTML.into(),
+                    warning: None,
+                    final_url: Some("https://example.com/login?next=paper"),
+                },
+                None,
+            ),
+            (
+                "hard pin",
+                pdf,
+                HttpAnswer {
+                    status: 403,
+                    html: DENIED_HTML.into(),
+                    warning: None,
+                    final_url: None,
+                },
+                Some("chrome"),
+            ),
+        ];
+        for (label, url, answer, pin) in cases {
+            let (res, calls) = auto_fetch_counting_js(url, answer, pin).await;
+            assert_eq!(calls, 1, "{label}: the browser tier must still be tried");
+            assert!(
+                res.html.contains("rendered"),
+                "{label}: the browser's page must win; got {}",
+                res.html
+            );
+        }
+    }
+
+    #[test]
+    fn url_path_is_pdf_reads_the_lowercased_path_only() {
+        for url in [
+            "https://example.com/a/b.pdf",
+            "https://example.com/A/B.PDF",
+            "https://example.com/doc.Pdf?download=1#page=2",
+            "https://data.example.org/api/views/5ztz/rows.pdf",
+            "https://example.com/files/V27%20April%201911.pdf",
+        ] {
+            assert!(url_path_is_pdf(url), "{url} names a PDF");
+        }
+        for url in [
+            "https://example.com/view?file=doc.pdf",
+            "https://example.com/page#doc.pdf",
+            "https://example.com/doc.pdf/",
+            "https://example.com/doc.pdfx",
+            "https://example.com/pdf",
+            "https://example.com/",
+            "not a url.pdf",
+        ] {
+            assert!(!url_path_is_pdf(url), "{url} does not name a PDF");
+        }
+    }
+
+    #[test]
+    fn unrenderable_body_error_covers_binary_bodies_and_both_size_cap_messages() {
+        for e in [
+            CrwError::UnsupportedContentType("application/zip".into()),
+            CrwError::HttpError("Response too large: 62914560 bytes (max 52428800)".into()),
+            CrwError::HttpError("Response too large: exceeds 52428800 bytes".into()),
+        ] {
+            assert!(is_unrenderable_body_error(&e), "{e:?}");
+        }
+        for e in [
+            CrwError::HttpError("https://example.com: error decoding response body".into()),
+            CrwError::TargetUnreachable("Could not reach https://example.com".into()),
+            CrwError::Timeout(5000),
+            CrwError::RendererError("Response too large".into()),
+        ] {
+            assert!(!is_unrenderable_body_error(&e), "{e:?}");
+        }
     }
 
     /// Control: with a healthy budget the same tier IS invoked. Guards against the
