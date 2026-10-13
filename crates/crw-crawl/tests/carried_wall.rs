@@ -152,3 +152,88 @@ async fn crawl_records_a_carried_wall_as_a_failed_page() {
     assert!(page.markdown.is_none(), "the wall text is not content");
     // `/behind-the-wall` carries `.expect(0)`, verified when `server` drops.
 }
+
+fn discover_opts<'a>(
+    base_url: &'a str,
+    renderer: &'a Arc<FallbackRenderer>,
+    use_sitemap: bool,
+    crawl_fallback: bool,
+) -> crw_crawl::crawl::DiscoverOptions<'a> {
+    crw_crawl::crawl::DiscoverOptions {
+        base_url,
+        max_depth: 2,
+        use_sitemap,
+        crawl_fallback,
+        renderer,
+        max_concurrency: 2,
+        requests_per_second: 100.0,
+        user_agent: "crw-test",
+        proxy: None,
+        deadline_ms_per_page: 15_000,
+        per_host_max_concurrent: 2,
+        url_filter: None,
+        max_urls: 100,
+        overall_deadline: std::time::Instant::now() + std::time::Duration::from_secs(60),
+        respect_robots: false,
+    }
+}
+
+/// Map's BFS used to get an error for a page like this and drop it. Reading
+/// the carried wall as a page would list the wall's own links as the site's.
+#[tokio::test]
+async fn map_lists_no_links_from_a_carried_wall() {
+    let server = walled_origin().await;
+    let renderer = walled_renderer(WALL);
+    let base = server.uri();
+
+    let result = crw_crawl::crawl::discover_urls(discover_opts(&base, &renderer, false, true))
+        .await
+        .expect("discovery completes");
+
+    assert!(
+        !result.urls.iter().any(|u| u.contains("behind-the-wall")),
+        "a link on the wall was listed: {:?}",
+        result.urls
+    );
+}
+
+/// The sitemap escalation renders a challenged sitemap and reads `<url><loc>`
+/// out of whatever comes back. A walled render is not the sitemap, even when
+/// the markup it holds would parse as one.
+#[tokio::test]
+async fn sitemap_escalation_never_reads_a_carried_wall_as_xml() {
+    let server = MockServer::start().await;
+    // A challenge marker (so the walk escalates) on a body that is itself a
+    // generic wall (so the renderer keeps the ladder's verdict rather than
+    // substituting this body).
+    Mock::given(method("GET"))
+        .and(path("/sitemap.xml"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/html")
+                .set_body_string(
+                    "<html><head><title>Just a moment...</title></head><body>\
+                     <h1>Security Check</h1>\
+                     <p>Checking your browser before accessing the site</p></body></html>",
+                ),
+        )
+        .mount(&server)
+        .await;
+    let base = server.uri();
+    let walled_render = format!(
+        "<html><body><h1>Security Check</h1>\
+         <p>Checking your browser before accessing the site</p>\
+         <urlset><url><loc>{base}/from-the-wall</loc></url></urlset></body></html>"
+    );
+    let renderer = walled_renderer(&walled_render);
+
+    let result = crw_crawl::crawl::discover_urls(discover_opts(&base, &renderer, true, false))
+        .await
+        .expect("discovery completes");
+
+    assert!(
+        !result.urls.iter().any(|u| u.contains("from-the-wall")),
+        "an entry from the walled render was listed: {:?}",
+        result.urls
+    );
+}

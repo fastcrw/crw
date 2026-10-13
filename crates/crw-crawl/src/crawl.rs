@@ -1057,6 +1057,12 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
                 let resolved_proxy = renderer.pick_proxy_for_url(&u);
                 let fut = renderer.fetch(&u, &empty, Some(true), None, None, deadline);
                 match crw_renderer::REQUEST_PROXY.scope(resolved_proxy, fut).await {
+                    // A wall no tier could clear is not the sitemap, whatever
+                    // markup it holds. It used to arrive as the error below.
+                    Ok(r) if r.block.is_some() => {
+                        tracing::debug!("sitemap escalation render hit a wall for {u}");
+                        None
+                    }
                     Ok(r) => Some(r.html),
                     Err(e) => {
                         tracing::debug!("sitemap escalation render failed for {u}: {e}");
@@ -1234,6 +1240,11 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
                         .scope(resolved_proxy, fetch_fut)
                         .await
                         .ok()?;
+                    // A wall no tier could clear has no links worth listing.
+                    // Dropped exactly as the error it used to arrive as.
+                    if result.block.is_some() {
+                        return None;
+                    }
                     Some((url, result.html))
                 }
             }))
