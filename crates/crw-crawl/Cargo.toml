@@ -38,6 +38,9 @@ libc = { workspace = true }
 tokio = { workspace = true }
 wiremock = { workspace = true }
 proptest = { workspace = true }
+# StaticTier + FallbackRenderer::with_js_tiers, to reach the ladder tail
+# without a browser (tests/carried_wall.rs).
+crw-renderer = { workspace = true, features = ["test-utils"] }
 
 [[bench]]
 name = "map_url_filter"
