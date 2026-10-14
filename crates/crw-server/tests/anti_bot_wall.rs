@@ -331,3 +331,74 @@ async fn a_genuine_pdf_404_is_answered_as_before() {
     assert_eq!(answers[0][1]["success"], true, "{}", answers[0][1]);
     assert_eq!(answers[0][1]["statusCode"], 404);
 }
+
+/// Poll a batch job until it finishes and return its final status body.
+async fn finished_batch(s: &TestServer, status_path: &str) -> Value {
+    for _ in 0..300 {
+        let body: Value = s.get(status_path).await.json();
+        if body["status"] == "completed" {
+            return body;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    panic!("batch {status_path} did not finish");
+}
+
+/// Batch takes the same document as `/v1/scrape`: a PDF the origin refused with
+/// a hard-block status keeps the page that explains the refusal (here an
+/// expired presigned S3 link) and is counted `blocked`, so it is not billed.
+/// With a browser tier present the answer must be exactly what an engine with
+/// none gives, on both batch surfaces.
+#[tokio::test]
+async fn batch_keeps_a_pdf_the_origin_refused_as_main_does() {
+    let origin = MockServer::start().await;
+    let expired = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+        <Error><Code>AccessDenied</Code><Message>Request has expired</Message></Error>";
+    Mock::given(method("GET"))
+        .and(path("/bucket/statement.pdf"))
+        .respond_with(ResponseTemplate::new(403).set_body_raw(expired, "application/xml"))
+        .mount(&origin)
+        .await;
+    let url = format!(
+        "{}/bucket/statement.pdf?X-Amz-Signature=0f1e2d",
+        origin.uri()
+    );
+
+    let mut per_engine = Vec::new();
+    for with_browser in [true, false] {
+        let s = app(with_browser);
+        let mut seen = Vec::new();
+        for prefix in ["/v1", "/v2"] {
+            let started: Value = s
+                .post(&format!("{prefix}/batch/scrape"))
+                .json(&json!({"urls": [url], "formats": ["markdown"]}))
+                .await
+                .json();
+            let id = started["id"].as_str().expect("a batch id").to_string();
+            let done = finished_batch(&s, &format!("{prefix}/batch/scrape/{id}")).await;
+            let doc = &done["data"][0];
+            seen.push(json!({
+                "blocked": done["blocked"],
+                "markdown": doc["markdown"],
+                "block": doc["block"],
+                "statusCode": doc["metadata"]["statusCode"],
+            }));
+        }
+        per_engine.push(seen);
+    }
+
+    assert_eq!(
+        per_engine[0], per_engine[1],
+        "a browser tier changed the batch answer for a refused .pdf"
+    );
+    let v1 = &per_engine[0][0];
+    assert!(
+        v1["markdown"]
+            .as_str()
+            .is_some_and(|m| m.contains("Request has expired")),
+        "the origin's explanation was cleared: {v1}"
+    );
+    assert_eq!(v1["block"]["vendor"], "http_error", "{v1}");
+    assert_eq!(v1["blocked"], 1, "a refused page is never billed: {v1}");
+    assert_eq!(v1["statusCode"], 403);
+}

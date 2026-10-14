@@ -703,7 +703,11 @@ impl AppState {
                                     // `block`, hiding it completely). Clear the
                                     // shell and count it, exactly as the single
                                     // scrape route does.
-                                    let is_wall = d.block.is_some();
+                                    // The unrenderable-PDF verdict is not a wall:
+                                    // like `/v1/scrape`, let `http_error()` take
+                                    // it, so the origin's page stays readable.
+                                    let is_wall =
+                                        d.block.as_ref().is_some_and(|b| !b.is_unrenderable_pdf());
                                     if !is_wall && let Some(reason) = d.http_error() {
                                         d.block = Some(crw_core::types::BlockOutcome {
                                             vendor: crw_core::types::HTTP_ERROR_VENDOR.to_string(),
