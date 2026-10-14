@@ -88,8 +88,8 @@ If you see all three, you are unblocked for almost every other page in this docs
 |---------|-------------|-----|
 | `401 Unauthorized` | Key missing or malformed | Make sure the header is exactly `Authorization: Bearer YOUR_API_KEY` with the `Bearer ` prefix and no extra spaces |
 | `404 Not Found` | URL typo in the request path | Check that you are calling `/v1/scrape`, not `/scrape` or `/api/scrape` |
-| `429 Too Many Requests` | Rate limit, per-plan concurrency cap, **or** (free plan only) your one-time 500-credit lifetime allowance is exhausted | For rate/concurrency limits, wait a few seconds and retry — see [Rate Limits](/docs/rate-limits). For an exhausted free allowance, upgrade or buy a credit pack |
-| `402 Payment Required` | A paid plan's auto-recharge stopped (spending cap reached, card declined, bank confirmation needed, or no card on file) | Fix the payment method or spending cap in billing settings, then retry |
+| `429 Too Many Requests` | Request-rate limit or per-plan concurrency cap | Wait for the `Retry-After` interval and retry; see [Rate Limits](/docs/rate-limits) |
+| `402 Payment Required` | `errorCode: "insufficient_credits"`: your credits are used up (the FREE plan's one-time lifetime allowance, or a paid plan's included and top-up credits). `errorCode: "llm_not_available"`: a managed-LLM feature on the FREE plan | Do not retry. Upgrade, buy a credit pack, or fix the payment method named in `X-FASTCRW-Stop-Reason`, then retry |
 | `"markdown": ""` (empty string) | Page requires JavaScript to render | Add `"renderJs": true` to your request body and retry |
 | `"success": false` with an error message | Request body issue | Double-check JSON syntax — trailing commas and unquoted keys both cause parse errors |
 
