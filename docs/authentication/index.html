@@ -297,12 +297,17 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <tbody><tr>
 <td><strong>Engine</strong></td>
 <td><code>https://api.fastcrw.com</code></td>
-<td>Scrape, crawl, map, search, extract, parse — all content-fetching endpoints (<code>/v1/*</code>, <code>/firecrawl/v2/*</code>, <code>/mcp</code>)</td>
+<td>Scrape, crawl, map, search, extract, parse — all content-fetching endpoints (<code>/v1/*</code>, <code>/firecrawl/v2/*</code>)</td>
 </tr>
 <tr>
 <td><strong>SaaS control-plane</strong></td>
 <td><code>https://fastcrw.com/api</code></td>
 <td>Account balance, monitor CRUD, billing — management operations tied to your account</td>
+</tr>
+<tr>
+<td><strong>Hosted MCP</strong></td>
+<td><code>https://fastcrw.com/mcp</code></td>
+<td>The remote MCP server for claude.ai, ChatGPT and Claude Desktop: paste this URL (OAuth sign-in) or <code>https://fastcrw.com/mcp/&lt;API_KEY&gt;</code>. <code>api.fastcrw.com</code> does not serve MCP. A self-hosted engine serves <code>/mcp</code> itself.</td>
 </tr>
 </tbody></table>
 <p><strong>Self-hosted deployments expose the engine namespace only.</strong> There is no control-plane on a self-hosted instance; account/billing APIs are SaaS-exclusive.</p>
