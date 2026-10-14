@@ -2735,7 +2735,9 @@ impl FallbackRenderer {
                         result.status_code
                     );
                     // Skipping the ladder must not change what the caller is
-                    // charged. A hard-block status (401, 403, 429, 503, 52x)
+                    // charged. A hard-block status (in practice 401, 403, 429
+                    // or 503; a 52x seldom escalates, and `crw_crawl` answers
+                    // 520 to 527 as an unreachable origin whatever this sets)
                     // used to send this request up the whole ladder, where no
                     // browser could render the PDF; in prod it ended as a
                     // refunded 504 when the deadline ran out (hyatt's 403s,

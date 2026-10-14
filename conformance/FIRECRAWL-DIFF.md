@@ -110,12 +110,15 @@ is still a document, as above, except on a PDF URL (next). Pinned by
 
 **A PDF URL refused with a hard-block status fails; Firecrawl bills it.**
 
-Firecrawl answers a 401, 403, 429, 503 or 52x the same way on any URL: HTTP 200
-`success: true` with the origin's error page as content, billed. On a URL whose
-path names a PDF we answer HTTP 200 `{success: false, data, error}`, body
-cleared, with `error` set to `HTTP 403 on a PDF URL; no browser tier renders a
-PDF`, and nobody is billed. A body that is a generic anti-bot wall gets the same
-answer under any 4xx/5xx status, with an `error` that names the wall.
+Firecrawl answers a 401, 403, 429 or 503 the same way on any URL: HTTP 200
+`success: true` with the origin's error page as content, billed. In the default
+auto mode, on an engine with a browser tier, a URL whose path names a PDF and
+that status gets HTTP 200 `{success: false, data, error}`, body cleared, with
+`error` set to `HTTP 403 on a PDF URL; no browser tier renders a PDF`, and
+nobody is billed. A body that is a generic anti-bot wall gets the same answer
+under any other 4xx or 5xx status too, with an `error` that names the wall. A
+CDN origin error (520 to 527) is the exception: it is answered as
+`target_unreachable` on every URL, PDF or not.
 
 No browser renders a PDF, so the engine answers these without the browser
 ladder. Before it did, a hard-block status on a PDF sent the request up that
@@ -124,7 +127,9 @@ the deadline ran out (measured on one host's document CDN, not something the
 code guaranteed). Answering it as a billed document would start charging for
 requests that were refunded. On `/v1` the same request is `http_error`,
 `success: false`, with the body kept. A PDF URL answered with any other status
-and a body that is not a wall (a site's own 404 page) is still a document.
+and a body that is not a wall (a site's own 404 page) is still a document, and
+so is every PDF URL when the request sets `renderJs`, pins a renderer, or the
+engine has no browser tier: none of those take this shortcut.
 Pinned by `a_pdf_with_a_hard_block_status_is_refunded_without_claiming_a_wall`,
 `a_pdf_wall_under_a_404_is_answered_like_a_wall_no_tier_could_clear` and
 `a_genuine_pdf_404_is_answered_as_before` in `crates/crw-server/tests/anti_bot_wall.rs`.
