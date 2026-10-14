@@ -347,8 +347,8 @@ async fn finished_batch(s: &TestServer, status_path: &str) -> Value {
 /// Batch takes the same document as `/v1/scrape`: a PDF the origin refused with
 /// a hard-block status keeps the page that explains the refusal (here an
 /// expired presigned S3 link) and is counted `blocked`, so it is not billed.
-/// With a browser tier present the answer must be exactly what an engine with
-/// none gives, on both batch surfaces.
+/// With a browser tier present, the answer for this page must be exactly what
+/// an engine with none gives, on both batch surfaces.
 #[tokio::test]
 async fn batch_keeps_a_pdf_the_origin_refused_as_main_does() {
     let origin = MockServer::start().await;

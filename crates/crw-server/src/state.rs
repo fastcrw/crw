@@ -715,9 +715,12 @@ impl AppState {
                                         });
                                     }
                                     if d.block.is_some() {
-                                        // Same split as `/v1/scrape` and the crawl
-                                        // loop: a wall loses its shell, an origin
-                                        // error page stays readable.
+                                        // A wall loses its shell, as on
+                                        // `/v1/scrape`; an origin error page,
+                                        // a refused PDF included, stays readable.
+                                        // (The crawl loop records that PDF as a
+                                        // bodyless failed page instead; both count
+                                        // it blocked, so billing is the same.)
                                         if is_wall {
                                             d.clear_body();
                                         }
