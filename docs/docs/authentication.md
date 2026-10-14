@@ -8,8 +8,9 @@ fastCRW exposes two distinct base URLs with different scopes. Always use the cor
 
 | Namespace | Base URL | What lives here |
 |-----------|----------|-----------------|
-| **Engine** | `https://api.fastcrw.com` | Scrape, crawl, map, search, extract, parse — all content-fetching endpoints (`/v1/*`, `/firecrawl/v2/*`, `/mcp`) |
+| **Engine** | `https://api.fastcrw.com` | Scrape, crawl, map, search, extract, parse — all content-fetching endpoints (`/v1/*`, `/firecrawl/v2/*`) |
 | **SaaS control-plane** | `https://fastcrw.com/api` | Account balance, monitor CRUD, billing — management operations tied to your account |
+| **Hosted MCP** | `https://fastcrw.com/mcp` | The remote MCP server for claude.ai, ChatGPT and Claude Desktop: paste this URL (OAuth sign-in) or `https://fastcrw.com/mcp/<API_KEY>`. `api.fastcrw.com` does not serve MCP. A self-hosted engine serves `/mcp` itself. |
 
 **Self-hosted deployments expose the engine namespace only.** There is no control-plane on a self-hosted instance; account/billing APIs are SaaS-exclusive.
 
