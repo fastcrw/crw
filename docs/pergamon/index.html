@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pergamon (Data API) — CRW Docs</title>
+  <meta name="description" content="Cloud only (fastcrw.com). Self-hosted instances have no provider registry and no credit wallet.">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/pergamon">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/pergamon">
+  <meta property="og:title" content="Pergamon (Data API) — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Cloud only (fastcrw.com). Self-hosted instances have no provider registry and no credit wallet.">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Pergamon (Data API) — CRW Docs">
+  <meta name="twitter:description" content="Cloud only (fastcrw.com). Self-hosted instances have no provider registry and no credit wallet.">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
+</head>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonOptions.schema</code> — structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-pergamon-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><h1 id="pergamon">Pergamon</h1>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Cloud only (fastcrw.com). Self-hosted instances have no provider registry and no credit wallet.</div></div><h2 id="overview">Overview</h2>
+<p>Pergamon is the fastCRW data API. It puts official APIs, public registries and
+statistics offices behind the same key, the same credit wallet and the same error
+shape as the rest of fastCRW.</p>
+<p>The name is the library that rivalled Alexandria. Alexandria cut off its papyrus
+supply to starve it; Pergamon invented parchment instead, which is where the word
+comes from.</p>
+<p>You do not learn a provider&#39;s quirks. You read the catalog, call a capability, and
+get back a normalized envelope with the data and the provenance you need to use it
+legally.</p>
+<p>Browse what is live at <a href="https://fastcrw.com/pergamon">fastcrw.com/pergamon</a>.</p>
+<h2 id="the-two-endpoints">The two endpoints</h2>
+<pre><code>GET https://api.fastcrw.com/v1/data                          the catalog, free
+GET https://api.fastcrw.com/v1/data/{provider}/{capability}  the data, 1 credit</code></pre>
+<p>Both take the standard header:</p>
+<pre><code>Authorization: Bearer YOUR_API_KEY</code></pre>
+<h2 id="discover-what-is-available">Discover what is available</h2>
+<p>The catalog is free to call and is generated from the same registry the API serves,
+so it is never out of date.</p>
+<pre data-lang="bash"><code class="language-bash">curl https://api.fastcrw.com/v1/data \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot;</code></pre>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;credits_used&quot;: 0,
+  &quot;providers&quot;: [
+    {
+      &quot;slug&quot;: &quot;npm&quot;,
+      &quot;name&quot;: &quot;npm Registry&quot;,
+      &quot;description&quot;: &quot;Package metadata from the public npm registry...&quot;,
+      &quot;category&quot;: &quot;Developer&quot;,
+      &quot;country&quot;: null,
+      &quot;licence&quot;: &quot;Public npm registry metadata, served without a key...&quot;,
+      &quot;licence_url&quot;: &quot;https://docs.npmjs.com/policies/open-source-terms&quot;,
+      &quot;attribution_text&quot;: &quot;Source: npm registry&quot;,
+      &quot;commercial_use&quot;: true,
+      &quot;redistribution&quot;: false,
+      &quot;capabilities&quot;: [
+        {
+          &quot;slug&quot;: &quot;package&quot;,
+          &quot;description&quot;: &quot;Full packument for a package: every version, dist-tags, maintainers.&quot;,
+          &quot;path&quot;: &quot;/v1/data/npm/package&quot;,
+          &quot;required_params&quot;: [&quot;name&quot;],
+          &quot;optional_params&quot;: [],
+          &quot;credits&quot;: 1
+        }
+      ]
+    }
+  ]
+}</code></pre>
+<p><code>required_params</code> and <code>optional_params</code> are the whole contract. There is nothing
+else to know about a capability before calling it.</p>
+<h2 id="call-a-capability">Call a capability</h2>
+<pre data-lang="bash"><code class="language-bash">curl &quot;https://api.fastcrw.com/v1/data/npm/package?name=react&quot; \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot;</code></pre>
+<p>Every successful response has the same shape:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;provider&quot;: &quot;npm&quot;,
+  &quot;capability&quot;: &quot;package&quot;,
+  &quot;credits_used&quot;: 1,
+  &quot;request_id&quot;: &quot;fP4Nxx4Urn-H06AxscbM_&quot;,
+  &quot;provenance&quot;: {
+    &quot;source&quot;: &quot;npm Registry&quot;,
+    &quot;upstream_url&quot;: &quot;https://registry.npmjs.org/react&quot;,
+    &quot;licence&quot;: &quot;Public npm registry metadata, served without a key...&quot;,
+    &quot;licence_url&quot;: &quot;https://docs.npmjs.com/policies/open-source-terms&quot;,
+    &quot;attribution_text&quot;: &quot;Source: npm registry&quot;,
+    &quot;retrieved_at&quot;: &quot;2026-10-11T16:44:02.117Z&quot;,
+    &quot;adapter&quot;: &quot;rest&quot;,
+    &quot;cache_age_seconds&quot;: 0,
+    &quot;is_stale&quot;: false
+  },
+  &quot;data&quot;: { }
+}</code></pre>
+<p><code>data</code> is the provider&#39;s own payload, passed through. We normalize the envelope
+around it, not the records inside it — so you keep every field the source
+publishes.</p>
+<h3 id="the-provenance-block">The provenance block</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>source</code></td>
+<td>The provider&#39;s name, as it should be credited</td>
+</tr>
+<tr>
+<td><code>upstream_url</code></td>
+<td>The exact URL we requested, so you can verify us</td>
+</tr>
+<tr>
+<td><code>licence</code> / <code>licence_url</code></td>
+<td>The source&#39;s own terms, quoted</td>
+</tr>
+<tr>
+<td><code>attribution_text</code></td>
+<td>The line to display wherever you show the data</td>
+</tr>
+<tr>
+<td><code>retrieved_at</code></td>
+<td>When the body was fetched upstream</td>
+</tr>
+<tr>
+<td><code>cache_age_seconds</code></td>
+<td>Seconds since that fetch. <code>0</code> on a live call</td>
+</tr>
+<tr>
+<td><code>is_stale</code></td>
+<td><code>true</code> when the body came from our cache rather than a live call</td>
+</tr>
+</tbody></table>
+<p>If a source requires attribution, <code>attribution_text</code> is how you satisfy it without
+hard-coding anything per provider.</p>
+<h2 id="credits">Credits</h2>
+<p>One credit per call, flat, whatever the provider. The catalog endpoint is free.</p>
+<p>Nothing is billed for a failure: if the upstream returns an error, times out, or
+answers with something unusable, the credit is refunded automatically and the
+response says so.</p>
+<p>A cache hit <strong>is</strong> billed. The credit pays for the record; the cache buys you the
+latency. <code>provenance.is_stale</code> tells you which one you got.</p>
+<h2 id="caching">Caching</h2>
+<p>Each provider carries its own TTL, and the <strong>licence sets it, not latency</strong>. Where a
+source permits retention we cache hard; where a source says responses may not be
+retained, the TTL is <code>0</code> and every call goes upstream. Each provider page under
+<a href="https://fastcrw.com/pergamon">fastcrw.com/pergamon</a> states its TTL.</p>
+<h2 id="errors">Errors</h2>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: false,
+  &quot;error&quot;: &quot;Missing required parameter \&quot;name\&quot;&quot;,
+  &quot;request_id&quot;: &quot;fP4Nxx4Urn-H06AxscbM_&quot;
+}</code></pre>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>400</code></td>
+<td>A parameter is missing, too long, or not valid</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Missing or invalid API key</td>
+</tr>
+<tr>
+<td><code>402</code></td>
+<td>Out of credits</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>No such provider or capability, or it is not currently enabled</td>
+</tr>
+<tr>
+<td><code>429</code></td>
+<td>Rate limited — see <a href="/rate-limits">Rate limits</a></td>
+</tr>
+<tr>
+<td><code>501</code></td>
+<td>The provider needs your own upstream credential (not available yet)</td>
+</tr>
+<tr>
+<td><code>502</code></td>
+<td>The provider answered, but with an error or an unusable body</td>
+</tr>
+<tr>
+<td><code>504</code></td>
+<td>The provider did not answer in time</td>
+</tr>
+</tbody></table>
+<p>A <code>404</code> is deliberately indistinguishable between &quot;never existed&quot; and &quot;switched
+off&quot;. Call the catalog to see what is live right now.</p>
+<h3 id="why-a-200-can-still-be-a-502">Why a 200 can still be a 502</h3>
+<p>Several official data sources answer <code>200</code> with an HTML error page, a WAF
+challenge, or an empty body. We treat the content type and the JSON parse as the
+real status check, so you get a <code>502</code> and your credit back rather than a page of
+HTML where a dataset should be.</p>
+<h2 id="parameters-and-safety">Parameters and safety</h2>
+<p>Required parameters come from the capability&#39;s path; optional ones are an explicit
+allowlist. Anything you send that is in neither is dropped before the upstream call,
+and your values can never change which host is contacted — only what is asked of it.</p>
+<h2 id="worked-examples">Worked examples</h2>
+<pre data-lang="bash"><code class="language-bash"># A package and its weekly downloads
+curl &quot;https://api.fastcrw.com/v1/data/npm/package?name=react&quot; \
+  -H &quot;Authorization: Bearer $FASTCRW_API_KEY&quot;
+
+curl &quot;https://api.fastcrw.com/v1/data/npm/downloads?period=last-week&amp;name=react&quot; \
+  -H &quot;Authorization: Bearer $FASTCRW_API_KEY&quot;
+
+# A Python project's releases
+curl &quot;https://api.fastcrw.com/v1/data/pypi/project?name=requests&quot; \
+  -H &quot;Authorization: Bearer $FASTCRW_API_KEY&quot;</code></pre>
+<pre data-lang="javascript"><code class="language-javascript">const res = await fetch(
+  &quot;https://api.fastcrw.com/v1/data/npm/package?name=react&quot;,
+  { headers: { Authorization: `Bearer ${process.env.FASTCRW_API_KEY}` } },
+);
+const body = await res.json();
+
+console.log(body.data[&quot;dist-tags&quot;].latest);
+console.log(body.provenance.attribution_text); // display this</code></pre>
+<pre data-lang="python"><code class="language-python">import os, requests
+
+r = requests.get(
+    &quot;https://api.fastcrw.com/v1/data/pypi/project&quot;,
+    params={&quot;name&quot;: &quot;requests&quot;},
+    headers={&quot;Authorization&quot;: f&quot;Bearer {os.environ['FASTCRW_API_KEY']}&quot;},
+    timeout=30,
+)
+body = r.json()
+print(body[&quot;data&quot;][&quot;info&quot;][&quot;version&quot;])
+print(body[&quot;provenance&quot;][&quot;attribution_text&quot;])</code></pre>
+<h2 id="asking-for-a-source">Asking for a source</h2>
+<p>The catalog grows by request. If a source you need is missing, <a href="https://fastcrw.com/support">tell us which
+one</a> — including the URL of its API or its open-data page, which is what
+decides how quickly it can be added.</p>
+<p>A source only appears in the catalog once someone has read its terms. If an answer
+is &quot;not without a written agreement&quot;, it stays out rather than shipping quietly.</p>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-pergamon-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "pergamon";</script>
+</body>
+</html>
