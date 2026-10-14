@@ -13,10 +13,10 @@
 Before diving into individual patterns:
 
 1. Check `success` in the response body — `false` means a hard failure.
-2. Check `error_code` (snake_case string) for the machine-readable cause.
-3. Check `data.warnings[]` when `success: true` — soft issues like truncation, unsupported formats, and renderer fallbacks surface there. Anti-bot blocks are **not** in `data.warnings[]`; they always return `success: false` + `error_code: "anti_bot"` (see pattern 2). A page the origin answered with a `>= 400` status returns `success: false`; if it is a plain origin error page the code is `"http_error"` and the page stays in `data`, but when the anti-bot classifier recognises it as a wall (Cloudflare and friends serve their challenge with a 403) the code is `"anti_bot"` and the challenge shell is stripped from `data`.
+2. Check `errorCode` (a snake_case string) for the machine-readable cause.
+3. Check `data.warnings[]` when `success: true`: soft issues like truncation, unsupported formats, and renderer fallbacks surface there. Anti-bot blocks are **not** in `data.warnings[]`; they always return `success: false` + `errorCode: "anti_bot"` (see pattern 2). A page the origin answered with a `>= 400` status returns `success: false`; if it is a plain origin error page the code is `"http_error"` and the page stays in `data`, but when the anti-bot classifier recognises it as a wall (Cloudflare and friends serve their challenge with a 403) the code is `"anti_bot"` and the challenge shell is stripped from `data`.
 4. Check `metadata.statusCode` — this is the **target site's** HTTP status, not fastCRW's.
-5. Check the fastCRW HTTP status separately — `401`/`422`/`429` all mean different things.
+5. Check the fastCRW HTTP status separately: `401`/`402`/`422`/`429` all mean different things.
 
 ---
 
@@ -61,12 +61,12 @@ print(result["markdown"][:300])
 
 ## 2. Anti-bot block / Cloudflare challenge page
 
-**Symptom:** Response contains `success: false`, `error_code: "anti_bot"`, and the error message names the protection class (e.g., `"Blocked by anti-bot (cloudflare): ..."` or `"Blocked by anti-bot (datadome): ..."`).
+**Symptom:** Response contains `success: false`, `errorCode: "anti_bot"`, and the error message names the protection class (e.g., `"Blocked by anti-bot (cloudflare): ..."` or `"Blocked by anti-bot (datadome): ..."`).
 
 **Cause:** The target site fingerprints the request as non-browser traffic. Common triggers: missing `User-Agent`, no `Sec-Fetch-*` headers, a datacenter IP, or a detectable headless browser.
 
 > **Not a block: `"No usable content could be extracted (...)"`.** That case has
-> its own code, `error_code: "no_usable_content"` — we fetched the page fine but
+> its own code, `errorCode: "no_usable_content"`: we fetched the page fine but
 > it held nothing usable: a handful of visible characters, no content
 > elements. That is usually a broken TLS certificate serving an error stub, a
 > parked domain, or a JS shell that never hydrated. The staged anti-bot fixes
@@ -126,7 +126,7 @@ print(result["markdown"][:300])
 
 ## 3. HTTP 422 `target_unreachable`
 
-**Symptom:** API returns HTTP `422` with `error_code: "target_unreachable"` and an error like `"Target unreachable: dns error: failed to lookup address"` or `"connection refused"`.
+**Symptom:** API returns HTTP `422` with `errorCode: "target_unreachable"` and an error like `"Target unreachable: dns error: failed to lookup address"` or `"connection refused"`.
 
 **Cause:** The fastCRW engine could not establish a TCP connection to the target host. Most common reasons:
 
@@ -200,16 +200,17 @@ client = CrwClient(api_key="crw_live_YOUR_KEY")
 
 ---
 
-## 5. HTTP 429 — rate limit vs. credit exhausted
+## 5. HTTP 429 rate limit vs. HTTP 402 out of credits
 
-**Symptom:** Requests return HTTP `429`. But two completely different problems share this status code.
+**Symptom:** Requests return HTTP `429` or HTTP `402`. They are different problems with different fixes.
 
 **How to tell them apart:**
 
-| Condition | Body `error` contains | Has `Retry-After` header? | Fix |
-|---|---|---|---|
-| RPM rate limit | `"Rate limit exceeded"` or `"Rate limited"` | Yes (fastcrw.com SaaS load balancer); absent on self-hosted | Respect `Retry-After`; use exponential backoff on self-hosted |
-| Credit exhausted | `"Insufficient credits"` | **No** | Top up or enable auto-recharge |
+| Condition | Status | `errorCode` | Has `Retry-After` header? | Fix |
+|---|---|---|---|---|
+| Request-rate or concurrency limit | `429` | none | Yes (fastcrw.com); absent on self-hosted | Respect `Retry-After`; use exponential backoff on self-hosted |
+| Out of credits | `402` | `insufficient_credits` | **No** | Top up, upgrade or enable auto-recharge |
+| Out of credits, legacy `/v2` surface only | `429` | none (`X-FASTCRW-Credits-Available` header present) | **No** | Same as above |
 
 **Rate limit (RPM):**
 
@@ -233,11 +234,12 @@ def scrape_with_retry(url, api_key, max_retries=5):
             headers=headers,
             json={"url": url},
         )
-        if resp.status_code == 429:
+        if resp.status_code == 402:
             body = resp.json()
-            if "Insufficient credits" in body.get("error", ""):
-                raise RuntimeError("Credits exhausted — top up at fastcrw.com/dashboard")
-            # RPM rate limit — back off
+            # insufficient_credits or llm_not_available: a retry cannot succeed.
+            raise RuntimeError(f"{body.get('errorCode')}: {body.get('error')}")
+        if resp.status_code == 429:
+            # Rate or concurrency limit: back off
             wait = int(resp.headers.get("Retry-After", 2 ** attempt))
             time.sleep(wait)
             continue
@@ -248,7 +250,7 @@ def scrape_with_retry(url, api_key, max_retries=5):
 result = scrape_with_retry("https://example.com", "crw_live_YOUR_KEY")
 ```
 
-**Credit exhausted:** Retrying on a timer does not help — the balance does not replenish on its own. Go to `fastcrw.com/dashboard` to top up or enable auto-recharge.
+**Out of credits:** Retrying on a timer does not help, because the balance does not replenish on its own. Go to `fastcrw.com/dashboard` to top up, upgrade or enable auto-recharge.
 
 **Self-hosted:** `429` from a self-hosted instance is always the RPM rate limiter (`rate_limit_rps` in config). There is no credit system on self-hosted. No `Retry-After` header is emitted; use client-side exponential backoff.
 
@@ -256,11 +258,11 @@ result = scrape_with_retry("https://example.com", "crw_live_YOUR_KEY")
 
 ## 6. Search returns empty results
 
-**Symptom:** `POST /v1/search` returns HTTP `503` with `error_code: "search_disabled"`, or it returns `success: true` but `data.results` is an empty array `[]`.
+**Symptom:** `POST /v1/search` returns HTTP `503` with `errorCode: "search_disabled"`, or it returns `success: true` but `data.results` is an empty array `[]`.
 
 **Two separate problems:**
 
-### 6a. `error_code: "search_disabled"` (503)
+### 6a. `errorCode: "search_disabled"` (503)
 
 **Cause:** The engine has no search backend configured. The search route requires `[search].search_backend_url` in config or the `CRW_SEARCH__SEARCH_BACKEND_URL` environment variable.
 
@@ -365,18 +367,19 @@ If this produces a JSON response with a `tools` array, the binary works and the 
 
 ---
 
-## 8. Credit exhausted — 402 vs 429
+## 8. Credit exhausted: 402
 
-**Symptom:** The fastcrw.com SaaS returns either HTTP `402` or HTTP `429` related to credits or billing.
+**Symptom:** The fastcrw.com SaaS returns HTTP `402` with `errorCode: "insufficient_credits"` (or, on the legacy `/v2` surface only, a `429` carrying the `X-FASTCRW-Credits-Available` header).
 
 **How the SaaS uses these codes:**
 
-| HTTP status | When | Body `error` |
+| HTTP status | `errorCode` | When |
 |---|---|---|
-| `429` | Credits balance is zero when the request arrives | `"Insufficient credits"` |
-| `402` | Payment required (e.g., free tier cap reached, plan expired) | Various billing messages |
+| `402` | `insufficient_credits` | The credit balance cannot cover the request. `X-FASTCRW-Stop-Reason` is added when an enabled auto-recharge could not run |
+| `402` | `llm_not_available` | A managed-LLM feature was requested on the FREE plan |
+| `429` | none | Legacy `/v2` surface only (root `/v2`, `/firecrawl/v2`, `compat.fastcrw.com`): the credit balance cannot cover the request |
 
-**Note for self-hosted users:** Neither `402` nor credit-`429` exists on self-hosted. The only `429` on self-hosted is the RPM rate limiter (`rate_limited` error code). Self-hosted has no billing system.
+**Note for self-hosted users:** No credit `402` or credit `429` exists on self-hosted. The only `429` on self-hosted is the RPM rate limiter (`rate_limited` error code). Self-hosted has no billing system.
 
 **Fix:**
 
@@ -400,13 +403,13 @@ if data["balance"] < 100:
     print("Warning: low balance — top up at fastcrw.com/dashboard")
 ```
 
-**Do not retry a credit-`429` on a timer** — the balance is exhausted and retrying consumes no credits (the request is rejected before any work starts) but it does waste time and may look like abuse. Replenish the balance first.
+**Do not retry an out-of-credit `402` (or a legacy `/v2` credit `429`) on a timer.** The balance is exhausted and retrying consumes no credits (the request is rejected before any work starts), but it does waste time and may look like abuse. Replenish the balance first.
 
 ---
 
 ## Error code reference
 
-| `error_code` | HTTP | Source |
+| `errorCode` | HTTP | Source |
 |---|---|---|
 | `invalid_request` | 400 | Bad JSON, bad URL, missing required field |
 | `invalid_url` | — | Reserved — not emitted in practice; invalid URLs are returned as `invalid_request` (HTTP 400) by all server routes |
@@ -417,6 +420,8 @@ if data["balance"] < 100:
 | `no_usable_content` | 200 with `success: false` | The fetch worked and produced nothing you asked for — a parked domain, an un-hydrated JS shell, an error stub, an oversized PDF the decompression-bomb guard refused, or any requested format that came back empty. Not an anti-bot block |
 | `timeout` | 504 | Engine or upstream search timed out |
 | `rate_limited` | 429 | RPM rate limit (engine-level) |
+| `insufficient_credits` | 402 | Cloud only: the credit balance cannot cover the request |
+| `llm_not_available` | 402 | Cloud only: managed-LLM feature requested on the FREE plan |
 | `search_disabled` | 503 | `/v1/search` called with no search backend configured |
 | `not_found` | 404 | Unknown endpoint or crawl job ID does not exist |
 | `anti_bot` | 200 | Anti-bot wall detected and no renderer tier could clear it. In the default auto mode, a generic wall on a URL whose path names a PDF, which no browser tier can render, is answered this way under any 4xx status or any 5xx other than a CDN origin error (520 to 527, which is `target_unreachable`). Always `success: false`, and the page body is cleared. Detect via `errorCode: "anti_bot"`, never via the HTTP status: the request reached the target and the target refused it, so this is not a gateway failure and is never billed |
