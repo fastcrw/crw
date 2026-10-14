@@ -473,6 +473,8 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
     //    before this change and printed normally. They are not what this change
     //    is about, and failing on them would silently turn a working
     //    `crw <parked-domain> > out.md` into an empty file and exit 1.
+    //  - a document `http_error()` claims (a PDF the origin answered with a
+    //    hard-block status) prints its body, the same order `/v1/scrape` uses.
     //
     // No screenshot carve-out: this path runs `scrape_url` locally and the CLI's
     // own `Format` enum never maps to `OutputFormat::Screenshot`, so `data.screenshot`
@@ -481,6 +483,7 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
     if let Some(block) = &data.block
         && block.vendor != crw_core::types::STRUCTURAL_FAILURE_VENDOR
         && block.vendor != crw_core::types::PARKED_DOMAIN_VENDOR
+        && data.http_error().is_none()
     {
         eprintln!("error: {}", block.message());
         return Err(CmdError::code_only(1));

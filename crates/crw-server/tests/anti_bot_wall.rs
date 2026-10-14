@@ -195,21 +195,65 @@ const AKAMAI_UNEXPECTED: &str = "<!DOCTYPE html><html lang=\"en\"><head><meta ch
 
 /// A 4xx on a PDF path never reaches the browser ladder: the auto arm returns
 /// the HTTP verdict, since no browser renders a PDF. A hard-block status used
-/// to send it up the ladder anyway, where every browser failed and it ended as
-/// a refunded error, so skipping the ladder must not start billing it: it is
-/// answered as a wall no tier could clear, on both surfaces, body cleared.
-/// Keyed on the status, so it holds for a deny page no phrase list knows.
+/// to send it up the ladder anyway, where it ended as a refunded error, so it
+/// stays refunded on every surface. Keyed on the status, so it holds for bodies
+/// that are not walls at all.
+///
+/// - `/v1` keeps main's own answer, the one an engine with no browser tier
+///   gives: `http_error` with the body, already refunded.
+/// - `/v2` answers the blocked envelope, refunded, with an error that says what
+///   happened and claims no anti-bot wall.
 #[tokio::test]
-async fn a_pdf_with_a_hard_block_status_is_answered_like_a_wall_no_tier_could_clear() {
-    for (name, body) in [("akamai", AKAMAI_UNEXPECTED), ("captcha", CAPTCHA_WALL)] {
+async fn a_pdf_with_a_hard_block_status_is_refunded_without_claiming_a_wall() {
+    let s3_expired = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+        <Error><Code>AccessDenied</Code><Message>Request has expired</Message>\
+        <Expires>2026-10-01T00:00:00Z</Expires></Error>";
+    let cases = [
+        (
+            "akamai",
+            "/files/menu.pdf",
+            403,
+            AKAMAI_UNEXPECTED,
+            "text/html",
+        ),
+        (
+            "s3 expired",
+            "/bucket/statement.pdf",
+            403,
+            s3_expired,
+            "application/xml",
+        ),
+        (
+            "json 401",
+            "/api/docs/report.pdf",
+            401,
+            "{\"error\":\"unauthorized\",\"message\":\"Sign in to download this file\"}",
+            "application/json",
+        ),
+    ];
+    for (name, at, status, body, content_type) in cases {
         let origin = MockServer::start().await;
-        let url = serve(&origin, "/files/menu.pdf", 403, body).await;
-        let s = app(true);
+        Mock::given(method("GET"))
+            .and(path(at))
+            .respond_with(ResponseTemplate::new(status).set_body_raw(body, content_type))
+            .mount(&origin)
+            .await;
+        let url = format!(
+            "{}{at}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=0f1e2d",
+            origin.uri()
+        );
 
+        let main_v1 = answer(&app(false), "/v1/scrape", &url).await;
+        let s = app(true);
         let v1 = answer(&s, "/v1/scrape", &url).await;
+        for key in ["success", "error", "errorCode", "markdown", "statusCode"] {
+            assert_eq!(
+                v1[key], main_v1[key],
+                "{name}: /v1 {key} moved off main's answer"
+            );
+        }
         assert_eq!(v1["success"], false, "{name}: {v1}");
-        assert_eq!(v1["errorCode"], "anti_bot", "{name}: {v1}");
-        assert!(v1["markdown"].is_null(), "{name}: deny text leaked: {v1}");
+        assert_eq!(v1["errorCode"], "http_error", "{name}: {v1}");
 
         for route in ["/v2/scrape", "/firecrawl/v2/scrape"] {
             let r = s
@@ -227,10 +271,35 @@ async fn a_pdf_with_a_hard_block_status_is_answered_like_a_wall_no_tier_could_cl
             keys.sort_unstable();
             assert_eq!(keys, ["data", "error", "success"], "{name} {route}: {body}");
             assert_eq!(body["success"], false, "{name} {route}: {body}");
-            assert!(body["data"].get("markdown").is_none(), "{name} {route}");
             assert_eq!(body["data"]["metadata"]["creditsUsed"], 0, "{name} {route}");
+            let error = body["error"].as_str().unwrap_or_default();
+            assert_eq!(
+                error,
+                format!("HTTP {status} on a PDF URL; no browser tier renders a PDF"),
+                "{name} {route}"
+            );
         }
     }
+}
+
+/// A body that is the generic wall the ladder tail condemns is answered as that
+/// wall under any 4xx/5xx status, as it was when the ladder still ran for it.
+/// 404 is outside the hard-block set, so only the body says what this is.
+#[tokio::test]
+async fn a_pdf_wall_under_a_404_is_answered_like_a_wall_no_tier_could_clear() {
+    let origin = MockServer::start().await;
+    let url = serve(&origin, "/files/menu.pdf", 404, CAPTCHA_WALL).await;
+    let s = app(true);
+
+    let v1 = answer(&s, "/v1/scrape", &url).await;
+    assert_eq!(v1["success"], false, "{v1}");
+    assert_eq!(v1["errorCode"], "anti_bot", "{v1}");
+    assert!(v1["markdown"].is_null(), "wall text leaked: {v1}");
+
+    let v2 = answer(&s, "/v2/scrape", &url).await;
+    assert_eq!(v2["success"], false, "{v2}");
+    assert!(v2["markdown"].is_null(), "wall text leaked: {v2}");
+    assert_eq!(v2["creditsUsed"], 0, "{v2}");
 }
 
 /// The other side: a PDF path answered with a status outside the hard-block set

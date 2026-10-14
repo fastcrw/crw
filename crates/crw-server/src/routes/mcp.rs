@@ -20,9 +20,13 @@ use crate::state::{AppState, validate_crawl_renderer};
 ///
 /// Same exemption as the CLI: `structural_failure` and `parked_domain` are
 /// verdicts about a page we did fetch, not walls, and they keep their body,
-/// exactly as an MCP caller always got it. Neither ever outranks
-/// `http_error()`, so leaving them out also keeps a small 404 readable.
+/// exactly as an MCP caller always got it. And the route's order: a document
+/// `http_error()` claims (a small 404, a PDF answered with a hard-block status)
+/// is returned as data with its body, as the route returns it.
 fn wall_error(data: &crw_core::types::ScrapeData) -> Option<String> {
+    if data.http_error().is_some() {
+        return None;
+    }
     data.block
         .as_ref()
         .filter(|b| {
@@ -410,5 +414,15 @@ mod tests {
             assert_eq!(wall_error(&blocked(vendor)), None, "{vendor}");
         }
         assert_eq!(wall_error(&ScrapeData::default()), None);
+    }
+
+    /// A PDF the origin refused with a hard-block status is `http_error` on the
+    /// route, body kept, so the tool returns it as data too.
+    #[test]
+    fn a_pdf_the_origin_refused_is_returned_as_data() {
+        let mut data = blocked("generic_block");
+        data.block = Some(BlockOutcome::unrenderable_pdf(403));
+        data.metadata.status_code = 403;
+        assert_eq!(wall_error(&data), None);
     }
 }
