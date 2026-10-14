@@ -44,6 +44,7 @@ reqwest = { workspace = true }
 prometheus = { workspace = true }
 tokio = { workspace = true }
 rand = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
