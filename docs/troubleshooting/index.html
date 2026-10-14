@@ -645,7 +645,7 @@ if data[&quot;balance&quot;] &lt; 100:
 <tr>
 <td><code>http_error</code></td>
 <td>502, or 200 with <code>success: false</code></td>
-<td>The origin answered with a <code>&gt;= 400</code> status and what came back is its error page. The body is kept in <code>data</code> so you can read the error page and <code>metadata.statusCode</code>. A large page served under an error status is still returned as a success — some sites answer 403/404 while serving the real content. If the page is also recognised as an anti-bot wall, <code>anti_bot</code> wins instead and the body is cleared</td>
+<td>The origin answered with a <code>&gt;= 400</code> status and what came back is its error page. The body is kept in <code>data</code> so you can read the error page and <code>metadata.statusCode</code>. A large page served under an error status is still returned as a success: some sites answer 403/404 while serving the real content. If the page is also recognised as an anti-bot wall, <code>anti_bot</code> wins instead and the body is cleared. In the default auto mode, a URL whose path names a PDF and gets a 401, 403, 429 or 503 is <code>http_error</code> with <code>success: false</code> and the body kept, whatever the page&#39;s size, since no browser tier renders a PDF and nothing could have done better; unless the page is also recognised as an anti-bot wall (a short 429 page always is), which is answered as <code>anti_bot</code>. None of this applies when the request sets <code>renderJs</code> or asks for a <code>screenshot</code>, pins a renderer, the engine sets <code>render_js_default</code>, or the engine has no browser tier</td>
 </tr>
 <tr>
 <td><code>no_usable_content</code></td>
@@ -674,8 +674,8 @@ if data[&quot;balance&quot;] &lt; 100:
 </tr>
 <tr>
 <td><code>anti_bot</code></td>
-<td>4xx/5xx</td>
-<td>Anti-bot interstitial detected — always <code>success: false</code>; detect via <code>error_code: &quot;anti_bot&quot;</code></td>
+<td>200</td>
+<td>Anti-bot wall detected and no renderer tier could clear it. In the default auto mode, a generic wall on a URL whose path names a PDF, which no browser tier can render, is answered this way under any 4xx status or any 5xx other than a CDN origin error (520 to 527, which is <code>target_unreachable</code>). Always <code>success: false</code>, and the page body is cleared. Detect via <code>errorCode: &quot;anti_bot&quot;</code>, never via the HTTP status: the request reached the target and the target refused it, so this is not a gateway failure and is never billed</td>
 </tr>
 <tr>
 <td><code>renderer_error</code></td>

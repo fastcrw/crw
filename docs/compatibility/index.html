@@ -328,6 +328,10 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td><code>success: false</code> when target returns HTTP 4xx/5xx with minimal content; <code>success: true</code> with <code>warning</code> when target returns error status but has real content</td>
 </tr>
 <tr>
+<td>Anti-bot walls</td>
+<td>A wall no renderer tier can clear is HTTP 200 with <code>success: false</code>, the page body cleared, and an <code>error</code> that names the block (<code>Blocked by anti-bot (...)</code>), not a 5xx. On <code>/firecrawl/v2</code> that is the whole envelope (<code>success</code>, <code>data</code>, <code>error</code>); only native <code>/v1</code> adds <code>errorCode: &quot;anti_bot&quot;</code>. Firecrawl-shaped code that branches on the HTTP status will read it as a success, so branch on <code>success</code></td>
+</tr>
+<tr>
 <td>JS waiting</td>
 <td>Numeric delay only; no selector-based wait primitive</td>
 </tr>

@@ -288,7 +288,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><code>success: true</code> means the pipeline produced usable page content.</li>
 <li><code>success: false</code> means the request failed -- either an engine error or the target returned an error status (4xx/5xx) with minimal content.</li>
 <li><code>error</code> is present when <code>success: false</code>. It describes what went wrong.</li>
-<li><code>warning</code> flags degraded target outcomes (anti-bot pages, problematic status codes) when <code>success: true</code> -- meaning content was produced but may be incomplete.</li>
+<li><code>warning</code> flags degraded target outcomes (problematic status codes, a partial render) when <code>success: true</code>, meaning content was produced but may be incomplete. An anti-bot wall is not one of these: it is always <code>success: false</code> with <code>errorCode: &quot;anti_bot&quot;</code>.</li>
 <li><code>metadata.statusCode</code> is the target site&#39;s HTTP status.</li>
 <li><code>data</code> may still be present when <code>success: false</code> if partial content was extracted.</li>
 </ul>

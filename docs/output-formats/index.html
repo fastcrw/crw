@@ -615,7 +615,7 @@ appends <code>/responses</code>; a complete endpoint URL is also accepted unchan
 <tr>
 <td><code>warning</code></td>
 <td><code>string / null</code></td>
-<td>Target returned error status, anti-bot detected, etc.</td>
+<td>Target returned error status, render degraded, etc. An anti-bot wall is not reported here: it sets <code>success: false</code> with <code>errorCode: &quot;anti_bot&quot;</code></td>
 </tr>
 <tr>
 <td><code>renderDecision</code></td>
