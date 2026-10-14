@@ -33,3 +33,7 @@ clap = { workspace = true }
 # Embedded mode: pulls in the full scraping engine + headless-browser auto-spawn.
 crw-renderer = { workspace = true, optional = true, features = ["auto-browser"] }
 crw-server = { workspace = true, optional = true, features = ["cdp"] }
+
+[dev-dependencies]
+# Serves the upstream API to `proxy_call_tool` in tests.
+wiremock = { workspace = true }
