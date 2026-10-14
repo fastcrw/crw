@@ -70,7 +70,7 @@ async fn post(
     let status = resp.status();
     let text = resp.text().await.map_err(|e| {
         CrwError::ExtractionError(format!(
-            "Failed to read Responses API response: {}",
+            "Failed to read Responses API response ({status}): {}",
             crw_core::error::reqwest_message(e)
         ))
     })?;

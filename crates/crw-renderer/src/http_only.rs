@@ -624,7 +624,8 @@ impl PageFetcher for HttpFetcher {
                 // proxy that a latch — possibly a false one — put in front of it.
                 Err(_) if use_proxy && (proxy_first || armed_mid_loop) && !direct_rescue_used => {
                     tracing::warn!(
-                        "proxy attempt for {url} exhausted its budget while latched; falling back to direct"
+                        "proxy attempt for {url} exhausted its budget while latched ({}ms); falling back to direct",
+                        remaining.as_millis()
                     );
                     use_proxy = false;
                     direct_rescue_used = true;
@@ -775,11 +776,15 @@ impl PageFetcher for HttpFetcher {
                 // every scrape of a latched host into a hard failure for the whole
                 // cooldown — a scrape-success regression, and precisely the case the
                 // "reorder, never suppress" rule exists to prevent.
-                Ok(Err(_))
+                Ok(Err(e))
                     if use_proxy && (proxy_first || armed_mid_loop) && !direct_rescue_used =>
                 {
+                    // The cause chain, not `{e}`: reqwest's Display is only "error
+                    // sending request for url (..)", and the reason (refused, tunnel
+                    // unsuccessful, 407) is in its sources. Masks proxy userinfo.
                     tracing::warn!(
-                        "proxy egress failed for {url} while latched; falling back to direct"
+                        "proxy egress failed for {url} while latched ({}); falling back to direct",
+                        crw_core::error::reqwest_error_chain(e)
                     );
                     use_proxy = false;
                     direct_rescue_used = true;

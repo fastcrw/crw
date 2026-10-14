@@ -1290,7 +1290,14 @@ async fn scrape_url_inner(
                         }
                         Err(e) => {
                             m.judge_calls_total.with_label_values(&["error"]).inc();
-                            tracing::warn!("change-tracking judge failed: {e}");
+                            // Provider and model as fields; the provider's HTTP
+                            // status rides in `e` when a response arrived. Never the
+                            // prompt or the page URL.
+                            tracing::warn!(
+                                provider = %llm.provider,
+                                model = %llm.model,
+                                "change-tracking judge failed: {e}"
+                            );
                             data.warnings.push(format!("judge failed: {e}"));
                         }
                     }

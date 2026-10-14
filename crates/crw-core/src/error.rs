@@ -94,6 +94,30 @@ pub fn reqwest_message(e: reqwest::Error) -> String {
     e.without_url().to_string()
 }
 
+/// A `reqwest::Error` and its whole `source()` chain, for an operator log line:
+/// request URL stripped, URL userinfo masked.
+///
+/// `reqwest::Error`'s own `Display` is only the outer layer ("error sending
+/// request"); why a proxy hop failed (`tunnel error: unsuccessful`, a 407 as
+/// `proxy authorization required`, a refused connect) lives in the sources.
+/// Proxy URLs carry `user:pass@`, so the joined text is masked before it can
+/// reach a log line.
+pub fn reqwest_error_chain(e: reqwest::Error) -> String {
+    let e = e.without_url();
+    let mut out = e.to_string();
+    let mut source = std::error::Error::source(&e);
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        // Some layers repeat their source in their own Display.
+        if !out.contains(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        source = cause.source();
+    }
+    crate::proxy::redact_url_userinfo(&out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +145,37 @@ mod tests {
         let msg = reqwest_message(err);
         assert!(!msg.contains("for url"), "URL not stripped: {msg}");
         assert!(!msg.contains("internal-secret-path"), "URL leaked: {msg}");
+    }
+
+    /// A real proxy failure: the client is pointed at a credentialed proxy on
+    /// loopback port 1, so the CONNECT is refused locally and nothing leaves
+    /// the machine. The chain must name the cause the bare `Display` hides, and
+    /// carry neither the proxy credentials nor the target URL.
+    #[tokio::test]
+    async fn reqwest_error_chain_keeps_the_cause_and_drops_secrets() {
+        let proxy = reqwest::Proxy::all("http://proxyuser:pr0xy-s3cret@127.0.0.1:1").unwrap();
+        let err = reqwest::Client::builder()
+            .proxy(proxy)
+            .build()
+            .unwrap()
+            .get("http://target.invalid/customer-path?token=t0ken")
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .unwrap_err();
+
+        let chain = reqwest_error_chain(err);
+        println!("{chain}");
+        assert!(
+            chain.starts_with("error sending request: "),
+            "outer layer missing or URL kept: {chain}"
+        );
+        assert!(
+            chain.len() > "error sending request: ".len(),
+            "no cause after the outer layer: {chain}"
+        );
+        for secret in ["pr0xy-s3cret", "proxyuser", "customer-path", "t0ken"] {
+            assert!(!chain.contains(secret), "{secret} leaked: {chain}");
+        }
     }
 }

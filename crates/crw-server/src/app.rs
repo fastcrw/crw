@@ -11,7 +11,6 @@ use std::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
-use tower_http::trace::TraceLayer;
 
 /// Maximum request body size (1 MB) to prevent memory exhaustion from large payloads.
 const MAX_BODY_SIZE: usize = 1024 * 1024;
@@ -155,7 +154,12 @@ pub fn create_app(state: AppState) -> Router {
         None => app,
     };
 
-    app.layer(TraceLayer::new_for_http())
+    // Outermost, so the line also covers the rate-limit 429, the body-limit 413
+    // and the timeout 504 produced by the layers above. Replaces tower-http's
+    // `TraceLayer::new_for_http()`, whose only output in production was an
+    // ERROR `response failed` line per 5xx with no method, route or reason,
+    // and whose `on_response` cannot see the request to skip probes.
+    app.layer(axum::middleware::from_fn(crate::middleware::request_log))
 }
 
 /// Build a CORS layer from the configured origin allowlist. Returns `None` when

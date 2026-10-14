@@ -77,6 +77,36 @@ pub fn redact_proxy_url(raw: &str) -> String {
     }
 }
 
+/// `text` with the userinfo of every `scheme://` URL inside it masked, via
+/// [`redact_proxy_url`].
+///
+/// For free-form text that may quote a proxy URL somewhere in the middle, such
+/// as an error cause chain about to be logged. A URL runs from its scheme to the
+/// next whitespace, deliberately ignoring `)`, `,` and quotes: those are legal in
+/// an unencoded password, and stopping at one would leave the rest of the
+/// password after the cut in the clear.
+pub(crate) fn redact_url_userinfo(text: &str) -> String {
+    let is_scheme_byte = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.');
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(sep) = rest.find("://") {
+        // Scheme bytes are ASCII, so stopping on any other byte (including the
+        // tail of a multi-byte char) always lands on a char boundary.
+        let start = rest.as_bytes()[..sep]
+            .iter()
+            .rposition(|&b| !is_scheme_byte(b))
+            .map_or(0, |i| i + 1);
+        let end = rest[sep..]
+            .find(char::is_whitespace)
+            .map_or(rest.len(), |i| sep + i);
+        out.push_str(&rest[..start]);
+        out.push_str(&redact_proxy_url(&rest[start..end]));
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 impl ProxyEntry {
     /// Parse and validate a proxy URL. Returns an error string (no silent
     /// fallback) when the scheme is unsupported or the host is missing.
@@ -292,6 +322,37 @@ fn fnv1a(s: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redact_url_userinfo_masks_every_url_in_free_text() {
+        // The shape a proxy failure takes once its cause chain is flattened.
+        assert_eq!(
+            redact_url_userinfo(
+                "error sending request: proxy http://user:s3cret@gw.example.com:823 refused"
+            ),
+            "error sending request: proxy http://***@gw.example.com:823 refused"
+        );
+        // Wrapped in parens, two URLs, a `)` inside the password: nothing of
+        // the password survives, the surrounding text does.
+        let out = redact_url_userinfo("a (socks5h://u:p)w@h1:1080) then https://v:x@h2/path, ok");
+        assert!(!out.contains("p)w"), "{out}");
+        assert!(!out.contains("v:x"), "{out}");
+        assert_eq!(
+            out,
+            "a (socks5h://***@h1:1080) then https://***@h2/path, ok"
+        );
+        // No URL, or a URL without credentials: unchanged, multi-byte text too.
+        assert_eq!(
+            redact_url_userinfo("tunnel error: unsuccessful"),
+            "tunnel error: unsuccessful"
+        );
+        assert_eq!(
+            redact_url_userinfo("çağrı http://gw.example.com:823 bitti"),
+            "çağrı http://gw.example.com:823 bitti"
+        );
+        assert_eq!(redact_url_userinfo("://u:p@h"), "***@h");
+        assert_eq!(redact_url_userinfo(""), "");
+    }
 
     #[test]
     fn redact_proxy_url_masks_userinfo() {
