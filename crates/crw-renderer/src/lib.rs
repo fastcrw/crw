@@ -75,6 +75,7 @@ use crate::breaker::{
 use crate::preference::HostPreferences;
 use crw_core::config::{BUILTIN_UA_POOL, RendererConfig, RendererMode, StealthConfig};
 use crw_core::error::{CrwError, CrwResult};
+use crw_core::log_url::{LogErr, LogUrl};
 use crw_core::metrics::metrics;
 use crw_core::types::{
     FailoverErrorKind, FetchResult, RenderDecision, RendererKind, resolve_render_js,
@@ -1630,9 +1631,10 @@ impl FallbackRenderer {
             Ok(f) => f,
             Err(e) => {
                 tracing::warn!(
-                    url,
+                    url = %LogUrl(&url),
                     trigger = trigger.as_str(),
-                    "impersonated hop skipped: {e}"
+                    "impersonated hop skipped: {e}",
+                    e = LogErr(&e),
                 );
                 metrics()
                     .render_route_decision_total
@@ -1662,10 +1664,10 @@ impl FallbackRenderer {
                     Some(r)
                 } else {
                     tracing::info!(
-                        url,
+                        url = %LogUrl(&url),
                         trigger = trigger.as_str(),
                         status_code = r.status_code,
-                        "impersonated hop still blocked; continuing to the ladder"
+                        "impersonated hop still blocked; continuing to the ladder",
                     );
                     metrics()
                         .render_route_decision_total
@@ -1676,9 +1678,10 @@ impl FallbackRenderer {
             }
             Err(e) => {
                 tracing::info!(
-                    url,
+                    url = %LogUrl(&url),
                     trigger = trigger.as_str(),
-                    "impersonated hop failed: {e}"
+                    "impersonated hop failed: {e}",
+                    e = LogErr(&e),
                 );
                 metrics()
                     .render_route_decision_total
@@ -1961,18 +1964,18 @@ impl FallbackRenderer {
         match &out {
             Ok(r) => tracing::info!(
                 target: "latency_breakdown",
-                url,
+                url = %LogUrl(&url),
                 total_ms,
                 rendered_with = r.rendered_with.as_deref().unwrap_or("unknown"),
                 content_len = r.html.len(),
-                "scrape latency breakdown"
+                "scrape latency breakdown",
             ),
             Err(e) => tracing::info!(
                 target: "latency_breakdown",
-                url,
+                url = %LogUrl(&url),
                 total_ms,
-                error = %e,
-                "scrape latency breakdown (error)"
+                error = %LogErr(&e),
+                "scrape latency breakdown (error)",
             ),
         }
         out
@@ -2042,12 +2045,12 @@ impl FallbackRenderer {
             effective = Some(true);
         }
         tracing::debug!(
-            url,
+            url = %LogUrl(&url),
             request_render_js = ?render_js,
             default_render_js = ?self.render_js_default,
             effective_render_js = ?effective,
             requested_renderer,
-            "FallbackRenderer::fetch dispatching"
+            "FallbackRenderer::fetch dispatching",
         );
         // Cloak-first routing hint: for a domain the SaaS registry learned is
         // Cloudflare-managed, try the cloak Turnstile arm BEFORE the ladder with
@@ -2156,8 +2159,11 @@ impl FallbackRenderer {
                                 if self.latency_breakdown {
                                     tracing::info!(
                                         target: "latency_breakdown",
-                                        url, tier = "cloak", ok = ship_ok, consumed = ship_ok,
-                                        "cloak-first fired"
+                                        url = %LogUrl(&url),
+                                        tier = "cloak",
+                                        ok = ship_ok,
+                                        consumed = ship_ok,
+                                        "cloak-first fired",
                                     );
                                 }
                                 if ship_ok {
@@ -2191,8 +2197,10 @@ impl FallbackRenderer {
                                 if self.latency_breakdown {
                                     tracing::info!(
                                         target: "latency_breakdown",
-                                        url, tier = "cloak", error = %_e,
-                                        "cloak-first fired (error)"
+                                        url = %LogUrl(&url),
+                                        tier = "cloak",
+                                        error = %LogErr(&_e),
+                                        "cloak-first fired (error)",
                                     );
                                 }
                                 // error -> fall through to the ladder.
@@ -2254,9 +2262,9 @@ impl FallbackRenderer {
                 };
                 if self.impersonation_blocked(&r) {
                     tracing::warn!(
-                        url,
+                        url = %LogUrl(&url),
                         status_code = r.status_code,
-                        "pinned impersonated-http result looks blocked; surfacing as an error"
+                        "pinned impersonated-http result looks blocked; surfacing as an error",
                     );
                     metrics()
                         .render_route_decision_total
@@ -2337,9 +2345,9 @@ impl FallbackRenderer {
                     // content".
                     Err(e) if !self.js_renderers.is_empty() && !is_unrenderable_body_error(&e) => {
                         tracing::info!(
-                            url,
-                            error = %e,
-                            "HTTP fetch failed, escalating to JS renderer"
+                            url = %LogUrl(&url),
+                            error = %LogErr(&e),
+                            "HTTP fetch failed, escalating to JS renderer",
                         );
                         return self
                             .fetch_with_js(
@@ -2352,7 +2360,11 @@ impl FallbackRenderer {
                             )
                             .await
                             .map_err(|js_err| {
-                                tracing::warn!("Both HTTP and JS failed: http={e}, js={js_err}");
+                                tracing::warn!(
+                                    "Both HTTP and JS failed: http={e}, js={js_err}",
+                                    e = LogErr(&e),
+                                    js_err = LogErr(&js_err),
+                                );
                                 // Same attribution rule as the auto arm: a dead
                                 // origin is the caller's target (422), not our
                                 // renderer breaking (500).
@@ -2389,8 +2401,8 @@ impl FallbackRenderer {
                         ));
                     }
                     tracing::warn!(
-                        url,
-                        "JS rendering requested but no renderer available — falling back to HTTP"
+                        url = %LogUrl(&url),
+                        "JS rendering requested but no renderer available — falling back to HTTP",
                     );
                     let mut result = http_result;
                     result.rendered_with = Some("http_only_fallback".to_string());
@@ -2466,13 +2478,15 @@ impl FallbackRenderer {
                         Err(e) => {
                             if is_auth_blocked {
                                 tracing::error!(
-                                    url,
+                                    url = %LogUrl(&url),
                                     status_code = http_result.status_code,
-                                    "JS escalation failed for soft-block status; surfacing HTTP shell with warning: {e}"
+                                    "JS escalation failed for soft-block status; surfacing HTTP shell with warning: {e}",
+                                    e = LogErr(&e),
                                 );
                             } else {
                                 tracing::warn!(
-                                    "JS rendering failed, falling back to HTTP result: {e}"
+                                    "JS rendering failed, falling back to HTTP result: {e}",
+                                    e = LogErr(&e),
                                 );
                             }
                             let warning = format!("{JS_ESCALATION_FAILED} {e}");
@@ -2565,9 +2579,9 @@ impl FallbackRenderer {
                     // can fix, and the climb only hides the precise cause.
                     Err(e) if !self.js_renderers.is_empty() && !is_unrenderable_body_error(&e) => {
                         tracing::info!(
-                            url,
-                            error = %e,
-                            "HTTP fetch failed, escalating to JS renderer"
+                            url = %LogUrl(&url),
+                            error = %LogErr(&e),
+                            "HTTP fetch failed, escalating to JS renderer",
                         );
                         return self
                             .fetch_with_js(
@@ -2580,7 +2594,11 @@ impl FallbackRenderer {
                             )
                             .await
                             .map_err(|js_err| {
-                                tracing::warn!("Both HTTP and JS failed: http={e}, js={js_err}");
+                                tracing::warn!(
+                                    "Both HTTP and JS failed: http={e}, js={js_err}",
+                                    e = LogErr(&e),
+                                    js_err = LogErr(&js_err),
+                                );
                                 // When the HTTP tier could not reach the origin AND the JS tier
                                 // failed navigating to that same origin, the origin is the root
                                 // cause: surface TargetUnreachable (422 — the caller handed us a
@@ -2729,10 +2747,10 @@ impl FallbackRenderer {
                     needs_js || is_blocked || is_auth_blocked || is_thin_content || is_empty_2xx;
                 if is_document_verdict && would_escalate && !self.js_renderers.is_empty() {
                     tracing::info!(
-                        url,
+                        url = %LogUrl(&url),
                         status_code = result.status_code,
                         "HTTP {} on a PDF URL, returning it without JS escalation",
-                        result.status_code
+                        result.status_code,
                     );
                     // Skipping the ladder must not change what the caller is
                     // charged. A hard-block status (in practice 401, 403, 429
@@ -2765,29 +2783,32 @@ impl FallbackRenderer {
                 if !self.js_renderers.is_empty() && !is_document_verdict && would_escalate {
                     if is_auth_blocked {
                         tracing::info!(
-                            url,
+                            url = %LogUrl(&url),
                             status_code = result.status_code,
                             "HTTP {} received, escalating to JS renderer",
-                            result.status_code
+                            result.status_code,
                         );
                     } else if is_blocked {
                         tracing::info!(
-                            url,
-                            "Anti-bot challenge detected in HTTP response, escalating to JS renderer"
+                            url = %LogUrl(&url),
+                            "Anti-bot challenge detected in HTTP response, escalating to JS renderer",
                         );
                         if is_generic_bot_wall {
                             tracing::info!(
-                                url,
-                                "Generic anti-bot interstitial detected, escalating to JS renderer"
+                                url = %LogUrl(&url),
+                                "Generic anti-bot interstitial detected, escalating to JS renderer",
                             );
                         }
                     } else if needs_js {
-                        tracing::info!(url, "SPA shell detected, retrying with JS renderer");
+                        tracing::info!(
+                            url = %LogUrl(&url),
+                            "SPA shell detected, retrying with JS renderer",
+                        );
                     } else {
                         tracing::info!(
-                            url,
+                            url = %LogUrl(&url),
                             html_len = result.html.len(),
-                            "HTTP 2xx but body is thin, escalating to JS renderer"
+                            "HTTP 2xx but body is thin, escalating to JS renderer",
                         );
                     }
                     let js_outcome = self
@@ -2836,13 +2857,15 @@ impl FallbackRenderer {
                             // arm above has always tagged unconditionally; this matches it.
                             if is_auth_blocked {
                                 tracing::error!(
-                                    url,
+                                    url = %LogUrl(&url),
                                     status_code = result.status_code,
-                                    "JS escalation failed for soft-block status; surfacing HTTP shell with warning: {e}"
+                                    "JS escalation failed for soft-block status; surfacing HTTP shell with warning: {e}",
+                                    e = LogErr(&e),
                                 );
                             } else {
                                 tracing::warn!(
-                                    "JS rendering failed, falling back to HTTP result: {e}"
+                                    "JS rendering failed, falling back to HTTP result: {e}",
+                                    e = LogErr(&e),
                                 );
                             }
                             let warning = format!("{JS_ESCALATION_FAILED} {e}");
@@ -3082,7 +3105,11 @@ impl FallbackRenderer {
                 // the identical event. At INFO an operator filtering on WARN
                 // would see serial tier failures and not hedge ones, which is
                 // the same blind spot one level up.
-                tracing::warn!(renderer = kind.as_str(), "hedge leg failed: {e}");
+                tracing::warn!(
+                    renderer = kind.as_str(),
+                    "hedge leg failed: {e}",
+                    e = LogErr(&e),
+                );
             }
         }
 
@@ -3513,16 +3540,20 @@ impl FallbackRenderer {
                 match &attempt_outcome {
                     Ok(r) => tracing::info!(
                         target: "latency_breakdown",
-                        url, tier, attempt_ms,
+                        url = %LogUrl(&url),
+                        tier,
+                        attempt_ms,
                         status = r.status_code,
                         html_len = r.html.len(),
-                        "hedge attempt"
+                        "hedge attempt",
                     ),
                     Err(e) => tracing::info!(
                         target: "latency_breakdown",
-                        url, tier, attempt_ms,
-                        error = %e,
-                        "hedge attempt (error)"
+                        url = %LogUrl(&url),
+                        tier,
+                        attempt_ms,
+                        error = %LogErr(&e),
+                        "hedge attempt (error)",
                     ),
                 }
             }
@@ -3729,9 +3760,9 @@ impl FallbackRenderer {
                             .inc();
                         tracing::warn!(
                             renderer = renderer.name(),
-                            url,
+                            url = %LogUrl(&url),
                             vendor,
-                            "vendor anti-bot block detected"
+                            "vendor anti-bot block detected",
                         );
                     }
                     // Emit the antibot signal regardless of `escalate_in_failover`
@@ -3743,13 +3774,13 @@ impl FallbackRenderer {
                             .inc();
                         tracing::warn!(
                             renderer = renderer.name(),
-                            url,
+                            url = %LogUrl(&url),
                             signal = antibot.signal.class_name(),
                             reason = %antibot.reason,
                             status_code = result.status_code,
                             text_len,
                             escalated = antibot_blocked,
-                            "antibot classifier flagged a block"
+                            "antibot classifier flagged a block",
                         );
                     }
                     tracing::info!(
@@ -3879,7 +3910,11 @@ impl FallbackRenderer {
                     });
                 }
                 Err(e) => {
-                    tracing::warn!(renderer = renderer.name(), "JS renderer failed: {e}");
+                    tracing::warn!(
+                        renderer = renderer.name(),
+                        "JS renderer failed: {e}",
+                        e = LogErr(&e),
+                    );
                     let err_kind = classify_renderer_error(&e);
                     last_failover_reason = Some(err_kind.clone());
                     if let Some(k) = trackable {
@@ -4309,9 +4344,11 @@ impl FallbackRenderer {
                         if self.latency_breakdown {
                             tracing::info!(
                                 target: "latency_breakdown",
-                                url, tier = "chrome_proxy",
-                                ok = r_ok, consumed = better,
-                                "auto_egress fired"
+                                url = %LogUrl(&url),
+                                tier = "chrome_proxy",
+                                ok = r_ok,
+                                consumed = better,
+                                "auto_egress fired",
                             );
                         }
                         if better {
@@ -4340,8 +4377,10 @@ impl FallbackRenderer {
                         if self.latency_breakdown {
                             tracing::info!(
                                 target: "latency_breakdown",
-                                url, tier = "chrome_proxy", error = %e,
-                                "auto_egress fired (error)"
+                                url = %LogUrl(&url),
+                                tier = "chrome_proxy",
+                                error = %LogErr(&e),
+                                "auto_egress fired (error)",
                             );
                         }
                     }
@@ -4505,9 +4544,11 @@ impl FallbackRenderer {
                         if self.latency_breakdown {
                             tracing::info!(
                                 target: "latency_breakdown",
-                                url, tier = "cloak",
-                                ok = r_ok, consumed = better,
-                                "cloak recovery fired"
+                                url = %LogUrl(&url),
+                                tier = "cloak",
+                                ok = r_ok,
+                                consumed = better,
+                                "cloak recovery fired",
                             );
                         }
                         if better {
@@ -4536,14 +4577,16 @@ impl FallbackRenderer {
                         tracing::info!(
                             host = %host,
                             route = if cloak_after_egress_route { "afterEgress" } else { "ladder" },
-                            error = %e,
-                            "cloak arm result (error)"
+                            error = %LogErr(&e),
+                            "cloak arm result (error)",
                         );
                         if self.latency_breakdown {
                             tracing::info!(
                                 target: "latency_breakdown",
-                                url, tier = "cloak", error = %e,
-                                "cloak recovery fired (error)"
+                                url = %LogUrl(&url),
+                                tier = "cloak",
+                                error = %LogErr(&e),
+                                "cloak recovery fired (error)",
                             );
                         }
                     }

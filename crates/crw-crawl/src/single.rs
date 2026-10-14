@@ -1,6 +1,7 @@
 use crw_core::Deadline;
 use crw_core::config::{BUILTIN_UA_POOL, ExtractionConfig, LlmConfig};
 use crw_core::error::CrwResult;
+use crw_core::log_url::{LogErr, LogUrl};
 use crw_core::types::{
     BlockOutcome, ChangeTrackingMode, FetchResult, OutputFormat, RequestedRenderer,
     STRUCTURAL_FAILURE_VENDOR, ScrapeData, ScrapeRequest, resolve_pinned_renderer,
@@ -652,9 +653,9 @@ async fn scrape_url_inner(
             && !has_escalation_target
         {
             tracing::debug!(
-                url = %req.url,
+                url = %LogUrl(&req.url),
                 pool = ?renderer.auto_ladder_names(),
-                "skipping JS escalation: no tier above lightpanda in this pool"
+                "skipping JS escalation: no tier above lightpanda in this pool",
             );
             // Say so on the response as well. The thin body ships as a
             // success, and without this line nothing tells the operator that
@@ -674,16 +675,16 @@ async fn scrape_url_inner(
             && !has_escalation_budget
         {
             tracing::debug!(
-                url = %req.url,
+                url = %LogUrl(&req.url),
                 remaining_ms = escalation_budget.as_millis() as u64,
                 min_ms = crw_renderer::MIN_TIER_BUDGET.as_millis() as u64,
-                "skipping JS escalation: not enough deadline left to attempt it"
+                "skipping JS escalation: not enough deadline left to attempt it",
             );
         }
         if should_escalate {
             let quality_score_before = md_quality.as_ref().map(|q| q.score);
             tracing::info!(
-                url = %req.url,
+                url = %LogUrl(&req.url),
                 status = fetch_result.status_code,
                 html_len = fetch_result.html.len(),
                 prior = prior_renderer,
@@ -691,7 +692,7 @@ async fn scrape_url_inner(
                 md_bytes,
                 quality_score_before = ?quality_score_before,
                 escalate_for_quality,
-                "empty markdown after fetch, escalating to JS renderer"
+                "empty markdown after fetch, escalating to JS renderer",
             );
             let escalation = renderer
                 .fetch(
@@ -777,17 +778,17 @@ async fn scrape_url_inner(
                             // soft-block status into the response top-level warning.
                             effective_warning = js_warning;
                             tracing::info!(
-                                url = %req.url,
+                                url = %LogUrl(&req.url),
                                 from_status = fetch_result.status_code,
                                 to_status = js_status,
                                 md_len = js_md_len,
                                 quality_score_before = before_score,
                                 quality_score_after = js_score,
-                                "JS escalation recovered content"
+                                "JS escalation recovered content",
                             );
                         } else if js_md_len >= retry_threshold && !http_was_thin {
                             tracing::info!(
-                                url = %req.url,
+                                url = %LogUrl(&req.url),
                                 before = before_score,
                                 after = js_score,
                                 "JS retry returned worse-quality markdown ({before_score} -> {js_score}), keeping HTTP",
@@ -796,7 +797,11 @@ async fn scrape_url_inner(
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(url = %req.url, "JS escalation after empty markdown failed: {e}");
+                    tracing::warn!(
+                        url = %LogUrl(&req.url),
+                        "JS escalation after empty markdown failed: {e}",
+                        e = LogErr(&e),
+                    );
                     // Surface the failure on the response too, not just the log:
                     // otherwise a renderer that's configured but unreachable (e.g.
                     // connection refused) silently returns success:true with thin
@@ -1120,10 +1125,10 @@ async fn scrape_url_inner(
     // request currently costs a credit and reports success.
     if is_cdn_origin_error(fetch_result.status_code) {
         tracing::warn!(
-            url = %req.url,
+            url = %LogUrl(&req.url),
             status = fetch_result.status_code,
             elapsed_ms = fetch_result.elapsed_ms,
-            "CDN could not reach the origin; failing instead of billing its error page"
+            "CDN could not reach the origin; failing instead of billing its error page",
         );
         return Err(crw_core::error::CrwError::TargetUnreachable(format!(
             "the site's own server did not respond (HTTP {} from its CDN)",
@@ -1133,9 +1138,9 @@ async fn scrape_url_inner(
 
     if is_empty_truncated_render(data.truncated, &req.formats, data.markdown.as_deref()) {
         tracing::warn!(
-            url = %req.url,
+            url = %LogUrl(&req.url),
             elapsed_ms = fetch_result.elapsed_ms,
-            "render budget expired with no extractable content; failing instead of billing an empty page"
+            "render budget expired with no extractable content; failing instead of billing an empty page",
         );
         // The caller's budget, not `elapsed_ms`: that is when the partial render
         // was taken (about 2.5s into a 30s request), and reporting it told callers

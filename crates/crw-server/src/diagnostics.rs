@@ -12,14 +12,7 @@ use tracing::Level;
 /// error, because every other component can carry a secret. Falls back to a
 /// fixed redaction string if the URL doesn't parse.
 pub fn sanitize_url_origin(raw: &str) -> String {
-    match url::Url::parse(raw) {
-        Ok(u) => match (u.host_str(), u.port()) {
-            (Some(host), Some(port)) => format!("{}://{host}:{port}", u.scheme()),
-            (Some(host), None) => format!("{}://{host}", u.scheme()),
-            (None, _) => "<redacted-url>".to_string(),
-        },
-        Err(_) => "<redacted-url>".to_string(),
-    }
+    crw_core::log_url::origin_only(raw)
 }
 
 /// One-line summary of the search subsystem's configured state, for the startup

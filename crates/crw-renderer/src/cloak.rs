@@ -21,6 +21,7 @@
 use async_trait::async_trait;
 use crw_core::Deadline;
 use crw_core::error::{CrwError, CrwResult};
+use crw_core::log_url::LogErr;
 use crw_core::types::FetchResult;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -182,16 +183,16 @@ impl CloakRenderer {
             .map_err(|e| {
                 // Same rule as camoufox: the mirror base URL is ours, not the
                 // caller's. Log it, do not return it.
-                tracing::warn!(base_url = %self.base_url, "cloak request failed: {e}");
+                tracing::warn!(base_url = %self.base_url, "cloak request failed: {}", LogErr(&e));
                 CrwError::RendererError(format!(
-                    "cloak GET {path_and_query}: {}",
+                    "cloak GET: {}",
                     crw_core::error::reqwest_message(e)
                 ))
             })?;
         let status = resp.status().as_u16();
         let body = resp.text().await.map_err(|e| {
             CrwError::RendererError(format!(
-                "cloak GET {path_and_query} body: {}",
+                "cloak GET body: {}",
                 crw_core::error::reqwest_message(e)
             ))
         })?;
@@ -213,10 +214,10 @@ impl PageFetcher for CloakRenderer {
         }
         let start = Instant::now();
         let parsed = url::Url::parse(url)
-            .map_err(|e| CrwError::RendererError(format!("cloak: bad url {url}: {e}")))?;
+            .map_err(|e| CrwError::RendererError(format!("cloak: bad url: {e}")))?;
         let host = parsed
             .host_str()
-            .ok_or_else(|| CrwError::RendererError(format!("cloak: url has no host: {url}")))?
+            .ok_or_else(|| CrwError::RendererError("cloak: url has no host".to_string()))?
             .to_string();
         let path_and_query = match parsed.query() {
             Some(q) => format!("{}?{}", parsed.path(), q),

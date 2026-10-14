@@ -15,6 +15,7 @@
 use async_trait::async_trait;
 use crw_core::Deadline;
 use crw_core::error::{CrwError, CrwResult};
+use crw_core::log_url::url_for_error;
 use crw_core::types::FetchResult;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -87,7 +88,7 @@ impl ImpersonatedFetcher {
 async fn read_body_capped(resp: wreq::Response, max: usize, url: &str) -> CrwResult<Vec<u8>> {
     let (body, truncated) = crw_core::body::read_capped(resp.bytes_stream(), max)
         .await
-        .map_err(|e| CrwError::HttpError(format!("{url}: {e}")))?;
+        .map_err(|e| CrwError::HttpError(format!("{}: {e}", url_for_error(url))))?;
     if truncated {
         return Err(CrwError::HttpError(format!(
             "Response too large: exceeds {max} bytes"
@@ -132,7 +133,8 @@ impl PageFetcher for ImpersonatedFetcher {
     ) -> CrwResult<FetchResult> {
         if deadline.expired() {
             return Err(CrwError::HttpError(format!(
-                "deadline expired before impersonated-HTTP fetch of {url}"
+                "deadline expired before impersonated-HTTP fetch of {}",
+                url_for_error(url)
             )));
         }
         let start = Instant::now();
@@ -160,7 +162,7 @@ impl PageFetcher for ImpersonatedFetcher {
             return Err(CrwError::Timeout(deadline.requested_ms()));
         }
         let resp = match tokio::time::timeout(remaining, req.send()).await {
-            Ok(r) => r.map_err(|e| CrwError::HttpError(format!("{url}: {e}")))?,
+            Ok(r) => r.map_err(|e| CrwError::HttpError(format!("{}: {e}", url_for_error(url))))?,
             Err(_) => return Err(CrwError::Timeout(deadline.requested_ms())),
         };
         let status = resp.status().as_u16();

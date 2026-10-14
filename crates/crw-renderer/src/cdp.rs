@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use crw_core::error::{CrwError, CrwResult};
+use crw_core::log_url::{LogErr, LogUrl};
 use crw_core::types::{CapturedNetworkResponse, FetchResult};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -2062,10 +2063,10 @@ impl PageFetcher for CdpRenderer {
                 let retry_timeout = internal_timeout.min(remaining);
                 tracing::info!(
                     renderer = %self.name,
-                    url,
+                    url = %LogUrl(&url),
                     default_country = ?self.default_country,
-                    error = %e,
-                    "country proxy CONNECT tunnel failed; retrying once with default country"
+                    error = %LogErr(&e),
+                    "country proxy CONNECT tunnel failed; retrying once with default country",
                 );
                 // Re-run the SAME attempt with the country forced to the tier
                 // default. `should_retry_with_default_country` guarantees the
@@ -3238,9 +3239,9 @@ impl CdpRenderer {
                     .await;
             }
             tracing::debug!(
-                url,
+                url = %LogUrl(&url),
                 count = cookies.len(),
-                "injected cached clearance cookies"
+                "injected cached clearance cookies",
             );
         }
 
@@ -3369,9 +3370,9 @@ impl CdpRenderer {
             // breakdown shows load-wait vs post-navigate render (debug target).
             tracing::debug!(
                 target: "render_phases",
-                url,
+                url = %LogUrl(&url),
                 nav_to_load_ms = nav_t0.elapsed().as_millis() as u64,
-                "nav timing"
+                "nav timing",
             );
             // Post-navigate phase runs inside a budget race. On budget hit
             // we attempt a partial-DOM snapshot and return `truncated = true`;
@@ -3387,10 +3388,10 @@ impl CdpRenderer {
                     // for LightPanda's much smaller budget and sent anyone reading
                     // the logs to the wrong tier.
                     tracing::info!(
-                        url,
+                        url = %LogUrl(&url),
                         renderer = %self.name,
                         budget_ms = nav_budget.as_millis() as u64,
-                        "nav budget hit; attempting partial snapshot"
+                        "nav budget hit; attempting partial snapshot",
                     );
                     let _ = conn
                         .send_recv(
@@ -3576,7 +3577,11 @@ impl CdpRenderer {
                     .unresolved
                     .load(std::sync::atomic::Ordering::Relaxed) =>
             {
-                tracing::warn!(url, tier = %self.name, "outbound destination check unavailable");
+                tracing::warn!(
+                    url = %LogUrl(&url),
+                    tier = %self.name,
+                    "outbound destination check unavailable",
+                );
                 Err(CrwError::RendererError(format!(
                     "outbound destination check unavailable ({err})"
                 )))
@@ -3601,7 +3606,11 @@ impl CdpRenderer {
         {
             let cookies = Self::capture_clearance_cookies(conn, &session_id, url).await;
             if !cookies.is_empty() {
-                tracing::debug!(url, count = cookies.len(), "captured clearance cookies");
+                tracing::debug!(
+                    url = %LogUrl(&url),
+                    count = cookies.len(),
+                    "captured clearance cookies",
+                );
             }
             crate::clearance::clearance_cache().put(key, cookies);
         }
@@ -3620,7 +3629,7 @@ impl CdpRenderer {
             && wait_for_ms.is_none()
             && crate::detector::looks_like_loading_placeholder(&html)
         {
-            tracing::debug!(url, "Placeholder still present after stability poll");
+            tracing::debug!(url = %LogUrl(&url), "Placeholder still present after stability poll");
         }
 
         let captured_drained = std::mem::take(&mut *captured.lock().await);
@@ -3679,7 +3688,7 @@ impl CdpRenderer {
         )
         .await
         {
-            tracing::debug!(url, "SPA selector poll exhausted budget");
+            tracing::debug!(url = %LogUrl(&url), "SPA selector poll exhausted budget");
         }
         let t_selector_ms = _sel_t.elapsed().as_millis() as u64;
 
@@ -3689,8 +3698,8 @@ impl CdpRenderer {
         // 4b. SPA loading placeholder → poll for content stability.
         if wait_for_ms.is_none() && crate::detector::looks_like_loading_placeholder(&html) {
             tracing::info!(
-                url,
-                "Loading placeholder detected, polling for content stability"
+                url = %LogUrl(&url),
+                "Loading placeholder detected, polling for content stability",
             );
             let _stab_t = Instant::now();
             match Self::poll_until_content_stable(conn, session_id, self.page_timeout).await {
@@ -3769,15 +3778,18 @@ impl CdpRenderer {
         // burning the deadline here (the Firecrawl/Spider approach).
         if self.challenge_max_retries > 0 && is_challenge_page(&html) {
             let _chal_t = Instant::now();
-            tracing::info!(url, "Challenge page detected, waiting for auto-resolve");
+            tracing::info!(
+                url = %LogUrl(&url),
+                "Challenge page detected, waiting for auto-resolve",
+            );
             for attempt in 1..=self.challenge_max_retries {
                 tokio::time::sleep(Duration::from_millis(CHALLENGE_POLL_INTERVAL_MS)).await;
                 html = Self::eval_html(conn, session_id, self.page_timeout).await?;
                 if !is_challenge_page(&html) {
-                    tracing::info!(url, attempt, "Challenge cleared");
+                    tracing::info!(url = %LogUrl(&url), attempt, "Challenge cleared");
                     break;
                 }
-                tracing::debug!(url, attempt, "Challenge still active, retrying");
+                tracing::debug!(url = %LogUrl(&url), attempt, "Challenge still active, retrying");
             }
             t_challenge_ms = _chal_t.elapsed().as_millis() as u64;
         }
@@ -3786,14 +3798,14 @@ impl CdpRenderer {
         let total_ms = _pt0.elapsed().as_millis() as u64;
         tracing::debug!(
             target: "render_phases",
-            url,
+            url = %LogUrl(&url),
             total_ms,
             selector_ms = t_selector_ms,
             stability_ms = t_stability_ms,
             challenge_ms = t_challenge_ms,
             other_ms = total_ms.saturating_sub(t_selector_ms + t_stability_ms + t_challenge_ms),
             html_len = html.len(),
-            "render phases"
+            "render phases",
         );
 
         Ok(html)

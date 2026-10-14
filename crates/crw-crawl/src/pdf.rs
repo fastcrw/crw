@@ -8,6 +8,7 @@
 //! compile, and running the parse on an async worker would stall the runtime
 //! for large documents.
 
+use crw_core::log_url::{LogErr, LogUrl};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -398,7 +399,11 @@ pub async fn convert_pdf_bytes(
         Err(err) => {
             // Soft-fail: empty markdown + a warning. Upload callers map this to
             // an HTTP error themselves (they call the strict variant).
-            tracing::warn!(url = %source.source_url, "pdf conversion failed: {err}");
+            tracing::warn!(
+                url = %LogUrl(&source.source_url),
+                "pdf conversion failed: {err}",
+                err = LogErr(&err),
+            );
             let mut data = empty_pdf_scrape_data(req, &source, source.elapsed_ms + convert_ms);
             data.warnings.push(err.to_string());
             data.warning = Some(err.to_string());

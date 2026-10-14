@@ -1,4 +1,5 @@
 use crw_core::error::CrwResult;
+use crw_core::log_url::{LogErr, LogUrl};
 use scraper::{Html, Selector};
 use std::future::Future;
 use std::pin::Pin;
@@ -72,7 +73,10 @@ async fn fetch_sitemap_raw(url: &str, client: &reqwest::Client) -> SitemapOutcom
     let requested_site = match url::Url::parse(url).ok().as_ref().and_then(site_key) {
         Some(k) => k,
         None => {
-            tracing::debug!("sitemap fetch skipped: cannot parse origin for {url}");
+            tracing::debug!(
+                "sitemap fetch skipped: cannot parse origin for {url}",
+                url = LogUrl(&url),
+            );
             return SitemapOutcome::Empty;
         }
     };
@@ -85,25 +89,37 @@ async fn fetch_sitemap_raw(url: &str, client: &reqwest::Client) -> SitemapOutcom
     {
         Ok(r) => r,
         Err(e) => {
-            tracing::debug!("sitemap fetch error for {url}: {e}");
+            tracing::debug!(
+                "sitemap fetch error for {url}: {e}",
+                url = LogUrl(&url),
+                e = LogErr(&e),
+            );
             return SitemapOutcome::Empty;
         }
     };
 
     let final_url = resp.url().clone();
     if final_url.as_str() != url {
-        tracing::debug!("sitemap redirect: {} -> {}", url, final_url);
+        tracing::debug!(
+            "sitemap redirect: {} -> {}",
+            LogUrl(&url),
+            LogUrl(&final_url),
+        );
     }
     match site_key(&final_url) {
         Some(ref k) if *k == requested_site => {}
         _ => {
-            tracing::warn!("sitemap {url} redirected off-site to {final_url}, dropping");
+            tracing::warn!(
+                "sitemap {url} redirected off-site to {final_url}, dropping",
+                url = LogUrl(&url),
+                final_url = LogUrl(&final_url),
+            );
             return SitemapOutcome::Empty;
         }
     }
     let status = resp.status();
     if !status.is_success() {
-        tracing::debug!("sitemap {url} returned {status}");
+        tracing::debug!("sitemap {url} returned {status}", url = LogUrl(&url));
         // 403/503/429 from an edge WAF is the classic "blocked" signal — let the
         // caller try a JS renderer. Other non-2xx (404, 5xx app errors) are not
         // recoverable that way.
@@ -117,7 +133,11 @@ async fn fetch_sitemap_raw(url: &str, client: &reqwest::Client) -> SitemapOutcom
     let bytes = match read_body_capped(resp, MAX_SITEMAP_BYTES).await {
         Ok(b) => b,
         Err(e) => {
-            tracing::warn!("sitemap body read failed for {url}: {e}");
+            tracing::warn!(
+                "sitemap body read failed for {url}: {e}",
+                url = LogUrl(&url),
+                e = LogErr(&e),
+            );
             return SitemapOutcome::Empty;
         }
     };
@@ -133,7 +153,11 @@ async fn fetch_sitemap_raw(url: &str, client: &reqwest::Client) -> SitemapOutcom
         match decode_gzip_capped(&bytes, MAX_SITEMAP_BYTES) {
             Ok(d) => d,
             Err(e) => {
-                tracing::warn!("sitemap gzip decode failed for {url}: {e}");
+                tracing::warn!(
+                    "sitemap gzip decode failed for {url}: {e}",
+                    url = LogUrl(&url),
+                    e = LogErr(&e),
+                );
                 return SitemapOutcome::Empty;
             }
         }
@@ -146,11 +170,17 @@ async fn fetch_sitemap_raw(url: &str, client: &reqwest::Client) -> SitemapOutcom
     if has_challenge_markers(&head) {
         // 200 with a Cloudflare interstitial body (managed challenge served as
         // HTTP 200) — recoverable via a JS renderer.
-        tracing::warn!("sitemap {url} body is an anti-bot challenge; may escalate");
+        tracing::warn!(
+            "sitemap {url} body is an anti-bot challenge; may escalate",
+            url = LogUrl(&url),
+        );
         return SitemapOutcome::Challenged;
     }
     if looks_like_html(&head) {
-        tracing::warn!("sitemap {url} body looks like HTML, not XML; ignoring");
+        tracing::warn!(
+            "sitemap {url} body looks like HTML, not XML; ignoring",
+            url = LogUrl(&url),
+        );
         return SitemapOutcome::Empty;
     }
     let parsed = parse_sitemap(&text);
@@ -161,7 +191,10 @@ async fn fetch_sitemap_raw(url: &str, client: &reqwest::Client) -> SitemapOutcom
     // so it must not cover those. Downstream behaviour is unchanged: both arms
     // produce an empty `SitemapResult`.
     if parsed.is_empty() && !declares_sitemap_root(&head) {
-        tracing::debug!("sitemap {url} has no entries and no sitemap root; ignoring");
+        tracing::debug!(
+            "sitemap {url} has no entries and no sitemap root; ignoring",
+            url = LogUrl(&url),
+        );
         return SitemapOutcome::Empty;
     }
     SitemapOutcome::Parsed(parsed)
@@ -345,7 +378,10 @@ impl<'a> SitemapEscalator<'a> {
                 Err(observed) => cur = observed,
             }
         }
-        tracing::info!("escalating challenged sitemap via renderer: {url}");
+        tracing::info!(
+            "escalating challenged sitemap via renderer: {url}",
+            url = LogUrl(&url),
+        );
         match (self.render)(url.to_string()).await {
             Some(html) => parse_rendered_sitemap(&html),
             None => SitemapResult::default(),

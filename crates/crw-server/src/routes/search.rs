@@ -5,6 +5,7 @@ use axum::http::HeaderMap;
 use crw_core::Deadline;
 use crw_core::config::LlmConfig;
 use crw_core::error::CrwError;
+use crw_core::log_url::{LogErr, LogUrl};
 use crw_core::types::{
     ApiResponse, LlmUsage, OutputFormat, ScrapeData, ScrapeRequest, SearchData, SearchRequest,
     SearchResponse, SearchResponseData, SearchResult, SearchScrapeOptions,
@@ -545,7 +546,7 @@ pub async fn search_inner(
         match enrich_with_scrape(&mut data, opts, state).await {
             Ok(()) => scraped = true,
             Err(msg) => {
-                tracing::warn!(error = %msg, "scrape enrichment failed");
+                tracing::warn!(error = %LogErr(&msg), "scrape enrichment failed");
                 warning = Some(msg);
             }
         }
@@ -1583,7 +1584,11 @@ async fn enrich_with_scrape(
         match result {
             Ok(scrape) => apply_scrape_to_result(slot, scrape, &opts.formats),
             Err(msg) => {
-                tracing::debug!(url = %slot.url, error = %msg, "scrape enrichment skipped");
+                tracing::debug!(
+                    url = %LogUrl(&slot.url),
+                    error = %LogErr(&msg),
+                    "scrape enrichment skipped",
+                );
                 // P3-4: mark the result so a partial scrape is observable to the
                 // caller instead of looking identical to "no markdown found".
                 slot.error = Some(msg);

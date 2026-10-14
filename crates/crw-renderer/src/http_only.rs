@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use crw_core::Deadline;
 use crw_core::error::{CrwError, CrwResult};
+use crw_core::log_url::{LogErr, LogUrl, url_for_error};
 use crw_core::types::FetchResult;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -437,7 +438,8 @@ impl PageFetcher for HttpFetcher {
     ) -> CrwResult<FetchResult> {
         if deadline.expired() {
             return Err(CrwError::HttpError(format!(
-                "deadline expired before HTTP fetch of {url}"
+                "deadline expired before HTTP fetch of {}",
+                url_for_error(url)
             )));
         }
         let start = Instant::now();
@@ -625,7 +627,8 @@ impl PageFetcher for HttpFetcher {
                 Err(_) if use_proxy && (proxy_first || armed_mid_loop) && !direct_rescue_used => {
                     tracing::warn!(
                         "proxy attempt for {url} exhausted its budget while latched ({}ms); falling back to direct",
-                        remaining.as_millis()
+                        remaining.as_millis(),
+                        url = LogUrl(&url),
                     );
                     use_proxy = false;
                     direct_rescue_used = true;
@@ -651,13 +654,14 @@ impl PageFetcher for HttpFetcher {
                         // alike) rather than a genuinely dead target, this line is how an
                         // operator tells the two apart instead of the alert going quiet.
                         tracing::warn!(
-                            url,
+                            url = %LogUrl(&url),
                             "direct connect-timeout and proxy rescue both failed; \
-                             reporting target_unreachable (was: timeout)"
+                             reporting target_unreachable (was: timeout)",
                         );
                         return Err(CrwError::TargetUnreachable(format!(
-                            "Could not reach {url}: no response from the origin over \
-                             either egress"
+                            "Could not reach {}: no response from the origin over \
+                             either egress",
+                            url_for_error(url)
                         )));
                     }
                     return Err(CrwError::Timeout(remaining.as_millis() as u64));
@@ -668,7 +672,8 @@ impl PageFetcher for HttpFetcher {
                     tracing::debug!(
                         "HTTP {} from {url}, retrying (attempt {})",
                         r.status(),
-                        attempt + 1
+                        attempt + 1,
+                        url = LogUrl(&url),
                     );
                     drop(r);
                     attempt += 1;
@@ -695,7 +700,8 @@ impl PageFetcher for HttpFetcher {
                     let armed_by_header = challenge_header(r.headers()).is_some();
                     tracing::warn!(
                         "HTTP {} from {url} (origin rate-limited or header-announced challenge); retrying once via proxy (ratelimit_bypassed)",
-                        r.status()
+                        r.status(),
+                        url = LogUrl(&url),
                     );
                     drop(r);
                     // The proxy was armed mid-loop, so `proxy_first` is false and
@@ -756,7 +762,8 @@ impl PageFetcher for HttpFetcher {
                 {
                     tracing::warn!(
                         "HTTP {} from {url} via proxy while latched; falling back to direct",
-                        r.status()
+                        r.status(),
+                        url = LogUrl(&url),
                     );
                     drop(r);
                     use_proxy = false;
@@ -784,7 +791,8 @@ impl PageFetcher for HttpFetcher {
                     // unsuccessful, 407) is in its sources. Masks proxy userinfo.
                     tracing::warn!(
                         "proxy egress failed for {url} while latched ({}); falling back to direct",
-                        crw_core::error::reqwest_error_chain(e)
+                        crw_core::error::reqwest_error_chain(e),
+                        url = LogUrl(&url),
                     );
                     use_proxy = false;
                     direct_rescue_used = true;
@@ -793,7 +801,9 @@ impl PageFetcher for HttpFetcher {
                     if !use_relaxed && self.relaxed_client.is_some() && is_cert_error(&e) =>
                 {
                     tracing::warn!(
-                        "TLS verification failed for {url} ({e}); retrying once with relaxed TLS (tls_unverified)"
+                        "TLS verification failed for {url} ({e}); retrying once with relaxed TLS (tls_unverified)",
+                        url = LogUrl(&url),
+                        e = LogErr(&e),
                     );
                     use_relaxed = true;
                 }
@@ -825,7 +835,9 @@ impl PageFetcher for HttpFetcher {
                         && is_connection_failure(&e) =>
                 {
                     tracing::warn!(
-                        "direct egress could not reach {url} ({e}); retrying via proxy (egress_blocked)"
+                        "direct egress could not reach {url} ({e}); retrying via proxy (egress_blocked)",
+                        url = LogUrl(&url),
+                        e = LogErr(&e),
                     );
                     use_proxy = true;
                     // Deliberately narrower than this arm's own guard. Only a
@@ -868,7 +880,9 @@ impl PageFetcher for HttpFetcher {
                 {
                     tracing::debug!(
                         "transient HTTP error to {url} ({e}), retrying (attempt {})",
-                        attempt + 1
+                        attempt + 1,
+                        url = LogUrl(&url),
+                        e = LogErr(&e),
                     );
                     attempt += 1;
                     let backoff = HTTP_RETRY_BACKOFF.min(deadline.remaining());
@@ -901,9 +915,9 @@ impl PageFetcher for HttpFetcher {
                         // starts looking blackholed and this line is how an operator sees
                         // the 422s are ours, not the callers'.
                         tracing::warn!(
-                            url,
+                            url = %LogUrl(&url),
                             "direct connect-timeout and proxy attempt both failed; \
-                             reporting target_unreachable (was: http_error)"
+                             reporting target_unreachable (was: http_error)",
                         );
                     }
                     let unreachable = e.is_connect() && (!use_proxy || direct_connect_failed);
@@ -913,9 +927,12 @@ impl PageFetcher for HttpFetcher {
                     // arms name it themselves.
                     let msg = crw_core::error::reqwest_message(e);
                     return Err(if unreachable {
-                        CrwError::TargetUnreachable(format!("Could not reach {url}: {msg}"))
+                        CrwError::TargetUnreachable(format!(
+                            "Could not reach {}: {msg}",
+                            url_for_error(url)
+                        ))
                     } else {
-                        CrwError::HttpError(format!("{url}: {msg}"))
+                        CrwError::HttpError(format!("{}: {msg}", url_for_error(url)))
                     });
                 }
             }
@@ -1025,9 +1042,9 @@ impl PageFetcher for HttpFetcher {
                 .egress_latched_hosts
                 .set(eg.latched_hosts() as i64);
             tracing::info!(
-                url,
+                url = %LogUrl(&url),
                 status,
-                "direct egress hit an IP-reputation block; latching host to proxy-first"
+                "direct egress hit an IP-reputation block; latching host to proxy-first",
             );
         }
 
@@ -1235,10 +1252,10 @@ pub(crate) fn build_http_fetch_result(
         // hard error without climbing the ladder, so if a class of real
         // pages ever lands here it has to be visible in production.
         tracing::info!(
-            url,
+            url = %LogUrl(&url),
             content_type = content_type.as_deref().unwrap_or("none"),
             bytes = bytes.len(),
-            "binary body, returning unsupported content type without escalating"
+            "binary body, returning unsupported content type without escalating",
         );
         return Err(CrwError::UnsupportedContentType(format!(
             "{} ({} bytes): the body is binary, not HTML and not a PDF, \
@@ -3594,6 +3611,154 @@ mod tests {
             "got: {}",
             res.html
         );
+    }
+
+    /// Thread-local log capture, the same shape as `crw-server/tests/request_log.rs`.
+    #[derive(Clone, Default)]
+    struct CapturedLog(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for CapturedLog {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl CapturedLog {
+        fn install(&self) -> tracing::subscriber::DefaultGuard {
+            let writer = self.clone();
+            tracing::subscriber::set_default(
+                tracing_subscriber::fmt()
+                    .with_ansi(false)
+                    .with_max_level(tracing::Level::DEBUG)
+                    .with_writer(move || writer.clone())
+                    .finish(),
+            )
+        }
+
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    /// A target URL is logged as its origin plus a hash, never its path or
+    /// query. Needles are named by position: printing one would put the value
+    /// under test into the test output.
+    #[tokio::test]
+    async fn rate_limit_retry_log_names_the_origin_and_hash_not_the_path_or_query() {
+        let captured = CapturedLog::default();
+        let _guard = captured.install();
+        let origin = spawn_429_origin();
+        let proxy = spawn_ok_proxy("served via proxy after 429");
+        let fetcher = HttpFetcher {
+            client: reqwest::Client::new(),
+            relaxed_client: None,
+            has_static_proxy: true,
+            ratelimit_proxy_client: Some(
+                build_client("ua", Some(&proxy), std::time::Duration::from_secs(5), false).unwrap(),
+            ),
+            inject_stealth_headers: false,
+        };
+        let target = format!("{origin}p/s3cret-seg?token=t0k3n#frag-9");
+        fetcher
+            .fetch(
+                &target,
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(10_000),
+            )
+            .await
+            .expect("429 must be rescued through the armed proxy");
+
+        let log = captured.text();
+        let line = log
+            .lines()
+            .find(|l| l.contains("retrying once via proxy (ratelimit_bypassed)"))
+            .unwrap_or_else(|| panic!("no rate-limit retry line was logged"));
+        let expected = crw_core::log_url::LogUrl(&target).to_string();
+        assert!(
+            line.contains(&format!(
+                "HTTP 429 Too Many Requests from {expected} (origin"
+            )),
+            "line does not carry origin and hash: {line}"
+        );
+        assert!(line.contains("http://127.0.0.1:"), "{line}");
+        for (i, needle) in ["s3cret-seg", "t0k3n", "frag-9", "/p/"].iter().enumerate() {
+            assert!(!log.contains(needle), "needle #{i} leaked into the log");
+        }
+    }
+
+    /// The INFO line for a binary body, written by the response tail that both
+    /// fetchers share, carries origin and hash only.
+    #[test]
+    fn binary_body_log_line_carries_no_query() {
+        let captured = CapturedLog::default();
+        let _guard = captured.install();
+        let target = "https://files.example/dl/doc.bin?sig=t0k3n";
+        let bytes = b"PK\x03\x04\x00\x00\x00\x00";
+        let res = build_http_fetch_result(
+            target,
+            200,
+            Some("application/octet-stream"),
+            None,
+            target,
+            bytes,
+            1,
+            "http",
+        );
+        assert!(matches!(res, Err(CrwError::UnsupportedContentType(_))));
+        let log = captured.text();
+        let line = log
+            .lines()
+            .find(|l| l.contains("binary body, returning unsupported content type"))
+            .unwrap_or_else(|| panic!("no binary body line was logged"));
+        assert!(
+            line.contains(&format!("url={}", crw_core::log_url::LogUrl(target))),
+            "{line}"
+        );
+        assert!(line.contains("https://files.example (u:"), "{line}");
+        for (i, needle) in ["/dl/", "doc.bin", "t0k3n"].iter().enumerate() {
+            assert!(!log.contains(needle), "needle #{i} leaked into the log");
+        }
+    }
+
+    /// `Url::parse` accepts a literal space, and the log scrub ends a URL at
+    /// whitespace. The error text must therefore be built from a whitespace
+    /// free form of the URL, or the tail (`&token=...`) would survive the scrub.
+    #[tokio::test]
+    // Holds ENV_LOCK across awaits on purpose, like the redirect tests.
+    #[allow(clippy::await_holding_lock)]
+    async fn error_text_for_a_url_with_a_space_leaves_no_tail_after_the_scrub() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::set_var("CRW_ALLOW_LOOPBACK_FOR_TESTS", "1") };
+        clear_proxy_env();
+        let fetcher = HttpFetcher::new("crw-test", None, false);
+        // Port 1 is privileged: the connect is refused at once.
+        let res = fetcher
+            .fetch(
+                "http://127.0.0.1:1/foo bar&token=t0k3n",
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(5_000),
+            )
+            .await;
+        unsafe { std::env::remove_var("CRW_ALLOW_LOOPBACK_FOR_TESTS") };
+        let err = res.expect_err("nothing listens on port 1");
+        let raw = err.to_string();
+        assert!(
+            raw.contains("foo%20bar"),
+            "error text must hold the encoded URL: {raw}"
+        );
+        let scrubbed = crw_core::log_url::LogErr(&err).to_string();
+        for (i, needle) in ["foo", "bar", "t0k3n"].iter().enumerate() {
+            assert!(
+                !scrubbed.contains(needle),
+                "needle #{i} leaked past the scrub"
+            );
+        }
     }
 
     #[tokio::test]
