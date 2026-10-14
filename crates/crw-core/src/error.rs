@@ -158,14 +158,13 @@ mod tests {
             .proxy(proxy)
             .build()
             .unwrap()
-            .get("http://target.invalid/customer-path?token=t0ken")
+            .get("https://target.invalid/customer-path?token=t0ken")
             .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
             .unwrap_err();
 
         let chain = reqwest_error_chain(err);
-        println!("{chain}");
         assert!(
             chain.starts_with("error sending request: "),
             "outer layer missing or URL kept: {chain}"
