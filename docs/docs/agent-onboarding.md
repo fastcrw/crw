@@ -161,10 +161,10 @@ Agents must distinguish between different failure modes — some are permanent, 
 | 200 | Success | Process the response |
 | 400 | Bad request — invalid parameters or URL | Fix the request; do not retry as-is |
 | 401 | Invalid or missing API key | Check authentication; do not retry |
-| 402 | Credit exhausted (paid plan, auto-recharge stopped) | Alert the user; do not retry — top up credits first. Check `X-FASTCRW-Stop-Reason` header for the specific cause (`cap_reached`, `card_declined`, `action_required`, `no_payment_method`) |
+| 402 | Out of credits (`errorCode: "insufficient_credits"`) or a managed-LLM feature on the FREE plan (`errorCode: "llm_not_available"`) | Alert the user; do not retry. Branch on `errorCode`. When an enabled auto-recharge could not run, `X-FASTCRW-Stop-Reason` names the cause |
 | 404 | Resource not found (e.g. crawl ID does not exist) | Do not retry |
 | 422 | Unprocessable entity — URL is valid but target is unreachable or extraction failed | Log and skip; do not retry the same URL |
-| 429 | Rate limited **or** free-tier credit cap reached | Back off and retry after the `Retry-After` interval. If this is a free-tier credit cap (not a rate limit), the response body will explain — upgrade is required |
+| 429 | Rate or concurrency limited | Back off and retry after the `Retry-After` interval. On the legacy `/v2` surface only, a `429` carrying `X-FASTCRW-Credits-Available` means out of credits: do not retry |
 | 500 | Internal server error (renderer crash, internal error) | Retry once with exponential backoff; if persistent, reduce request complexity or contact support |
 | 502 | Bad gateway — upstream fetch error from the target site | Retry with exponential backoff; the target may be temporarily unavailable |
 | 503 | Service unavailable — a required subsystem (e.g. search) is down | Retry with exponential backoff |
@@ -174,24 +174,24 @@ Agents must distinguish between different failure modes — some are permanent, 
 
 These two codes have different meanings and require different handling:
 
-- **429** is used for both rate-limiting and the **free-tier lifetime credit cap**. Free credits are one-time and never reset, so once they are exhausted, retrying will not help — the user must upgrade.
-- **402** is used only when a **paid plan**'s auto-recharge was blocked (spending cap hit, card declined, bank SCA required, or no payment method on file). The response headers carry `X-FASTCRW-Stop-Reason`, `X-FASTCRW-Credits-Available`, and `X-FASTCRW-Upgrade-Url` to surface the exact cause.
+- **402** means the request cannot run until the account changes. `errorCode: "insufficient_credits"` is an exhausted balance (the FREE plan's one-time lifetime credits, or a paid plan's included and top-up credits); `errorCode: "llm_not_available"` is a managed-LLM feature on the FREE plan. Retrying will not help. The response headers carry `X-FASTCRW-Credits-Available` and `X-FASTCRW-Upgrade-Url`, plus `X-FASTCRW-Stop-Reason` when an enabled auto-recharge could not run.
+- **429** means slow down: a request-rate or concurrency limit. Honor `Retry-After`. The legacy Firecrawl-compatible `/v2` surface (root `/v2`, `/firecrawl/v2`, `compat.fastcrw.com`) still answers an exhausted balance with a `429` without an `errorCode`.
 
 :::note
-Stop-reason values (`cap_reached`, `card_declined`, `action_required`, `no_payment_method`) and the response headers listed above (`X-FASTCRW-Stop-Reason`, `X-FASTCRW-Credits-Available`, `X-FASTCRW-Upgrade-Url`) are SaaS billing internals — verify against the [fastcrw.com dashboard docs](https://fastcrw.com/docs) if exact values matter for your integration.
+Stop-reason values (`card_declined`, `action_required`, `no_payment_method`, `no_consent`, `error`) and the response headers listed above (`X-FASTCRW-Stop-Reason`, `X-FASTCRW-Credits-Available`, `X-FASTCRW-Upgrade-Url`) are SaaS billing internals; verify against the [fastcrw.com dashboard docs](https://fastcrw.com/docs) if exact values matter for your integration.
 :::
 
-Your agent should check the status code, not guess from the error message:
+Your agent should branch on `errorCode` and the status code, not guess from the error message:
 
 ```python
 if resp.status_code == 402:
-    stop_reason = resp.headers.get("X-FASTCRW-Stop-Reason", "unknown")
-    upgrade_url = resp.headers.get("X-FASTCRW-Upgrade-Url", "https://fastcrw.com/dashboard/billing")
-    raise RuntimeError(f"Credits exhausted (auto-recharge stop: {stop_reason}). Top up at {upgrade_url}")
-elif resp.status_code == 429:
-    # Could be rate-limit or free-tier cap — check body
     body = resp.json()
-    raise RuntimeError(f"Quota exceeded: {body.get('error')}")
+    stop_reason = resp.headers.get("X-FASTCRW-Stop-Reason")
+    upgrade_url = resp.headers.get("X-FASTCRW-Upgrade-Url", "https://fastcrw.com/dashboard/billing")
+    raise RuntimeError(f"{body.get('errorCode')} ({stop_reason or 'no auto-recharge'}): {body.get('error')} Top up at {upgrade_url}")
+elif resp.status_code == 429:
+    # Rate or concurrency limit: wait for Retry-After, then retry.
+    time.sleep(int(resp.headers.get("Retry-After", "2")))
 ```
 
 ## Handling JS-Gated Pages
