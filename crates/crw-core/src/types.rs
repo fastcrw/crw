@@ -842,10 +842,10 @@ pub struct ScrapeData {
     /// `None` (skipped when serializing) = a real page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block: Option<BlockOutcome>,
-    /// The renderer condemned this page as a wall no browser tier could clear
-    /// (`FetchResult.block`): every tier the ladder tried hit it, or a PDF
-    /// answered with a hard-block status skipped a ladder no browser could
-    /// help. Implies `block` is `Some`.
+    /// The renderer's verdict that no browser tier could have done better
+    /// (`FetchResult.block`): every tier the ladder tried hit a wall, or the PDF
+    /// gate skipped a ladder no browser could help (see `FetchResult.block`).
+    /// Implies `block` is `Some`.
     ///
     /// `/v2` needs this apart from `block`, because there a page served with a
     /// 4xx is a billed document even when `classify_block` labelled it, and
@@ -949,16 +949,31 @@ impl ScrapeData {
     /// page is a real verdict about the destination on every surface, and
     /// carving it out here would have created the cross-surface split this change
     /// exists to close.
+    ///
+    /// The unrenderable-PDF verdict (`BlockOutcome::unrenderable_pdf`) does not
+    /// outrank the status either: it says nothing about the body, only that the
+    /// origin answered a PDF URL with a hard-block status and no browser could
+    /// have done better. So the caller gets the origin's answer, body included,
+    /// as main gave it. And it skips the size bar: that request is refunded on
+    /// every surface whatever the size of the page that explains it.
     pub fn http_error(&self) -> Option<String> {
-        if self
+        let unrenderable_pdf = self
             .block
             .as_ref()
-            .is_some_and(|b| b.vendor != STRUCTURAL_FAILURE_VENDOR)
+            .is_some_and(BlockOutcome::is_unrenderable_pdf);
+        if !unrenderable_pdf
+            && self
+                .block
+                .as_ref()
+                .is_some_and(|b| b.vendor != STRUCTURAL_FAILURE_VENDOR)
         {
             return None;
         }
         let status = self.metadata.status_code;
-        if status < 400 || self.rendered_text_len()? >= ERROR_PAGE_MAX_TEXT {
+        if status < 400 {
+            return None;
+        }
+        if !unrenderable_pdf && self.rendered_text_len()? >= ERROR_PAGE_MAX_TEXT {
             return None;
         }
         Some(
@@ -1097,6 +1112,35 @@ pub struct BlockOutcome {
     pub reason: String,
 }
 
+/// The tail of `BlockOutcome::unrenderable_pdf`'s reason, and what identifies it.
+const UNRENDERABLE_PDF: &str = "on a PDF URL; no browser tier renders a PDF";
+
+impl BlockOutcome {
+    /// The verdict for a PDF URL the origin answered with a hard-block status.
+    ///
+    /// The renderer's PDF gate skips the browser ladder there, since no browser
+    /// renders a PDF. Before that gate this request went up the ladder anyway,
+    /// every browser failed on it, and it ended as a refunded error, so it is
+    /// still answered as a failure. It is not a claim that the body is an
+    /// anti-bot wall (an expired presigned link and a login page land here
+    /// too), so it says only what is known.
+    ///
+    /// `generic_block` is the vendor on purpose: it keeps the request refunded
+    /// on every surface that reads `block`, and the SaaS routing registry treats
+    /// it as neutral.
+    pub fn unrenderable_pdf(status: u16) -> Self {
+        Self {
+            vendor: "generic_block".to_string(),
+            reason: format!("HTTP {status} {UNRENDERABLE_PDF}"),
+        }
+    }
+
+    /// Whether this is the verdict `unrenderable_pdf` builds.
+    pub fn is_unrenderable_pdf(&self) -> bool {
+        self.vendor == "generic_block" && self.reason.ends_with(UNRENDERABLE_PDF)
+    }
+}
+
 /// `AntibotSignal::StructuralFailure`'s `class_name()`. Not a vendor: it is the
 /// "we got a page but there is nothing usable in it" verdict, which the classifier
 /// keeps inside `AntibotSignal` because `is_blocked()` drives renderer escalation.
@@ -1141,6 +1185,10 @@ impl BlockOutcome {
         // exist.
         if self.vendor == STRUCTURAL_FAILURE_VENDOR || self.vendor == PARKED_DOMAIN_VENDOR {
             format!("No usable content could be extracted ({})", self.reason)
+        } else if self.is_unrenderable_pdf() {
+            // Not a wall verdict: the origin's status on a document no browser
+            // renders. Say exactly that and nothing about anti-bot.
+            self.reason.clone()
         } else {
             format!("Blocked by anti-bot ({}): {}", self.vendor, self.reason)
         }
@@ -1412,6 +1460,45 @@ mod tests {
         d.raw_html = None;
         d.warning = None;
         d
+    }
+
+    /// The PDF gate's verdict says what is known (the origin's status on a PDF
+    /// URL) and claims no anti-bot wall: an expired presigned link and a login
+    /// page land on it too.
+    #[test]
+    fn unrenderable_pdf_verdict_claims_no_wall() {
+        let v = BlockOutcome::unrenderable_pdf(403);
+        assert!(v.is_unrenderable_pdf());
+        assert_eq!(v.vendor, "generic_block");
+        assert_eq!(
+            v.message(),
+            "HTTP 403 on a PDF URL; no browser tier renders a PDF"
+        );
+        let wall = BlockOutcome {
+            vendor: "generic_block".into(),
+            reason: "anti-bot wall that no renderer tier could clear".into(),
+        };
+        assert!(!wall.is_unrenderable_pdf());
+        assert!(wall.message().starts_with("Blocked by anti-bot"));
+    }
+
+    /// `/v1` answers the PDF verdict through `http_error`, body kept, as main
+    /// did, and whatever the page's size: the request stays refunded.
+    #[test]
+    fn http_error_claims_an_unrenderable_pdf_whatever_its_size() {
+        let mut d = page(403, 10 * ERROR_PAGE_MAX_TEXT);
+        d.warning = Some("Target returned 403 Forbidden".into());
+        d.block = Some(BlockOutcome::unrenderable_pdf(403));
+        assert_eq!(
+            d.http_error().as_deref(),
+            Some("Target returned 403 Forbidden")
+        );
+        // A real wall verdict still outranks the status.
+        d.block = Some(BlockOutcome {
+            vendor: "generic_block".into(),
+            reason: "anti-bot wall that no renderer tier could clear".into(),
+        });
+        assert_eq!(d.http_error(), None);
     }
 
     #[test]
@@ -5142,11 +5229,12 @@ pub struct FetchResult {
     pub screenshot: Option<String>,
     /// A wall verdict the renderer already reached, carried forward as data.
     ///
-    /// Set in exactly two situations, both a wall no browser tier could clear:
-    /// the JS ladder ran and the best body it got back is a generic anti-bot
-    /// wall (`detector::looks_like_generic_bot_wall`), or the URL is a PDF, no
-    /// browser renders one, and the PDF gate skipped the ladder that the
-    /// origin's hard-block status (401, 403, 429, 503, 52x) would have run.
+    /// Set in exactly two places. The ladder tail sets it when the JS ladder ran
+    /// and the best body it got back is a generic anti-bot wall
+    /// (`detector::looks_like_generic_bot_wall`). The PDF gate, which skips the
+    /// ladder for a 4xx/5xx PDF URL because no browser renders a PDF, sets the
+    /// same verdict for that same wall, and `BlockOutcome::unrenderable_pdf`
+    /// for any other body under a hard-block status (401, 403, 429, 503, 52x).
     /// The tail's predicate is much
     /// narrower than `classify_block` and is deliberately not run on every
     /// page, so the verdict has to travel rather than be recomputed at the

@@ -542,10 +542,10 @@ fn demote_wall_to_ladder_failure(
     }
 }
 
-/// The verdict for a wall no browser tier could clear: either every tier the
-/// ladder ran came back with it, or the PDF gate skipped a ladder that a
-/// hard-block status would have run and that no browser could have cleared,
-/// since none renders a PDF.
+/// The verdict for a wall no browser tier could clear: every tier the ladder
+/// ran came back with it, or the PDF gate skipped the ladder and the HTTP body
+/// is that same generic wall. (A PDF with a hard-block status and any other
+/// body gets `BlockOutcome::unrenderable_pdf` instead.)
 ///
 /// The ladder tail used to express it as `Err(CrwError::HttpError(..))`, which
 /// `crw-server` maps to 502. A target refusing us is not our gateway failing,
@@ -2737,17 +2737,26 @@ impl FallbackRenderer {
                     // Skipping the ladder must not change what the caller is
                     // charged. A hard-block status (401, 403, 429, 503, 52x)
                     // used to send this request up the whole ladder, where no
-                    // browser could clear it (none renders a PDF) and it ended
-                    // as a refunded error. Carry the verdict the tail carries
-                    // for a wall no tier could clear, so every surface still
-                    // answers it that way. Keyed on the status, not the body:
-                    // a deny page's wording varies by vendor (hyatt's Akamai
-                    // "Your browser did something unexpected" matches no phrase
-                    // list), and it is the status that sent it up the ladder.
-                    // Any other status (a 404 or 410 page, a 500) is returned
-                    // exactly as main returns it.
-                    if is_hard_block_status(result.status_code) {
+                    // browser could render the PDF; in prod it ended as a
+                    // refunded 504 when the deadline ran out (hyatt's 403s,
+                    // measured), which nothing in the code guaranteed. So it is
+                    // still answered as a failure, refunded on every surface.
+                    //
+                    // Its verdict says only what is known: the origin's status
+                    // on a PDF URL. Keyed on the status, not on body phrases, so
+                    // an Akamai "Your browser did something unexpected" page, an
+                    // expired presigned link and a login page all qualify; `/v1`
+                    // answers them as `http_error` with the body, as main did.
+                    // A body that IS the generic wall the ladder tail condemns
+                    // gets the tail's own verdict, under any 4xx/5xx status, as
+                    // it did when the ladder ran. Anything else (a site's 404 or
+                    // 410 page, a 500) is returned exactly as main returns it.
+                    if is_generic_bot_wall {
                         result.block = Some(unclearable_wall_verdict());
+                    } else if is_hard_block_status(result.status_code) {
+                        result.block = Some(crw_core::types::BlockOutcome::unrenderable_pdf(
+                            result.status_code,
+                        ));
                     }
                 }
 
