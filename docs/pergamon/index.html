@@ -399,6 +399,83 @@ publishes.</p>
 </tbody></table>
 <p>If a source requires attribution, <code>attribution_text</code> is how you satisfy it without
 hard-coding anything per provider.</p>
+<h2 id="batch-and-discovery-the-pergamon-call">Batch and discovery: the <code>pergamon</code> call</h2>
+<p>Alongside the two REST endpoints there is a batch surface, and it is deliberately
+the same shape Firecrawl uses for Alexandria: <code>POST /v2/scrape</code> with a <code>pergamon</code>
+array instead of a <code>url</code>. Up to <strong>ten</strong> calls per request, each naming a provider,
+a capability and its options.</p>
+<pre data-lang="bash"><code class="language-bash">curl https://api.fastcrw.com/v2/scrape \
+  -H &quot;Authorization: Bearer $FASTCRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+  &quot;pergamon&quot;: [
+    { &quot;provider&quot;: &quot;openalex&quot;, &quot;capability&quot;: &quot;works&quot;,
+      &quot;options&quot;: { &quot;search&quot;: &quot;web scraping&quot;, &quot;per-page&quot;: 2 } },
+    { &quot;provider&quot;: &quot;sec&quot;, &quot;capability&quot;: &quot;companyconcept&quot;,
+      &quot;options&quot;: { &quot;cik&quot;: &quot;0000320193&quot;, &quot;concept&quot;: &quot;Revenues&quot; } }
+  ]
+}'</code></pre>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;request_id&quot;: &quot;fP4Nxx4Urn-H06AxscbM_&quot;,
+  &quot;data&quot;: {
+    &quot;pergamon&quot;: [
+      { &quot;provider&quot;: &quot;openalex&quot;, &quot;capability&quot;: &quot;works&quot;, &quot;pergamonId&quot;: &quot;…&quot;,
+        &quot;creditsCost&quot;: 1, &quot;data&quot;: { }, &quot;provenance&quot;: { } },
+      { &quot;provider&quot;: &quot;sec&quot;, &quot;capability&quot;: &quot;companyconcept&quot;, &quot;pergamonId&quot;: &quot;…&quot;,
+        &quot;creditsCost&quot;: 1, &quot;data&quot;: { }, &quot;provenance&quot;: { } }
+    ],
+    &quot;creditsCost&quot;: 2
+  }
+}</code></pre>
+<p>A failing call does not fail the batch. That item carries
+<code>error: { message, status, code }</code> instead of <code>data</code>, costs nothing, and the rest
+of the batch still returns — one bad provider must not throw away the nine that
+worked. The exception is running out of credits, which ends the batch with a
+single <code>402</code>.</p>
+<p>Calls run one after another, not in parallel. Ten simultaneous requests to a small
+government endpoint from one IP is not a client we want to be.</p>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">If you already call Firecrawl's Alexandria, the request is the same with one word
+changed: `alexandria` becomes `pergamon`, and the pseudo-provider `firecrawl`
+becomes `fastcrw`. Provider and capability names are our own.</div></div><h3 id="find-tools">find-tools</h3>
+<p>The same call carries discovery, through the pseudo-provider <code>fastcrw</code>. It is free
+and it costs no credits.</p>
+<pre data-lang="bash"><code class="language-bash">curl https://api.fastcrw.com/v2/scrape \
+  -H &quot;Authorization: Bearer $FASTCRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;pergamon&quot;:[{&quot;provider&quot;:&quot;fastcrw&quot;,&quot;capability&quot;:&quot;find-tools&quot;,
+       &quot;options&quot;:{&quot;level&quot;:&quot;providers&quot;,&quot;categories&quot;:[&quot;Research&quot;],&quot;limit&quot;:5}}]}'</code></pre>
+<p>Three levels, each item carrying a <code>next</code> you can feed straight back in:</p>
+<table>
+<thead>
+<tr>
+<th><code>level</code></th>
+<th>Returns</th>
+<th>Each item&#39;s <code>next</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>categories</code> (default)</td>
+<td>Subjects, with how many providers each has</td>
+<td>the providers in it</td>
+</tr>
+<tr>
+<td><code>providers</code></td>
+<td>Provider, description, licence, attribution, tool count</td>
+<td>its tools</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td>Capability, credit cost, required and optional options, provenance</td>
+<td><strong>the call itself</strong></td>
+</tr>
+</tbody></table>
+<p>Options: <code>level</code>, <code>limit</code> (max 200), <code>offset</code>, <code>categories</code>, <code>providers</code>,
+<code>capabilities</code>, <code>query</code>. The response&#39;s top-level <code>next</code> pages; it is <code>null</code> on the
+last page. <code>catalogueVersion</code> is a hash of the whole registry, so you can tell
+whether anything moved between two walks without diffing the pages.</p>
+<p>A tool item&#39;s <code>next</code> is an executable call with its required options stubbed, so
+walking the catalogue to the bottom hands you the request to make.</p>
 <h2 id="credits">Credits</h2>
 <p>One credit per call, flat, whatever the provider. The catalog endpoint is free.</p>
 <p>Nothing is billed for a failure: if the upstream returns an error, times out, or
