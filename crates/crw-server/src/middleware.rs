@@ -1,10 +1,55 @@
 use axum::Json;
-use axum::extract::Request;
+use axum::extract::{MatchedPath, Request};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use crw_core::types::ApiResponse;
 use std::sync::Arc;
+use std::time::Instant;
+
+use crate::error::ErrorCode;
+
+/// Routes polled on a timer: liveness, readiness and the Prometheus endpoints.
+/// [`request_log`] skips them, since at a probe every few seconds they would
+/// outnumber real traffic and carry no signal.
+pub fn is_probe_route(route: &str) -> bool {
+    matches!(route, "/health" | "/ready" | "/metrics") || route.starts_with("/metrics/")
+}
+
+/// One line per request, written when the response is ready: method, the
+/// matched route template, status, latency and, for an error envelope, its
+/// `errorCode`. 5xx at WARN, everything else at INFO. Probes are logged only
+/// when they fail, so a healthy poll costs no line and a failing one is seen.
+///
+/// The route is axum's `MatchedPath` (`/v1/crawl/{id}`), never the raw URI:
+/// query strings and target URLs can carry customer tokens. No headers, no
+/// bodies. Must be installed with `Router::layer` so routing has already run
+/// and `MatchedPath` is in the request extensions.
+pub async fn request_log(req: Request, next: Next) -> Response {
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|p| p.as_str().to_owned());
+    let probe = route.as_deref().is_some_and(is_probe_route);
+    let method = req.method().clone();
+    let started = Instant::now();
+    let res = next.run(req).await;
+    if probe && !res.status().is_server_error() {
+        return res;
+    }
+
+    let latency_ms = started.elapsed().as_millis() as u64;
+    let status = res.status().as_u16();
+    let route = route.as_deref().unwrap_or("<unmatched>");
+    // `Option` records nothing when `None`, so a success line has no field.
+    let error_code = res.extensions().get::<ErrorCode>().map(|c| c.0);
+    if res.status().is_server_error() {
+        tracing::warn!(%method, route, status, latency_ms, error_code, "request failed");
+    } else {
+        tracing::info!(%method, route, status, latency_ms, error_code, "request");
+    }
+    res
+}
 
 /// Constant-time byte comparison to prevent timing attacks.
 /// Does not leak the length of valid keys via timing side-channels:

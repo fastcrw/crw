@@ -5,6 +5,12 @@ use axum::response::{IntoResponse, Response};
 use crw_core::error::CrwError;
 use crw_core::types::ApiResponse;
 
+/// The `errorCode` an error envelope carries, attached to the response's
+/// extensions (never sent on the wire) so the request log can name the reason
+/// for a failure without parsing the body.
+#[derive(Debug, Clone, Copy)]
+pub struct ErrorCode(pub &'static str);
+
 /// Wrapper to implement IntoResponse for CrwError in the server crate.
 pub struct AppError(pub CrwError);
 
@@ -52,9 +58,11 @@ impl IntoResponse for AppError {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        let error_code = self.0.error_code().to_string();
-        let body = ApiResponse::<()>::err_with_code(self.0.to_string(), error_code);
-        (status, Json(body)).into_response()
+        let error_code = self.0.error_code();
+        let body = ApiResponse::<()>::err_with_code(self.0.to_string(), error_code.to_string());
+        let mut res = (status, Json(body)).into_response();
+        res.extensions_mut().insert(ErrorCode(error_code));
+        res
     }
 }
 

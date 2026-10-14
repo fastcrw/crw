@@ -26,7 +26,7 @@ use axum::response::{IntoResponse, Response};
 use crw_core::error::CrwError;
 use crw_core::types::ApiResponse;
 
-use crate::error::AppError;
+use crate::error::{AppError, ErrorCode};
 
 pub struct V2Error(pub CrwError);
 
@@ -130,7 +130,9 @@ impl IntoResponse for V2Error {
         let mut body =
             ApiResponse::<()>::err_with_code(self.0.to_string(), self.0.error_code().to_string());
         body.code = firecrawl_code(&self.0).map(str::to_string);
-        (status, Json(body)).into_response()
+        let mut res = (status, Json(body)).into_response();
+        res.extensions_mut().insert(ErrorCode(self.0.error_code()));
+        res
     }
 }
 
