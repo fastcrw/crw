@@ -188,6 +188,14 @@ pub(crate) enum V2Verdict {
 /// with the wall text as content, so it is `Blocked` whatever the origin's
 /// status was. Firecrawl would return it as a billed document; this is the
 /// second deliberate deviation recorded in `conformance/FIRECRAWL-DIFF.md`.
+///
+/// The renderer also sets the flag for a PDF URL it answered without the
+/// browser ladder (no browser renders a PDF) when the origin's status is a
+/// hard-block status (401, 403, 429, 503, 52x) or the body is a generic wall.
+/// Before that shortcut those requests went up the ladder and, in prod, ended
+/// as a refunded 504, so they are `Blocked` too; the error then states the
+/// status on a PDF URL rather than an anti-bot wall. That is the third
+/// deviation recorded there.
 pub(crate) fn v2_verdict(
     status_code: u16,
     block: Option<&crw_core::types::BlockOutcome>,

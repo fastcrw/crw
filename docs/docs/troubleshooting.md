@@ -413,13 +413,13 @@ if data["balance"] < 100:
 | `target_unreachable` | 422 | DNS failure, connection refused, host down |
 | `extraction_error` | 422 | LLM extraction failed or CSS/XPath selector invalid |
 | `unsupported_content_type` | 422 | The origin answered with a body that is neither a web page nor a PDF (an office document, an image, an archive). Not retryable: no renderer turns one into a page |
-| `http_error` | 502, or 200 with `success: false` | The origin answered with a `>= 400` status and what came back is its error page. The body is kept in `data` so you can read the error page and `metadata.statusCode`. A large page served under an error status is still returned as a success — some sites answer 403/404 while serving the real content. If the page is also recognised as an anti-bot wall, `anti_bot` wins instead and the body is cleared |
+| `http_error` | 502, or 200 with `success: false` | The origin answered with a `>= 400` status and what came back is its error page. The body is kept in `data` so you can read the error page and `metadata.statusCode`. A large page served under an error status is still returned as a success: some sites answer 403/404 while serving the real content. If the page is also recognised as an anti-bot wall, `anti_bot` wins instead and the body is cleared. On a URL whose path names a PDF, a 401, 403, 429, 503 or 52x is always `http_error` with `success: false` and the body kept, whatever the page's size: no browser tier renders a PDF, so nothing could have done better |
 | `no_usable_content` | 200 with `success: false` | The fetch worked and produced nothing you asked for — a parked domain, an un-hydrated JS shell, an error stub, an oversized PDF the decompression-bomb guard refused, or any requested format that came back empty. Not an anti-bot block |
 | `timeout` | 504 | Engine or upstream search timed out |
 | `rate_limited` | 429 | RPM rate limit (engine-level) |
 | `search_disabled` | 503 | `/v1/search` called with no search backend configured |
 | `not_found` | 404 | Unknown endpoint or crawl job ID does not exist |
-| `anti_bot` | 200 | Anti-bot wall detected and no renderer tier could clear it. Always `success: false`, and the page body is cleared. Detect via `errorCode: "anti_bot"`, never via the HTTP status: the request reached the target and the target refused it, so this is not a gateway failure and is never billed |
+| `anti_bot` | 200 | Anti-bot wall detected and no renderer tier could clear it. On a URL whose path names a PDF, where no browser tier can render the document, a generic wall is answered this way under any 4xx/5xx status. Always `success: false`, and the page body is cleared. Detect via `errorCode: "anti_bot"`, never via the HTTP status: the request reached the target and the target refused it, so this is not a gateway failure and is never billed |
 | `renderer_error` | 500 | CDP browser internal error |
 | `internal_error` | 500 | Unexpected engine failure |
 

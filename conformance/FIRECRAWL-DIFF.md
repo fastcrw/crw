@@ -104,9 +104,30 @@ sent. That class used to reach the caller as a 500 `SCRAPE_ALL_ENGINES_FAILED`,
 which was never billed, and following Firecrawl here would start charging for a
 page we could not get past. Only a wall the ladder itself condemned qualifies:
 `classify_block`'s own verdict on a 4xx page that never went through the ladder
-is still a document, as above. Pinned by
+is still a document, as above, except on a PDF URL (next). Pinned by
 `v2_verdict::unclearable_wall_on_a_403_is_blocked_not_a_document` and
 `classify_generic_block_on_a_403_without_the_flag_is_still_a_document`.
+
+**A PDF URL refused with a hard-block status fails; Firecrawl bills it.**
+
+Firecrawl answers a 401, 403, 429, 503 or 52x the same way on any URL: HTTP 200
+`success: true` with the origin's error page as content, billed. On a URL whose
+path names a PDF we answer HTTP 200 `{success: false, data, error}`, body
+cleared, with `error` set to `HTTP 403 on a PDF URL; no browser tier renders a
+PDF`, and nobody is billed. A body that is a generic anti-bot wall gets the same
+answer under any 4xx/5xx status, with an `error` that names the wall.
+
+No browser renders a PDF, so the engine answers these without the browser
+ladder. Before it did, a hard-block status on a PDF sent the request up that
+ladder anyway; every tier failed, and in prod it ended as a refunded 504 when
+the deadline ran out (measured on one host's document CDN, not something the
+code guaranteed). Answering it as a billed document would start charging for
+requests that were refunded. On `/v1` the same request is `http_error`,
+`success: false`, with the body kept. A PDF URL answered with any other status
+and a body that is not a wall (a site's own 404 page) is still a document.
+Pinned by `a_pdf_with_a_hard_block_status_is_refunded_without_claiming_a_wall`,
+`a_pdf_wall_under_a_404_is_answered_like_a_wall_no_tier_could_clear` and
+`a_genuine_pdf_404_is_answered_as_before` in `crates/crw-server/tests/anti_bot_wall.rs`.
 
 ---
 
