@@ -271,6 +271,7 @@ async fn a_pdf_with_a_hard_block_status_is_refunded_without_claiming_a_wall() {
             keys.sort_unstable();
             assert_eq!(keys, ["data", "error", "success"], "{name} {route}: {body}");
             assert_eq!(body["success"], false, "{name} {route}: {body}");
+            assert!(body["data"].get("markdown").is_none(), "{name} {route}");
             assert_eq!(body["data"]["metadata"]["creditsUsed"], 0, "{name} {route}");
             let error = body["error"].as_str().unwrap_or_default();
             assert_eq!(
