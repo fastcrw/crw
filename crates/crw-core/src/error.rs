@@ -173,8 +173,13 @@ mod tests {
             chain.len() > "error sending request: ".len(),
             "no cause after the outer layer: {chain}"
         );
-        for secret in ["pr0xy-s3cret", "proxyuser", "customer-path", "t0ken"] {
-            assert!(!chain.contains(secret), "{secret} leaked: {chain}");
+        // The message names the needle by position only: printing it or the
+        // chain would put the very value under test into the test output.
+        for (i, needle) in ["pr0xy-s3cret", "proxyuser", "customer-path", "t0ken"]
+            .iter()
+            .enumerate()
+        {
+            assert!(!chain.contains(needle), "needle #{i} leaked into the chain");
         }
     }
 }
