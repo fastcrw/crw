@@ -432,7 +432,7 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
             tracing::warn!(
                 url,
                 reason = %verdict.reason,
-                "Crawl: anti-bot wall no renderer tier could clear"
+                "Crawl: no browser tier could do better for this page, not crawled"
             );
             let mut page = failed_page(&url, fetch_result.status_code, verdict.reason.clone());
             page.block = Some(verdict);
