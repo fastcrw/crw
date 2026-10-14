@@ -127,6 +127,87 @@ publishes.
 If a source requires attribution, `attribution_text` is how you satisfy it without
 hard-coding anything per provider.
 
+## Batch and discovery: the `pergamon` call
+
+Alongside the two REST endpoints there is a batch surface, and it is deliberately
+the same shape Firecrawl uses for Alexandria: `POST /v2/scrape` with a `pergamon`
+array instead of a `url`. Up to **ten** calls per request, each naming a provider,
+a capability and its options.
+
+```bash
+curl https://api.fastcrw.com/v2/scrape \
+  -H "Authorization: Bearer $FASTCRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "pergamon": [
+    { "provider": "openalex", "capability": "works",
+      "options": { "search": "web scraping", "per-page": 2 } },
+    { "provider": "sec", "capability": "companyconcept",
+      "options": { "cik": "0000320193", "concept": "Revenues" } }
+  ]
+}'
+```
+
+```json
+{
+  "success": true,
+  "request_id": "fP4Nxx4Urn-H06AxscbM_",
+  "data": {
+    "pergamon": [
+      { "provider": "openalex", "capability": "works", "pergamonId": "…",
+        "creditsCost": 1, "data": { }, "provenance": { } },
+      { "provider": "sec", "capability": "companyconcept", "pergamonId": "…",
+        "creditsCost": 1, "data": { }, "provenance": { } }
+    ],
+    "creditsCost": 2
+  }
+}
+```
+
+A failing call does not fail the batch. That item carries
+`error: { message, status, code }` instead of `data`, costs nothing, and the rest
+of the batch still returns — one bad provider must not throw away the nine that
+worked. The exception is running out of credits, which ends the batch with a
+single `402`.
+
+Calls run one after another, not in parallel. Ten simultaneous requests to a small
+government endpoint from one IP is not a client we want to be.
+
+:::note
+If you already call Firecrawl's Alexandria, the request is the same with one word
+changed: `alexandria` becomes `pergamon`, and the pseudo-provider `firecrawl`
+becomes `fastcrw`. Provider and capability names are our own.
+:::
+
+### find-tools
+
+The same call carries discovery, through the pseudo-provider `fastcrw`. It is free
+and it costs no credits.
+
+```bash
+curl https://api.fastcrw.com/v2/scrape \
+  -H "Authorization: Bearer $FASTCRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"pergamon":[{"provider":"fastcrw","capability":"find-tools",
+       "options":{"level":"providers","categories":["Research"],"limit":5}}]}'
+```
+
+Three levels, each item carrying a `next` you can feed straight back in:
+
+| `level` | Returns | Each item's `next` |
+| --- | --- | --- |
+| `categories` (default) | Subjects, with how many providers each has | the providers in it |
+| `providers` | Provider, description, licence, attribution, tool count | its tools |
+| `tools` | Capability, credit cost, required and optional options, provenance | **the call itself** |
+
+Options: `level`, `limit` (max 200), `offset`, `categories`, `providers`,
+`capabilities`, `query`. The response's top-level `next` pages; it is `null` on the
+last page. `catalogueVersion` is a hash of the whole registry, so you can tell
+whether anything moved between two walks without diffing the pages.
+
+A tool item's `next` is an executable call with its required options stubbed, so
+walking the catalogue to the bottom hands you the request to make.
+
 ## Credits
 
 One credit per call, flat, whatever the provider. The catalog endpoint is free.
