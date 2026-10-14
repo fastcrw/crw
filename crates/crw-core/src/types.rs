@@ -1119,9 +1119,10 @@ impl BlockOutcome {
     /// The verdict for a PDF URL the origin answered with a hard-block status.
     ///
     /// The renderer's PDF gate skips the browser ladder there, since no browser
-    /// renders a PDF. Before that gate this request went up the ladder anyway,
-    /// every browser failed on it, and it ended as a refunded error, so it is
-    /// still answered as a failure. It is not a claim that the body is an
+    /// renders a PDF. Before that gate this request went up the ladder anyway;
+    /// in prod it ended as a refunded 504 when the deadline ran out (measured,
+    /// not guaranteed by the code), so it is still answered as a refunded
+    /// failure. It is not a claim that the body is an
     /// anti-bot wall (an expired presigned link and a login page land here
     /// too), so it says only what is known.
     ///
@@ -5234,7 +5235,9 @@ pub struct FetchResult {
     /// (`detector::looks_like_generic_bot_wall`). The PDF gate, which skips the
     /// ladder for a 4xx/5xx PDF URL because no browser renders a PDF, sets the
     /// same verdict for that same wall, and `BlockOutcome::unrenderable_pdf`
-    /// for any other body under a hard-block status (401, 403, 429, 503, 52x).
+    /// for any other body under a hard-block status (`is_hard_block_status`;
+    /// in practice 401, 403, 429 or 503). Only in auto mode: `renderJs` set, a
+    /// renderer pin or no browser tier means no gate.
     /// The tail's predicate is much
     /// narrower than `classify_block` and is deliberately not run on every
     /// page, so the verdict has to travel rather than be recomputed at the
