@@ -61,16 +61,16 @@ impl LlmProvider {
         match self {
             LlmProvider::Anthropic => vec![
                 (
-                    "claude-sonnet-4-20250514",
-                    "Claude Sonnet 4 (Recommended, $3/$15 per M tokens)",
+                    "claude-sonnet-4-6",
+                    "Claude Sonnet 4.6 (Recommended, $3/$15 per M tokens)",
                 ),
                 (
-                    "claude-haiku-4-5-20250514",
-                    "Claude Haiku 4.5 (Fast & cheap, $1/$5 per M tokens)",
+                    "claude-haiku-5-5",
+                    "Claude Haiku 5.5 (Fast & cheap, $0.10/$0.50 per M tokens up to 100K prompt tokens)",
                 ),
                 (
-                    "claude-opus-4-20250514",
-                    "Claude Opus 4 (Most capable, $15/$75 per M tokens)",
+                    "claude-opus-5-5",
+                    "Claude Opus 5.5 (Most capable, $4/$20 per M tokens)",
                 ),
             ],
             LlmProvider::OpenAI => vec![
@@ -213,7 +213,7 @@ pub async fn run() -> Result<Option<LlmSetupResult>, SetupError> {
 fn prompt_provider() -> Result<LlmProvider, SetupError> {
     let items = vec![
         format!(
-            "{}\n      • Best reasoning, great for summaries\n      • Models: Claude Sonnet 4, Haiku, Opus",
+            "{}\n      • Best reasoning, great for summaries\n      • Models: Claude Sonnet 4.6, Haiku 5.5, Opus 5.5",
             style("Anthropic (Claude) - Recommended").bold()
         ),
         format!(
@@ -364,4 +364,17 @@ fn prompt_azure_version() -> Result<String, SetupError> {
         .map_err(ui::handle_dialoguer_error)?;
 
     Ok(version.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anthropic_wizard_default_is_the_config_default() {
+        assert_eq!(
+            LlmProvider::Anthropic.default_models()[0].0,
+            crw_core::config::LlmConfig::default().model
+        );
+    }
 }

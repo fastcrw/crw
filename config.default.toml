@@ -213,7 +213,7 @@ always_run = false
 # [extraction.llm]
 # provider = "anthropic"        # "anthropic" | "openai" | "openai-responses" | "deepseek" | "azure" | "openai-compatible"
 # api_key = "sk-..."            # or use CRW_EXTRACTION__LLM__API_KEY env var
-# model = "claude-sonnet-4-20250514"
+# model = "claude-sonnet-4-6"
 # max_tokens = 4096
 # base_url = "https://custom-endpoint.example.com"  # optional, for OpenAI-compatible APIs
 # max_concurrency = 4           # bound for LLM-call fan-out (now enforced; was previously unbounded)

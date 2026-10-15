@@ -1051,7 +1051,7 @@ mod tests {
             "--llm-key",
             "sk-test",
             "--llm-model",
-            "claude-sonnet-4-20250514",
+            "claude-sonnet-5-5",
             "--llm-base-url",
             "https://api.anthropic.com",
             "https://example.com",
@@ -1059,7 +1059,7 @@ mod tests {
         .unwrap();
         assert_eq!(args.llm_provider.as_deref(), Some("anthropic"));
         assert_eq!(args.llm_key.as_deref(), Some("sk-test"));
-        assert_eq!(args.llm_model.as_deref(), Some("claude-sonnet-4-20250514"));
+        assert_eq!(args.llm_model.as_deref(), Some("claude-sonnet-5-5"));
         assert_eq!(
             args.llm_base_url.as_deref(),
             Some("https://api.anthropic.com")
