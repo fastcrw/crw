@@ -1,5 +1,9 @@
 # Errors and Warnings
 
+:::note
+**Behaviour change (2026-10):** on the cloud API, running out of credits now answers `402 Payment Required` with `errorCode: "insufficient_credits"` instead of `429`. This applies to `/v1` and every surface except the legacy Firecrawl-compatible `/v2` (root `/v2`, `/firecrawl/v2` and `compat.fastcrw.com`), which keeps the credit `429` without an `errorCode`. Branch on `errorCode`, with the HTTP status as a fallback.
+:::
+
 ## Response semantics
 
 - `success: true` means the pipeline produced usable page content.
@@ -25,7 +29,8 @@ You need both to debug real scraping failures.
 | 401 | Invalid or missing API key |
 | 404 | Endpoint not found |
 | 422 | Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (`unsupported_content_type`) |
-| 429 | Rate limit or credit quota exceeded |
+| 402 | Cloud only: the credit balance cannot cover the request (`errorCode: "insufficient_credits"`), or a managed-LLM feature was requested on the FREE plan (`errorCode: "llm_not_available"`) |
+| 429 | Request-rate or concurrency limit exceeded (on the legacy `/v2` surface, also an exhausted credit balance) |
 | 502 | Engine internal error |
 | 503 | Server at capacity |
 | 504 | Request timed out |
@@ -38,7 +43,8 @@ You need both to debug real scraping failures.
 | HTTP `400` | Your request body is invalid | Fix fields, selectors, or schema |
 | HTTP `422` | The request shape is valid JSON but semantically invalid | Check format names, schema, or extraction config |
 | `unsupported_content_type` | The origin served an office document, image or archive rather than a page | Fetch the file yourself, or point the request at a PDF or an HTML page |
-| HTTP `429` | Rate limit or credit ceiling hit | Back off and honor `Retry-After` |
+| HTTP `402` | Out of credits (`insufficient_credits`) or a paid-plan feature on the FREE plan (`llm_not_available`) | Do not retry; top up, upgrade or enable auto-recharge |
+| HTTP `429` | Request-rate or concurrency limit hit | Back off and honor `Retry-After` |
 | HTTP `502` / `504` | Upstream or timeout issue | Retry with backoff |
 
 ## Common engine errors
@@ -55,6 +61,15 @@ You need both to debug real scraping failures.
 | `summary` format requires LLM config | `formats: ["summary"]` sent without a server-side `[extraction.llm]` block and without per-request `llmApiKey` |
 | Key header required | Server is in key-required mode (`require_byok_header`) and the request lacks both the header and `llmApiKey` |
 | No JS renderer available | `renderJs: true` but no CDP browser is configured |
+
+## Cloud-only error codes
+
+The managed cloud adds these `errorCode` values on top of the engine's own. Self-hosted instances have no billing layer and never send them.
+
+| `errorCode` | HTTP | When it happens |
+| --- | --- | --- |
+| `insufficient_credits` | 402 | The credit balance cannot cover the request: FREE lifetime credits used up, or a paid plan's included and top-up credits used up. Carries the `X-FASTCRW-Credits-Available`, `X-FASTCRW-Included-Remaining`, `X-FASTCRW-Purchased-Remaining` and `X-FASTCRW-Upgrade-Url` headers, plus `X-FASTCRW-Stop-Reason` when an enabled auto-recharge could not run. No `Retry-After`. Not sent on the legacy `/v2` surface, which answers `429` instead. |
+| `llm_not_available` | 402 | A managed-LLM feature (search `answer` / `summarizeResults`, `/v1/extract`) was requested on the FREE plan. The `/v1/crawl` LLM formats gate sends the same code with HTTP `403`. |
 
 ## Common warnings
 
@@ -73,7 +88,8 @@ You need both to debug real scraping failures.
 
 Retrying helps only for some classes of failure:
 
-- retry `429`, `502`, and `504` with backoff,
+- retry `429`, `502`, and `504` with backoff, honoring `Retry-After` when present,
+- never retry a `402`: out of credits (`insufficient_credits`) and the FREE-plan LLM gate (`llm_not_available`) clear only when the account changes; the same goes for a legacy `/v2` `429` that carries `X-FASTCRW-Credits-Available`,
 - do not blindly retry `400` or `422`,
 - and treat repeated warnings from the same domain as a target compatibility problem, not a random transient issue.
 

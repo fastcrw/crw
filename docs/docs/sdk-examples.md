@@ -303,7 +303,7 @@ For anything beyond a single call — crawl polling, retries, LLM extraction job
 ## Production Checklist
 
 - Load `CRW_API_KEY` from an environment variable, never hardcode.
-- Respect `Retry-After` on `429` responses.
+- Respect `Retry-After` on `429` responses, and never retry a `402` (out of credits or a plan gate: read `errorCode`).
 - Log `warning` and `metadata.statusCode` in addition to the HTTP status.
 - Validate a single page through `scrape()` before wiring in `crawl()` or extraction.
 - Use the `with` statement (Python) or call `client.close()` (TypeScript) to release the subprocess when running in local mode.
