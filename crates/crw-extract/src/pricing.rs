@@ -17,6 +17,8 @@ use phf::phf_map;
 /// family gets its rate. Unknown models return `None`.
 static PRICING: phf::Map<&'static str, (f64, f64)> = phf_map! {
     // Anthropic
+    "claude-sonnet-5-5"     => (2.0, 10.0),
+    "claude-opus-5-5"       => (4.0, 20.0),
     "claude-sonnet-4"       => (3.0, 15.0),
     "claude-haiku-4-5"      => (1.0, 5.0),
     "claude-opus-4"         => (15.0, 75.0),
@@ -67,6 +69,8 @@ mod tests {
     fn known_models_have_cost() {
         let cost = calculate_cost("gpt-4o-mini", 1_000_000, 1_000_000).unwrap();
         assert!((cost - 0.75).abs() < 1e-9);
+        let cost = calculate_cost("claude-sonnet-5-5", 1_000_000, 1_000_000).unwrap();
+        assert!((cost - 12.0).abs() < 1e-9);
     }
 
     #[test]

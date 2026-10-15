@@ -354,6 +354,7 @@ async fn dispatch(
                 base_url,
                 max_tokens,
                 temperature,
+                reasoning_effort,
                 system_prompt,
                 user_msg,
             )
@@ -422,6 +423,29 @@ async fn dispatch(
     }
 }
 
+/// `output_config.effort` for an Anthropic request, shared by both Anthropic
+/// builders. Models from generation 5 on (Sonnet 5.5, Opus 5.5, Haiku 5.5,
+/// Fable 5.1) think by default and thinking counts toward `max_tokens`, so at
+/// their default effort the small helper budgets (query rewrite 120, passage
+/// selection 256, search legs 1024) can be spent before any text. They get the
+/// configured `reasoning_effort` when it is an Anthropic level, else `low`,
+/// which skips thinking on most simple requests. Older ids think only when
+/// asked and some reject the field, so they get none and their requests are
+/// unchanged.
+pub(crate) fn anthropic_effort<'a>(
+    model: &str,
+    reasoning_effort: Option<&'a str>,
+) -> Option<&'a str> {
+    // The generation is the first number after `claude-`: `claude-sonnet-5-5`,
+    // `us.anthropic.claude-opus-5-5-v1:0`, `claude-3-7-sonnet-20250219`.
+    let (_, rest) = model.split_once("claude-")?;
+    let generation: u32 = rest.split('-').take(2).find_map(|s| s.parse().ok())?;
+    (generation >= 5).then_some(match reasoning_effort {
+        Some(e @ ("low" | "medium" | "high" | "xhigh" | "max")) => e,
+        _ => "low",
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn call_anthropic(
     client: &reqwest::Client,
@@ -430,6 +454,7 @@ async fn call_anthropic(
     base_url: Option<&str>,
     max_tokens: u32,
     temperature: Option<f32>,
+    reasoning_effort: Option<&str>,
     system_prompt: &str,
     user_msg: &str,
 ) -> CrwResult<LlmCallResult> {
@@ -442,6 +467,9 @@ async fn call_anthropic(
     });
     if let Some(t) = temperature {
         body["temperature"] = serde_json::json!(t);
+    }
+    if let Some(effort) = anthropic_effort(model, reasoning_effort) {
+        body["output_config"] = serde_json::json!({ "effort": effort });
     }
     let resp = send_provider_post(
         client
@@ -1446,6 +1474,79 @@ mod tests {
         assert_eq!(usage.input_tokens, 12);
         assert_eq!(usage.output_tokens, 6);
         assert_eq!(usage.provider, "anthropic");
+    }
+
+    #[tokio::test]
+    async fn anthropic_chat_skips_thinking_blocks() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [
+                    { "type": "thinking", "thinking": "", "signature": "c2ln" },
+                    { "type": "redacted_thinking", "data": "ZGF0YQ==" },
+                    { "type": "text", "text": "hello" }
+                ],
+                "usage": { "input_tokens": 12, "output_tokens": 6 }
+            })))
+            .mount(&server)
+            .await;
+
+        let cfg = base_cfg("anthropic", format!("{}/v1/messages", server.uri()));
+        let res = chat(&cfg, "sys", "user").await.expect("chat succeeds");
+        assert_eq!(res.content, "hello");
+    }
+
+    #[test]
+    fn anthropic_effort_only_for_models_that_think_by_default() {
+        let cases = [
+            ("claude-sonnet-5-5", None, Some("low")),
+            ("claude-opus-5-5", Some("high"), Some("high")),
+            ("claude-haiku-5-5", Some("none"), Some("low")),
+            ("claude-haiku-5-5", Some(""), Some("low")),
+            ("us.anthropic.claude-fable-5-1-v1:0", None, Some("low")),
+            ("claude-sonnet-4-6", Some("high"), None),
+            ("claude-haiku-4-5-20251001", None, None),
+            ("claude-opus-4-20250514", None, None),
+            ("claude-3-7-sonnet-20250219", None, None),
+            ("test-model", Some("low"), None),
+        ];
+        for (model, configured, want) in cases {
+            assert_eq!(anthropic_effort(model, configured), want, "{model}");
+        }
+    }
+
+    /// Thinking counts toward `max_tokens` on current models, so the small
+    /// helper budgets need a low effort there; older ids get no field.
+    #[tokio::test]
+    async fn anthropic_chat_sends_effort_only_to_models_that_think_by_default() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "content": [{ "type": "text", "text": "ok" }],
+                "usage": { "input_tokens": 1, "output_tokens": 1 }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut cfg = base_cfg("anthropic", format!("{}/v1/messages", server.uri()));
+        for model in ["claude-sonnet-5-5", "claude-sonnet-4-6"] {
+            cfg.model = model.into();
+            chat(&cfg, "sys", "user").await.expect("chat succeeds");
+        }
+        let bodies: Vec<serde_json::Value> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .map(|r| serde_json::from_slice(&r.body).unwrap())
+            .collect();
+        assert_eq!(
+            bodies[0]["output_config"],
+            serde_json::json!({ "effort": "low" })
+        );
+        assert!(bodies[1].get("output_config").is_none());
     }
 
     #[tokio::test]

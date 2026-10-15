@@ -1972,7 +1972,9 @@ pub struct LlmConfig {
     /// Optional reasoning-effort hint forwarded to OpenAI-compatible providers
     /// (`reasoning_effort`) and Responses-compatible providers
     /// (`reasoning.effort`). `None` (default) and the empty string send no key,
-    /// preserving each provider's default behavior.
+    /// preserving each provider's default behavior. Anthropic models that think
+    /// by default (generation 5 on) always get `output_config.effort`: this
+    /// value when it is one of their levels (`low` to `max`), else `low`.
     #[serde(default)]
     pub reasoning_effort: Option<String>,
 }
@@ -2004,7 +2006,7 @@ fn default_llm_provider() -> String {
     "anthropic".into()
 }
 fn default_llm_model() -> String {
-    "claude-sonnet-4-20250514".into()
+    "claude-sonnet-4-6".into()
 }
 fn default_llm_max_tokens() -> u32 {
     4096
@@ -4229,7 +4231,7 @@ search_backend_url = "http://from-file:8080"
         let l = LlmConfig::default();
         assert_eq!(l.provider, "anthropic");
         assert_eq!(l.api_key, "");
-        assert_eq!(l.model, "claude-sonnet-4-20250514");
+        assert_eq!(l.model, "claude-sonnet-4-6");
         assert_eq!(l.base_url, None);
         assert_eq!(l.max_tokens, 4096);
         assert_eq!(l.azure_api_version, None);
@@ -4254,7 +4256,7 @@ search_backend_url = "http://from-file:8080"
         let l: LlmConfig = toml::from_str(r#"api_key = "sk-test""#).unwrap();
         assert_eq!(l.api_key, "sk-test");
         assert_eq!(l.provider, "anthropic", "provider falls back to default");
-        assert_eq!(l.model, "claude-sonnet-4-20250514");
+        assert_eq!(l.model, "claude-sonnet-4-6");
         assert_eq!(l.max_tokens, 4096);
     }
 

@@ -362,8 +362,9 @@ only_main_content = true   # default when a request omits onlyMainContent; env C
 [extraction.llm]
 provider = &quot;anthropic&quot;       # also: &quot;openai&quot;, &quot;openai-responses&quot;, &quot;deepseek&quot;, &quot;azure&quot;, &quot;openai-compatible&quot;
 api_key = &quot;&quot;
-model = &quot;claude-sonnet-4-20250514&quot;
+model = &quot;claude-sonnet-4-6&quot;
 max_tokens = 4096
+# reasoning_effort = &quot;&quot;      # forwarded when set; Anthropic generation 5 models run at &quot;low&quot; when unset
 max_html_bytes = 100000      # content fed to LLM is truncated at this byte count
 max_concurrency = 4          # bounded fan-out for per-result summaries in /v1/search
 # base_url = &quot;&quot;              # for custom Chat Completions or Responses endpoints

@@ -445,9 +445,16 @@ struct AnthropicRequest {
     /// Anthropic spells it `{"type":"tool","name":...}`. Note the Messages API
     /// rejects forcing when MANUAL extended thinking is enabled; nothing wires
     /// `thinking` into `LlmConfig` today, so this is unconditional. If that ever
-    /// changes, this has to become conditional with it.
+    /// changes, this has to become conditional with it. Current models (Sonnet
+    /// 5.5, Opus 5.5, Fable 5.1) reject forcing outright with a 400; they land
+    /// on the un-forced retry in [`call_anthropic`], where the prompt still
+    /// names the tool and the schema validation retry still applies.
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<serde_json::Value>,
+    /// `{"effort": ...}` on models that think by default, see
+    /// [`crate::llm::anthropic_effort`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_config: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -495,6 +502,10 @@ enum AnthropicContentBlock {
         name: String,
         input: serde_json::Value,
     },
+    /// `thinking`, `redacted_thinking` and any other block type: skipped, so a
+    /// reply that opens with thinking still yields its tool call or text.
+    #[serde(other)]
+    Other,
 }
 
 /// Call Anthropic with a tool-use forcing the given `schema`. `prompt` is the
@@ -537,6 +548,11 @@ pub(crate) async fn call_anthropic(
                 input_schema: schema.clone(),
             }]),
             tool_choice: forcing.then(|| serde_json::json!({ "type": "tool", "name": tool_name })),
+            output_config: crate::llm::anthropic_effort(
+                &llm.model,
+                llm.reasoning_effort.as_deref(),
+            )
+            .map(|effort| serde_json::json!({ "effort": effort })),
         };
 
         let resp = crate::llm::send_provider_post(
@@ -565,10 +581,16 @@ pub(crate) async fn call_anthropic(
         })?;
 
         if forcing && status.is_client_error() {
-            tracing::warn!(
-                %status,
-                "provider rejected a forced tool_choice; retrying without it"
-            );
+            // Current models refuse forcing on every call, so that answer is
+            // routine; any other rejection is worth a warning.
+            if text.contains("are not supported for this model") {
+                tracing::debug!(%status, "model does not support a forced tool_choice; retrying without it");
+            } else {
+                tracing::warn!(
+                    %status,
+                    "provider rejected a forced tool_choice; retrying without it"
+                );
+            }
             forcing = false;
             continue;
         }
@@ -2209,6 +2231,77 @@ mod tests {
             body["tool_choice"],
             json!({ "type": "tool", "name": "extract_data" })
         );
+    }
+
+    /// Current models (Sonnet 5.5, Opus 5.5, Fable 5.1) reject forcing with a
+    /// 400, and the reply to the un-forced retry opens with thinking blocks.
+    #[tokio::test]
+    async fn anthropic_current_model_rejects_forcing_then_replies_with_thinking_first() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+                "type": "error",
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": "tool_choice: type \"tool\" and \"any\" are not supported for this model."
+                }
+            })))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "content": [
+                    { "type": "thinking", "thinking": "", "signature": "c2ln" },
+                    { "type": "redacted_thinking", "data": "ZGF0YQ==" },
+                    { "type": "tool_use", "id": "t1", "name": "extract_data", "input": { "name": "P" } }
+                ],
+                "stop_reason": "tool_use",
+                "usage": { "input_tokens": 20, "output_tokens": 10 }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut llm = mock_llm("anthropic", format!("{}/v1", server.uri()));
+        llm.model = "claude-sonnet-5-5".into();
+        let schema = json!({ "type": "object", "properties": { "name": { "type": "string" } } });
+        let out = extract_structured_with_usage("content", Some(&schema), None, &llm, None)
+            .await
+            .unwrap();
+        assert_eq!(out.value, json!({ "name": "P" }));
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2, "one forced call, one un-forced retry");
+        let first: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let second: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
+        assert!(first.get("tool_choice").is_some());
+        assert!(second.get("tool_choice").is_none());
+        for body in [&first, &second] {
+            assert_eq!(body["output_config"], json!({ "effort": "low" }));
+        }
+    }
+
+    #[tokio::test]
+    async fn anthropic_thinking_block_before_text_json_is_skipped() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "content": [
+                    { "type": "thinking", "thinking": "", "signature": "c2ln" },
+                    { "type": "text", "text": "{\"name\": \"Bob\"}" }
+                ],
+                "usage": { "input_tokens": 5, "output_tokens": 5 }
+            })))
+            .mount(&server)
+            .await;
+
+        let llm = mock_llm("anthropic", format!("{}/v1", server.uri()));
+        let schema = json!({ "type": "object", "properties": { "name": { "type": "string" } } });
+        let value = extract_structured("Bob.", &schema, &llm).await.unwrap();
+        assert_eq!(value, json!({ "name": "Bob" }));
     }
 
     /// A gateway that rejects the `tool_choice` object form must not become a

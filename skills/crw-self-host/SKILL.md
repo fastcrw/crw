@@ -221,7 +221,7 @@ and `/v1/search` with `answer: true`.
 [extraction.llm]
 provider = "anthropic"          # "anthropic" | "openai" | "openai-responses" | "deepseek" | "azure" | "openai-compatible"
 api_key = "sk-..."              # or CRW_EXTRACTION__LLM__API_KEY env var
-model = "claude-sonnet-4-20250514"
+model = "claude-sonnet-4-6"
 max_tokens = 4096
 # base_url = "https://custom-endpoint.example.com"   # Chat Completions or Responses endpoints
 max_concurrency = 4
