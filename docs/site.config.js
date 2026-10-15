@@ -85,7 +85,6 @@ export default {
         { title: "Extract", slug: "extract", icon: "zap" },
         { title: "PDF Parsing", slug: "pdf-parsing", icon: "file-text" },
         { title: "Monitoring", slug: "monitoring", icon: "bell" },
-        { title: "Pergamon (Data API)", slug: "pergamon", icon: "server" },
       ],
     },
     {
