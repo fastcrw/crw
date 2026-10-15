@@ -801,6 +801,9 @@ async fn launch_chrome(bin: &str, profile: Option<PathBuf>) -> Option<(ManagedBr
         "--disable-dev-shm-usage",
         "--remote-debugging-port=0",
         "--remote-allow-origins=*",
+        // macOS: keep cookie encryption off the login keychain. Without it a
+        // run under a scratch HOME pops a blocking "Keychain Not Found" dialog.
+        "--use-mock-keychain",
     ])
     .stdin(Stdio::null())
     .stdout(Stdio::null())
