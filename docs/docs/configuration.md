@@ -88,6 +88,9 @@ max_tokens = 4096
 # reasoning_effort = ""      # forwarded when set; Anthropic generation 5 models run at "low" when unset
 max_html_bytes = 100000      # content fed to LLM is truncated at this byte count
 max_concurrency = 4          # bounded fan-out for per-result summaries in /v1/search
+timeout_ms = 60000           # LLM budget for one JSON extraction; basis mode gets at least 300000.
+                             # Synchronous scrapes are also capped by [server] request_timeout_secs, which
+                             # [request] auto_extend_deadline_for_ladder (on by default) raises to at least 305s.
 # base_url = ""              # for custom Chat Completions or Responses endpoints
 # azure_api_version = ""     # required when provider = "azure"
 # require_byok_header = ""   # tenant guard: reject LLM requests missing this header AND without llmApiKey
@@ -206,6 +209,7 @@ Use the `CRW_` prefix with `__` as a nesting separator:
 | `extraction.llm.base_url` | `CRW_EXTRACTION__LLM__BASE_URL` |
 | `extraction.llm.max_html_bytes` | `CRW_EXTRACTION__LLM__MAX_HTML_BYTES` |
 | `extraction.llm.max_concurrency` | `CRW_EXTRACTION__LLM__MAX_CONCURRENCY` |
+| `extraction.llm.timeout_ms` | `CRW_EXTRACTION__LLM__TIMEOUT_MS` |
 | `extraction.llm.require_byok_header` | `CRW_EXTRACTION__LLM__REQUIRE_BYOK_HEADER` |
 | `mcp.hide_credits` | `CRW_MCP__HIDE_CREDITS` |
 | _(boot guard)_ | `CRW_DISABLE_SERVER_LLM_KEY` — when set to `1`, refuses to boot if `[extraction.llm].api_key` is also configured. Use behind a SaaS proxy that injects per-request LLM keys. |
