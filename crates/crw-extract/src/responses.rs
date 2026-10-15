@@ -45,11 +45,15 @@ fn apply_optional_generation_fields(body: &mut serde_json::Value, llm: &LlmConfi
     }
 }
 
+/// `configured` is true when `timeout` came from `[extraction.llm] timeout_ms`,
+/// so a timeout names that setting; the fixed-budget text path keeps its text.
 async fn post(
     llm: &LlmConfig,
     body: &serde_json::Value,
     timeout: Duration,
+    configured: bool,
 ) -> CrwResult<serde_json::Value> {
+    let reason = |e| crate::structured::request_error_text(e, configured.then_some(timeout));
     let url = responses_url(llm.base_url.as_deref());
     let resp = crate::llm::send_provider_post(
         shared_client()
@@ -61,17 +65,14 @@ async fn post(
     )
     .await
     .map_err(|e| {
-        CrwError::ExtractionError(format!(
-            "Responses API request failed: {}",
-            crw_core::error::reqwest_message(e)
-        ))
+        CrwError::ExtractionError(format!("Responses API request failed: {}", reason(e)))
     })?;
 
     let status = resp.status();
     let text = resp.text().await.map_err(|e| {
         CrwError::ExtractionError(format!(
             "Failed to read Responses API response ({status}): {}",
-            crw_core::error::reqwest_message(e)
+            reason(e)
         ))
     })?;
     if !status.is_success() {
@@ -203,7 +204,7 @@ pub(crate) async fn call_text(
     });
     apply_optional_generation_fields(&mut body, llm);
 
-    let payload = post(llm, &body, timeout).await?;
+    let payload = post(llm, &body, timeout, false).await?;
     let content = output_text(&payload).ok_or_else(|| {
         CrwError::ExtractionError("Responses API response missing output_text".into())
     })?;
@@ -247,7 +248,7 @@ pub(crate) async fn call_tool(
     }
     apply_optional_generation_fields(&mut body, llm);
 
-    let payload = post(llm, &body, timeout).await?;
+    let payload = post(llm, &body, timeout, true).await?;
     let usage = parse_usage(&payload, llm);
     if let Some(arguments) = payload
         .get("output")

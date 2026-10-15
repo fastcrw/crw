@@ -1977,6 +1977,11 @@ pub struct LlmConfig {
     /// value when it is one of their levels (`low` to `max`), else `low`.
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    /// Budget in milliseconds for one structured-extraction LLM call, its
+    /// schema-validation retry included; the change-tracking judge uses it too.
+    /// Basis mode gets at least 300000. Raise it for slow self-hosted models.
+    #[serde(default = "default_llm_timeout_ms")]
+    pub timeout_ms: u64,
 }
 
 impl Default for LlmConfig {
@@ -1994,6 +1999,7 @@ impl Default for LlmConfig {
             require_byok_header: None,
             temperature: None,
             reasoning_effort: None,
+            timeout_ms: default_llm_timeout_ms(),
         }
     }
 }
@@ -2010,6 +2016,9 @@ fn default_llm_model() -> String {
 }
 fn default_llm_max_tokens() -> u32 {
     4096
+}
+fn default_llm_timeout_ms() -> u64 {
+    60_000
 }
 
 fn default_true_ext() -> bool {
@@ -4241,6 +4250,7 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(l.require_byok_header, None);
         assert_eq!(l.temperature, None);
         assert_eq!(l.reasoning_effort, None);
+        assert_eq!(l.timeout_ms, 60_000);
     }
 
     #[test]
@@ -4258,6 +4268,7 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(l.provider, "anthropic", "provider falls back to default");
         assert_eq!(l.model, "claude-sonnet-4-6");
         assert_eq!(l.max_tokens, 4096);
+        assert_eq!(l.timeout_ms, 60_000);
     }
 
     #[test]
@@ -4276,6 +4287,7 @@ search_backend_url = "http://from-file:8080"
             require_byok_header = "x-crw-llm-key"
             temperature = 0.0
             reasoning_effort = "high"
+            timeout_ms = 120000
             "#,
         )
         .unwrap();
@@ -4291,6 +4303,7 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(l.require_byok_header.as_deref(), Some("x-crw-llm-key"));
         assert_eq!(l.temperature, Some(0.0));
         assert_eq!(l.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(l.timeout_ms, 120_000);
     }
 
     #[test]
@@ -4304,6 +4317,7 @@ search_backend_url = "http://from-file:8080"
             std::env::set_var("CRW_EXTRACTION__LLM__API_KEY", "sk-env-key");
             std::env::set_var("CRW_EXTRACTION__LLM__MODEL", "gpt-4o-mini");
             std::env::set_var("CRW_EXTRACTION__LLM__BASE_URL", "https://api.openai.com/v1");
+            std::env::set_var("CRW_EXTRACTION__LLM__TIMEOUT_MS", "120000");
         }
         let cfg = AppConfig::load().unwrap();
         unsafe {
@@ -4311,6 +4325,7 @@ search_backend_url = "http://from-file:8080"
             std::env::remove_var("CRW_EXTRACTION__LLM__API_KEY");
             std::env::remove_var("CRW_EXTRACTION__LLM__MODEL");
             std::env::remove_var("CRW_EXTRACTION__LLM__BASE_URL");
+            std::env::remove_var("CRW_EXTRACTION__LLM__TIMEOUT_MS");
         }
         let llm = cfg
             .extraction
@@ -4320,6 +4335,7 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(llm.api_key, "sk-env-key");
         assert_eq!(llm.model, "gpt-4o-mini");
         assert_eq!(llm.base_url.as_deref(), Some("https://api.openai.com/v1"));
+        assert_eq!(llm.timeout_ms, 120_000);
     }
 
     #[test]

@@ -9,7 +9,8 @@ use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-/// Request timeout for LLM API calls.
+/// Default timeout of the pooled client. Extraction and the judge set their own
+/// per-request budget from `[extraction.llm] timeout_ms`.
 pub(crate) const LLM_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Below this much remaining budget a schema-validation retry is not attempted:
@@ -20,7 +21,8 @@ const MIN_RETRY_BUDGET: Duration = Duration::from_secs(15);
 /// Request timeout for a basis extraction. Basis rides the same call but grows
 /// its **output** by 2-4k tokens, and output tokens are the serial-decode term:
 /// at the slower providers' 15-30 tok/s that alone exceeds the 60s default.
-/// Applied per-request, so the judge and summary paths keep the 60s bound.
+/// Basis gets the larger of this and `[extraction.llm] timeout_ms`, applied
+/// per-request, so the judge and summary paths keep their own bounds.
 const BASIS_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Default UTF-8-safe truncation ceiling on markdown sent to the LLM for
@@ -64,6 +66,20 @@ pub(crate) fn truncate_md(s: &str, max_bytes: usize) -> (&str, bool) {
         idx -= 1;
     }
     (&s[..idx], true)
+}
+
+/// Caller-facing reason for a failed provider request. reqwest words a timeout
+/// as a bare "error sending request"; when the budget came from
+/// `[extraction.llm] timeout_ms` (`configured`), say how long the request
+/// waited and how to raise it. Every other failure keeps its usual text.
+pub(crate) fn request_error_text(e: reqwest::Error, configured: Option<Duration>) -> String {
+    match configured {
+        Some(budget) if e.is_timeout() => format!(
+            "timed out after {:.0}s (raise [extraction.llm] timeout_ms for slower models)",
+            budget.as_secs_f64()
+        ),
+        _ => crw_core::error::reqwest_message(e),
+    }
 }
 
 /// Shared HTTP client for LLM API calls (avoids per-request connection overhead).
@@ -245,10 +261,11 @@ async fn extract_inner(
     let evidence = basis_for.map(basis::prompt_section).unwrap_or_default();
     let prompt = format!("{instruction}{evidence}\n\n## Content\n{clipped}");
 
+    let configured = Duration::from_millis(llm.timeout_ms);
     let timeout = if basis_for.is_some() {
-        BASIS_REQUEST_TIMEOUT
+        configured.max(BASIS_REQUEST_TIMEOUT)
     } else {
-        LLM_REQUEST_TIMEOUT
+        configured
     };
 
     // One attempt = dispatch, lift the basis out, validate. Wrapped in a loop so a
@@ -534,6 +551,8 @@ pub(crate) async fn call_anthropic(
     // the Messages API that does not accept `tool_choice` must not become a hard
     // extraction failure where it works today.
     let mut forcing = force_tool;
+    // One budget for the call, the dropped-force retry included.
+    let started = std::time::Instant::now();
     let (status, text) = loop {
         let body = AnthropicRequest {
             model: llm.model.clone(),
@@ -558,7 +577,7 @@ pub(crate) async fn call_anthropic(
         let resp = crate::llm::send_provider_post(
             client
                 .post(&url)
-                .timeout(timeout)
+                .timeout(timeout.saturating_sub(started.elapsed()))
                 .header("x-api-key", &llm.api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json")
@@ -568,7 +587,7 @@ pub(crate) async fn call_anthropic(
         .map_err(|e| {
             CrwError::ExtractionError(format!(
                 "Anthropic API request failed: {}",
-                crw_core::error::reqwest_message(e)
+                request_error_text(e, Some(timeout))
             ))
         })?;
 
@@ -576,7 +595,7 @@ pub(crate) async fn call_anthropic(
         let text = resp.text().await.map_err(|e| {
             CrwError::ExtractionError(format!(
                 "Failed to read Anthropic response ({status}): {}",
-                crw_core::error::reqwest_message(e)
+                request_error_text(e, Some(timeout))
             ))
         })?;
 
@@ -849,6 +868,8 @@ pub(crate) async fn call_openai(
     // reachable on a 200. So on a 4xx from a forced request, drop the force once
     // and retry: a setup that works today keeps working.
     let mut forcing = force_tool;
+    // One budget for the call, the dropped-force retry included.
+    let started = std::time::Instant::now();
     let (status, text) = loop {
         let body = OpenAiRequest {
             model: llm.model.clone(),
@@ -882,7 +903,7 @@ pub(crate) async fn call_openai(
         let resp = crate::llm::send_provider_post(
             client
                 .post(&url)
-                .timeout(timeout)
+                .timeout(timeout.saturating_sub(started.elapsed()))
                 .header("Authorization", format!("Bearer {}", llm.api_key))
                 .header("content-type", "application/json")
                 .json(&body),
@@ -891,7 +912,7 @@ pub(crate) async fn call_openai(
         .map_err(|e| {
             CrwError::ExtractionError(format!(
                 "OpenAI API request failed: {}",
-                crw_core::error::reqwest_message(e)
+                request_error_text(e, Some(timeout))
             ))
         })?;
 
@@ -899,7 +920,7 @@ pub(crate) async fn call_openai(
         let text = resp.text().await.map_err(|e| {
             CrwError::ExtractionError(format!(
                 "Failed to read OpenAI response ({status}): {}",
-                crw_core::error::reqwest_message(e)
+                request_error_text(e, Some(timeout))
             ))
         })?;
 
@@ -2822,6 +2843,102 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("400"));
         assert!(!msg.contains("SENTINEL-BODY"));
+    }
+
+    #[tokio::test]
+    async fn timeout_ms_bounds_extraction_and_names_itself() {
+        // A model slower than the configured budget, on every transport.
+        let server = MockServer::start().await;
+        let answer = json!({ "name": "Ada" });
+        let responses_body = json!({
+            "output": [{ "type": "function_call", "name": "extract_data", "arguments": answer.to_string() }]
+        });
+        for (route, body) in [
+            ("/v1/chat/completions", openai_tool_call_response(&answer)),
+            ("/v1/messages", anthropic_tool_use_response(answer.clone())),
+            ("/v1/responses", responses_body),
+        ] {
+            Mock::given(method("POST"))
+                .and(path(route))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(body)
+                        .set_delay(Duration::from_millis(1500)),
+                )
+                .mount(&server)
+                .await;
+        }
+        let schema = json!({ "type": "object", "properties": { "name": { "type": "string" } } });
+        let slow_budget = |provider: &str| LlmConfig {
+            timeout_ms: 1000,
+            ..mock_llm(provider, format!("{}/v1", server.uri()))
+        };
+
+        for provider in ["openai-compatible", "anthropic", "openai-responses"] {
+            let err = extract_structured("Ada.", &schema, &slow_budget(provider))
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("timed out after 1s") && err.contains("timeout_ms"),
+                "{provider}: {err}"
+            );
+        }
+
+        // Basis never gets less than its 300s floor, so the same model answers.
+        let res = extract_structured_with_basis(
+            "Ada.",
+            &schema,
+            None,
+            &slow_budget("openai-compatible"),
+            None,
+            "https://example.com/ada",
+        )
+        .await
+        .expect("basis keeps its longer budget");
+        assert_eq!(res.value, answer);
+    }
+
+    #[tokio::test]
+    async fn dropped_force_retry_shares_the_timeout_budget() {
+        // A slow 4xx on the forced call, then a slow answer: together they
+        // exceed timeout_ms, so the retry must not start a fresh budget.
+        let server = MockServer::start().await;
+        let answer = json!({ "name": "Ada" });
+        let delay = Duration::from_millis(700);
+        for (route, body) in [
+            ("/v1/chat/completions", openai_tool_call_response(&answer)),
+            ("/v1/messages", anthropic_tool_use_response(answer.clone())),
+        ] {
+            Mock::given(method("POST"))
+                .and(path(route))
+                .respond_with(ResponseTemplate::new(429).set_delay(delay))
+                .up_to_n_times(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path(route))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_json(body)
+                        .set_delay(delay),
+                )
+                .mount(&server)
+                .await;
+        }
+        let schema = json!({ "type": "object", "properties": { "name": { "type": "string" } } });
+
+        for provider in ["openai-compatible", "anthropic"] {
+            let llm = LlmConfig {
+                timeout_ms: 1000,
+                ..mock_llm(provider, format!("{}/v1", server.uri()))
+            };
+            let err = extract_structured("Ada.", &schema, &llm)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("timed out after 1s"), "{provider}: {err}");
+        }
     }
 
     // ── more schema edge cases ──────────────────────────────────────────

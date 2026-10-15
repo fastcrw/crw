@@ -20,6 +20,7 @@ use crw_core::error::{CrwError, CrwResult};
 use crw_core::types::ChangeJudgment;
 use serde_json::Value;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 /// Default byte ceiling on the diff sent to the judge (32 KB). Keeps judge
 /// token spend bounded regardless of diff size.
@@ -122,8 +123,8 @@ pub async fn judge_change(
     let prompt = build_prompt(goal, clipped);
     let schema = judge_schema();
 
-    // The judge keeps the default 60s bound; only the basis path needs longer.
-    let timeout = crate::structured::LLM_REQUEST_TIMEOUT;
+    // The judge shares the extraction budget; only the basis path gets longer.
+    let timeout = Duration::from_millis(llm.timeout_ms);
     let (value, usage) = match llm.provider.as_str() {
         "anthropic" => {
             call_anthropic(

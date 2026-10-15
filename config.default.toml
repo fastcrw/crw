@@ -219,6 +219,7 @@ always_run = false
 # max_concurrency = 4           # bound for LLM-call fan-out (now enforced; was previously unbounded)
 # reserved_interactive_llm = 1  # LLM-call slots reserved for interactive (absent = ~1/4; 0 disables)
 # max_html_bytes = 100000       # truncate content past this before sending
+# timeout_ms = 60000            # LLM budget for one JSON extraction (basis mode: at least 300000)
 # require_byok_header = ""      # SaaS-only: header name that must be set on LLM-touching requests
 #
 # DeepSeek example (OpenAI-compatible):
