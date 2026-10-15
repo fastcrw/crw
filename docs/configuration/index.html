@@ -367,6 +367,9 @@ max_tokens = 4096
 # reasoning_effort = &quot;&quot;      # forwarded when set; Anthropic generation 5 models run at &quot;low&quot; when unset
 max_html_bytes = 100000      # content fed to LLM is truncated at this byte count
 max_concurrency = 4          # bounded fan-out for per-result summaries in /v1/search
+timeout_ms = 60000           # LLM budget for one JSON extraction; basis mode gets at least 300000.
+                             # Synchronous scrapes are also capped by [server] request_timeout_secs, which
+                             # [request] auto_extend_deadline_for_ladder (on by default) raises to at least 305s.
 # base_url = &quot;&quot;              # for custom Chat Completions or Responses endpoints
 # azure_api_version = &quot;&quot;     # required when provider = &quot;azure&quot;
 # require_byok_header = &quot;&quot;   # tenant guard: reject LLM requests missing this header AND without llmApiKey
@@ -562,6 +565,10 @@ CRW_CONFIG=config.stealth crw-server</code></pre>
 <tr>
 <td><code>extraction.llm.max_concurrency</code></td>
 <td><code>CRW_EXTRACTION__LLM__MAX_CONCURRENCY</code></td>
+</tr>
+<tr>
+<td><code>extraction.llm.timeout_ms</code></td>
+<td><code>CRW_EXTRACTION__LLM__TIMEOUT_MS</code></td>
 </tr>
 <tr>
 <td><code>extraction.llm.require_byok_header</code></td>
