@@ -423,6 +423,7 @@ enabled = true</code></pre>
 <p>When enabled:</p>
 <ul>
 <li>User-Agent is rotated from a built-in pool of Chrome 131, Firefox 133, and Safari 18 strings</li>
+<li>The LightPanda renderer refuses any User-Agent containing <code>Mozilla</code>, the rotated one included, and keeps its own <code>Lightpanda/1.0</code>; the HTTP fetcher and the other CDP renderers send the rotated UA</li>
 <li>12 browser-like headers are injected: <code>Accept</code>, <code>Accept-Language</code>, <code>Accept-Encoding</code>, <code>Sec-Ch-Ua</code>, <code>Sec-Ch-Ua-Mobile</code>, <code>Sec-Ch-Ua-Platform</code>, <code>Sec-Fetch-Dest</code>, <code>Sec-Fetch-Mode</code>, <code>Sec-Fetch-Site</code>, <code>Sec-Fetch-User</code>, <code>Priority</code>, <code>Upgrade-Insecure-Requests</code></li>
 </ul>
 <p>Override per-request by setting <code>stealth: true/false</code> in the scrape payload.</p>

@@ -787,12 +787,6 @@ async fn connect_chrome_with_retry(
     result
 }
 
-/// Strip "Mozilla/5.0 " so lightpanda accepts the UA — its `validateUserAgent`
-/// rejects any "Mozilla" (`error.Reserved`). The "...Chrome/<ver>..." token survives.
-fn lightpanda_safe_ua(ua: &str) -> &str {
-    ua.strip_prefix("Mozilla/5.0 ").unwrap_or(ua)
-}
-
 /// Split a caller-supplied header map into the UA override value and the rest.
 ///
 /// On CDP a User-Agent is set via `Network.setUserAgentOverride`, not through
@@ -3080,8 +3074,11 @@ impl CdpRenderer {
         // trips "your browser is outdated" gates). Session-scoped (so pooled
         // contexts don't leak it) and best-effort: a tier that rejects the method
         // must NOT abort an otherwise-fine render — hence `.ok()`, not `?`.
-        // lightpanda rejects "Mozilla" UAs (→ `lightpanda_safe_ua`); it routes
-        // Network.* → Emulation.* internally, so the method name is fine. Skip if empty.
+        // lightpanda routes Network.* to Emulation.* internally, so the method
+        // name is fine. It refuses any UA containing "Mozilla" and keeps its own
+        // `Lightpanda/1.0`. That is deliberate: rewriting the value to get past
+        // its check sends an identity no client sends (#622), which origins
+        // block more often than the honest default. Skip if empty.
         let effective_ua = caller_ua.as_deref().unwrap_or(&self.user_agent);
         // With an empty UA the override is still sent when a country-derived
         // language exists: Chromium treats an empty `userAgent` as "keep the
@@ -3089,14 +3086,9 @@ impl CdpRenderer {
         // the header stays in step with the script and the locale override.
         let accept_language = lang_locale.map(|l| l.cdp_accept_language());
         if !effective_ua.is_empty() || accept_language.is_some() {
-            let ua: &str = if self.name == "lightpanda" {
-                lightpanda_safe_ua(effective_ua)
-            } else {
-                effective_ua
-            };
             conn.send_recv(
                 "Network.setUserAgentOverride",
-                ua_override_params(ua, accept_language.as_deref()),
+                ua_override_params(effective_ua, accept_language.as_deref()),
                 Some(&session_id),
                 self.page_timeout,
             )
@@ -3938,8 +3930,8 @@ mod tests {
         BLOCK_LABEL_RESUME_FAILED, BLOCK_LABEL_WORKER_RESUMED, CdpRenderer, ChildAction, CrwError,
         STEALTH_DEFAULT_LANGUAGES, STEALTH_JS, build_auth_response, child_enable_failure_action,
         geo_accept_language, is_content_stable, is_method_not_found, is_proxy_tunnel_error,
-        language_locale, lightpanda_safe_ua, outbound_block_label, screenshot_clip,
-        split_caller_headers, ua_override_params,
+        language_locale, outbound_block_label, screenshot_clip, split_caller_headers,
+        ua_override_params,
     };
     use std::collections::HashMap;
     use std::time::Duration;
@@ -4214,17 +4206,50 @@ mod tests {
         assert_eq!(r.user_agent, ua);
     }
 
-    #[test]
-    fn lightpanda_safe_ua_strips_mozilla_keeps_chrome() {
-        let full = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-                    (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
-        let safe = lightpanda_safe_ua(full);
-        // lightpanda's validateUserAgent rejects ANY "Mozilla" → must be gone.
-        assert!(!safe.to_ascii_lowercase().contains("mozilla"));
-        // ...but the Chrome version token that UA gates check must survive.
-        assert!(safe.contains("Chrome/150"));
-        // A UA without the prefix is returned unchanged (no double-strip).
-        assert_eq!(lightpanda_safe_ua("Chrome/150.0.0.0"), "Chrome/150.0.0.0");
+    #[tokio::test]
+    async fn lightpanda_receives_the_user_agent_unchanged() {
+        // #622: lightpanda used to get the UA with "Mozilla/5.0 " cut off, an
+        // identity no client sends. The override must carry the UA as given.
+        use futures::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let ws_url = format!("ws://{}/devtools/browser/t", listener.local_addr().unwrap());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        // Minimal browser: answers each command with the ids a render needs,
+        // reports the UA override, then stops answering.
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            while let Some(Ok(Message::Text(text))) = ws.next().await {
+                let req: serde_json::Value = serde_json::from_str(&text).unwrap();
+                if req["method"] == "Network.setUserAgentOverride" {
+                    let _ = tx.send(req["params"]["userAgent"].clone());
+                    std::future::pending::<()>().await;
+                }
+                let reply = serde_json::json!({
+                    "id": req["id"],
+                    "result": { "targetId": "t", "sessionId": "s" },
+                });
+                ws.send(Message::Text(reply.to_string().into()))
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+                  (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
+        let r = CdpRenderer::new("lightpanda", &ws_url, 5_000, 1).with_user_agent(ua);
+        let deadline = crw_core::Deadline::now_plus(Duration::from_secs(10));
+        let headers = HashMap::new();
+        let seen = tokio::select! {
+            biased;
+            seen = rx.recv() => seen,
+            res = r.fetch_with_ws("http://example.com/", &headers, None, deadline) => {
+                panic!("render ended before the UA override: {:?}", res.err())
+            }
+        };
+        assert_eq!(seen.as_ref().and_then(|v| v.as_str()), Some(ua));
     }
 
     #[test]
@@ -5447,24 +5472,6 @@ mod tests {
         h.insert("X-Lang".to_string(), "türkçe".to_string());
         let (_, extra) = split_caller_headers(&h);
         assert_eq!(extra.get("X-Lang").and_then(|v| v.as_str()), Some("türkçe"));
-    }
-
-    // --- lightpanda_safe_ua: additional coverage --------------------------------
-
-    #[test]
-    fn lightpanda_safe_ua_empty_string_is_unchanged() {
-        assert_eq!(lightpanda_safe_ua(""), "");
-    }
-
-    #[test]
-    fn lightpanda_safe_ua_only_strips_leading_prefix_not_mid_string_occurrence() {
-        // A second, later "Mozilla/5.0 " occurrence (unrealistic but possible in
-        // a crafted header) must survive — only the leading prefix is stripped.
-        let ua = "Mozilla/5.0 (compatible) extra Mozilla/5.0 tail";
-        assert_eq!(
-            lightpanda_safe_ua(ua),
-            "(compatible) extra Mozilla/5.0 tail"
-        );
     }
 
     // --- child_enable_failure_action --------------------------------------------
