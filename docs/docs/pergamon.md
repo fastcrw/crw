@@ -10,9 +10,8 @@ Pergamon is the fastCRW data API. It puts official APIs, public registries and
 statistics offices behind the same key, the same credit wallet and the same error
 shape as the rest of fastCRW.
 
-The name is the library that rivalled Alexandria. Alexandria cut off its papyrus
-supply to starve it; Pergamon invented parchment instead, which is where the word
-comes from.
+The name is the library of Pergamon, one of the great collections of the ancient
+world. Its scribes gave us parchment, and the word still carries the city's name.
 
 You do not learn a provider's quirks. You read the catalog, call a capability, and
 get back a normalized envelope with the data and the provenance you need to use it
@@ -54,6 +53,7 @@ curl https://api.fastcrw.com/v1/data \
       "description": "Package metadata from the public npm registry...",
       "category": "Developer",
       "country": null,
+      "logo_url": "https://fastcrw.com/logos/pergamon/npm.png",
       "licence": "Public npm registry metadata, served without a key...",
       "licence_url": "https://docs.npmjs.com/policies/open-source-terms",
       "attribution_text": "Source: npm registry",
@@ -197,7 +197,7 @@ Three levels, each item carrying a `next` you can feed straight back in:
 | `level` | Returns | Each item's `next` |
 | --- | --- | --- |
 | `categories` (default) | Subjects, with how many providers each has | the providers in it |
-| `providers` | Provider, description, licence, attribution, tool count | its tools |
+| `providers` | Provider, description, logo, licence, attribution, tool count | its tools |
 | `tools` | Capability, credit cost, required and optional options, provenance | **the call itself** |
 
 Options: `level`, `limit` (max 200), `offset`, `categories`, `providers`,
