@@ -6,8 +6,11 @@
 //! * the auto-chain hop between the plain reqwest HTTP tier and the browser
 //!   ladder, fired only when the plain tier hit a wall-shaped response (the
 //!   Amazon interstitial class) or a transport error, never on SPA/thin/empty
-//!   shapes that need JS;
-//! * the explicit `renderer = "impersonated-http"` pin.
+//!   shapes that need JS. The hop runs on a FRESH client per attempt (see
+//!   `FallbackRenderer::impersonated_hop_factory`): no pooled impersonated
+//!   identity for a wall vendor to build per-fingerprint reputation on;
+//! * the explicit `renderer = "impersonated-http"` pin, which uses the warm
+//!   pooled client: deliberate bulk use is where pooling pays.
 //!
 //! Whole module is `#[cfg(feature = "impersonated")]`: a lean build never
 //! links the wreq/btls TLS stack.
@@ -670,5 +673,59 @@ mod tests {
             }
             other => panic!("unexpected rendered_with: {other:?}"),
         }
+    }
+
+    /// Sentinel: the pinned preset's ClientHello must carry the post-quantum
+    /// key share real Chrome sends by default since 131 (X25519MLKEM768), and
+    /// an HTTP/2 fingerprint. A preset that claims Chrome 149 without the PQ
+    /// share is detectable by post-quantum-aware walls (Akamai flags it
+    /// before any HTTP traffic) and the preset needs a bump, not a code fix.
+    /// Deterministic: reads the shape from a fingerprint-echo endpoint, not
+    /// from a wall that may or may not fire.
+    #[tokio::test]
+    #[ignore]
+    async fn live_preset_clienthello_carries_postquantum_and_h2() {
+        let f = fetcher().unwrap();
+        let r = f
+            .fetch(
+                "https://tls.peet.ws/api/all",
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .unwrap_or_else(|e| panic!("fingerprint probe failed: {e}"));
+        assert_eq!(r.status_code, 200, "fingerprint endpoint must answer");
+        let v: serde_json::Value =
+            serde_json::from_str(&r.html).expect("fingerprint endpoint returns JSON");
+
+        let tls = &v["tls"];
+        // Post-quantum key share: both in the offered groups AND actually sent.
+        let groups = tls["extensions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|e| e["name"].as_str().unwrap_or("").contains("supported_groups"))
+            .and_then(|e| e["supported_groups"].as_array().cloned())
+            .unwrap_or_default();
+        let group_names: Vec<String> = groups
+            .iter()
+            .filter_map(|g| g.as_str().map(|s| s.to_string()))
+            .collect();
+        assert!(
+            group_names.iter().any(|g| g.contains("X25519MLKEM768")),
+            "supported_groups must offer the post-quantum group; got {group_names:?}"
+        );
+        let key_share_str = tls["extensions"].to_string();
+        assert!(
+            key_share_str.contains("X25519MLKEM768"),
+            "key_share must actually carry the ML-KEM share, not just offer the group"
+        );
+
+        // HTTP/2 fingerprint present (the Akamai SETTINGS/pseudo-header shape).
+        let h2 = v["http2"]["akamai_fingerprint_hash"]
+            .as_str()
+            .unwrap_or("");
+        assert!(!h2.is_empty(), "HTTP/2 fingerprint hash must be reported");
     }
 }
