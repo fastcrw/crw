@@ -283,7 +283,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 
     <main class="content" id="content">
       <article id="article" role="main"><h1 id="errors-and-warnings">Errors and Warnings</h1>
-<h2 id="response-semantics">Response semantics</h2>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">**Behaviour change (2026-10):** on the cloud API, running out of credits now answers `402 Payment Required` with `errorCode: "insufficient_credits"` instead of `429`. This applies to `/v1` and every surface except the legacy Firecrawl-compatible `/v2` (root `/v2`, `/firecrawl/v2` and `compat.fastcrw.com`), which keeps the credit `429` without an `errorCode`. Branch on `errorCode`, with the HTTP status as a fallback.</div></div><h2 id="response-semantics">Response semantics</h2>
 <ul>
 <li><code>success: true</code> means the pipeline produced usable page content.</li>
 <li><code>success: false</code> means the request failed -- either an engine error or the target returned an error status (4xx/5xx) with minimal content.</li>
@@ -327,8 +327,12 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (<code>unsupported_content_type</code>)</td>
 </tr>
 <tr>
+<td>402</td>
+<td>Cloud only: the credit balance cannot cover the request (<code>errorCode: &quot;insufficient_credits&quot;</code>), or a managed-LLM feature was requested on the FREE plan (<code>errorCode: &quot;llm_not_available&quot;</code>)</td>
+</tr>
+<tr>
 <td>429</td>
-<td>Rate limit or credit quota exceeded</td>
+<td>Request-rate or concurrency limit exceeded (on the legacy <code>/v2</code> surface, also an exhausted credit balance)</td>
 </tr>
 <tr>
 <td>502</td>
@@ -373,8 +377,13 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>Fetch the file yourself, or point the request at a PDF or an HTML page</td>
 </tr>
 <tr>
+<td>HTTP <code>402</code></td>
+<td>Out of credits (<code>insufficient_credits</code>) or a paid-plan feature on the FREE plan (<code>llm_not_available</code>)</td>
+<td>Do not retry; top up, upgrade or enable auto-recharge</td>
+</tr>
+<tr>
 <td>HTTP <code>429</code></td>
-<td>Rate limit or credit ceiling hit</td>
+<td>Request-rate or concurrency limit hit</td>
 <td>Back off and honor <code>Retry-After</code></td>
 </tr>
 <tr>
@@ -432,6 +441,27 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td><code>renderJs: true</code> but no CDP browser is configured</td>
 </tr>
 </tbody></table>
+<h2 id="cloud-only-error-codes">Cloud-only error codes</h2>
+<p>The managed cloud adds these <code>errorCode</code> values on top of the engine&#39;s own. Self-hosted instances have no billing layer and never send them.</p>
+<table>
+<thead>
+<tr>
+<th><code>errorCode</code></th>
+<th>HTTP</th>
+<th>When it happens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>insufficient_credits</code></td>
+<td>402</td>
+<td>The credit balance cannot cover the request: FREE lifetime credits used up, or a paid plan&#39;s included and top-up credits used up. Carries the <code>X-FASTCRW-Credits-Available</code>, <code>X-FASTCRW-Included-Remaining</code>, <code>X-FASTCRW-Purchased-Remaining</code> and <code>X-FASTCRW-Upgrade-Url</code> headers, plus <code>X-FASTCRW-Stop-Reason</code> when an enabled auto-recharge could not run. No <code>Retry-After</code>. Not sent on the legacy <code>/v2</code> surface, which answers <code>429</code> instead.</td>
+</tr>
+<tr>
+<td><code>llm_not_available</code></td>
+<td>402</td>
+<td>A managed-LLM feature (search <code>answer</code> / <code>summarizeResults</code>, <code>/v1/extract</code>) was requested on the FREE plan. The <code>/v1/crawl</code> LLM formats gate sends the same code with HTTP <code>403</code>.</td>
+</tr>
+</tbody></table>
 <h2 id="common-warnings">Common warnings</h2>
 <table>
 <thead>
@@ -476,7 +506,8 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <h2 id="retry-guidance">Retry Guidance</h2>
 <p>Retrying helps only for some classes of failure:</p>
 <ul>
-<li>retry <code>429</code>, <code>502</code>, and <code>504</code> with backoff,</li>
+<li>retry <code>429</code>, <code>502</code>, and <code>504</code> with backoff, honoring <code>Retry-After</code> when present,</li>
+<li>never retry a <code>402</code>: out of credits (<code>insufficient_credits</code>) and the FREE-plan LLM gate (<code>llm_not_available</code>) clear only when the account changes; the same goes for a legacy <code>/v2</code> <code>429</code> that carries <code>X-FASTCRW-Credits-Available</code>,</li>
 <li>do not blindly retry <code>400</code> or <code>422</code>,</li>
 <li>and treat repeated warnings from the same domain as a target compatibility problem, not a random transient issue.</li>
 </ul>

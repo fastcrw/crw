@@ -468,8 +468,8 @@ def poll_crawl(crawl_id: str, api_key: str, interval: float = 3.0) -&gt; dict:
 </tr>
 <tr>
 <td>402</td>
-<td>Credit exhausted (paid plan, auto-recharge stopped)</td>
-<td>Alert the user; do not retry — top up credits first. Check <code>X-FASTCRW-Stop-Reason</code> header for the specific cause (<code>cap_reached</code>, <code>card_declined</code>, <code>action_required</code>, <code>no_payment_method</code>)</td>
+<td>Out of credits (<code>errorCode: &quot;insufficient_credits&quot;</code>) or a managed-LLM feature on the FREE plan (<code>errorCode: &quot;llm_not_available&quot;</code>)</td>
+<td>Alert the user; do not retry. Branch on <code>errorCode</code>. When an enabled auto-recharge could not run, <code>X-FASTCRW-Stop-Reason</code> names the cause</td>
 </tr>
 <tr>
 <td>404</td>
@@ -483,8 +483,8 @@ def poll_crawl(crawl_id: str, api_key: str, interval: float = 3.0) -&gt; dict:
 </tr>
 <tr>
 <td>429</td>
-<td>Rate limited <strong>or</strong> free-tier credit cap reached</td>
-<td>Back off and retry after the <code>Retry-After</code> interval. If this is a free-tier credit cap (not a rate limit), the response body will explain — upgrade is required</td>
+<td>Rate or concurrency limited</td>
+<td>Back off and retry after the <code>Retry-After</code> interval. On the legacy <code>/v2</code> surface only, a <code>429</code> carrying <code>X-FASTCRW-Credits-Available</code> means out of credits: do not retry</td>
 </tr>
 <tr>
 <td>500</td>
@@ -510,18 +510,18 @@ def poll_crawl(crawl_id: str, api_key: str, interval: float = 3.0) -&gt; dict:
 <h3 id="402-vs-429-credit-awareness">402 vs 429: credit awareness</h3>
 <p>These two codes have different meanings and require different handling:</p>
 <ul>
-<li><strong>429</strong> is used for both rate-limiting and the <strong>free-tier lifetime credit cap</strong>. Free credits are one-time and never reset, so once they are exhausted, retrying will not help — the user must upgrade.</li>
-<li><strong>402</strong> is used only when a <strong>paid plan</strong>&#39;s auto-recharge was blocked (spending cap hit, card declined, bank SCA required, or no payment method on file). The response headers carry <code>X-FASTCRW-Stop-Reason</code>, <code>X-FASTCRW-Credits-Available</code>, and <code>X-FASTCRW-Upgrade-Url</code> to surface the exact cause.</li>
+<li><strong>402</strong> means the request cannot run until the account changes. <code>errorCode: &quot;insufficient_credits&quot;</code> is an exhausted balance (the FREE plan&#39;s one-time lifetime credits, or a paid plan&#39;s included and top-up credits); <code>errorCode: &quot;llm_not_available&quot;</code> is a managed-LLM feature on the FREE plan. Retrying will not help. The response headers carry <code>X-FASTCRW-Credits-Available</code> and <code>X-FASTCRW-Upgrade-Url</code>, plus <code>X-FASTCRW-Stop-Reason</code> when an enabled auto-recharge could not run.</li>
+<li><strong>429</strong> means slow down: a request-rate or concurrency limit. Honor <code>Retry-After</code>. The legacy Firecrawl-compatible <code>/v2</code> surface (root <code>/v2</code>, <code>/firecrawl/v2</code>, <code>compat.fastcrw.com</code>) still answers an exhausted balance with a <code>429</code> without an <code>errorCode</code>.</li>
 </ul>
-<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Stop-reason values (`cap_reached`, `card_declined`, `action_required`, `no_payment_method`) and the response headers listed above (`X-FASTCRW-Stop-Reason`, `X-FASTCRW-Credits-Available`, `X-FASTCRW-Upgrade-Url`) are SaaS billing internals — verify against the [fastcrw.com dashboard docs](https://fastcrw.com/docs) if exact values matter for your integration.</div></div><p>Your agent should check the status code, not guess from the error message:</p>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Stop-reason values (`card_declined`, `action_required`, `no_payment_method`, `no_consent`, `error`) and the response headers listed above (`X-FASTCRW-Stop-Reason`, `X-FASTCRW-Credits-Available`, `X-FASTCRW-Upgrade-Url`) are SaaS billing internals; verify against the [fastcrw.com dashboard docs](https://fastcrw.com/docs) if exact values matter for your integration.</div></div><p>Your agent should branch on <code>errorCode</code> and the status code, not guess from the error message:</p>
 <pre data-lang="python"><code class="language-python">if resp.status_code == 402:
-    stop_reason = resp.headers.get(&quot;X-FASTCRW-Stop-Reason&quot;, &quot;unknown&quot;)
-    upgrade_url = resp.headers.get(&quot;X-FASTCRW-Upgrade-Url&quot;, &quot;https://fastcrw.com/dashboard/billing&quot;)
-    raise RuntimeError(f&quot;Credits exhausted (auto-recharge stop: {stop_reason}). Top up at {upgrade_url}&quot;)
-elif resp.status_code == 429:
-    # Could be rate-limit or free-tier cap — check body
     body = resp.json()
-    raise RuntimeError(f&quot;Quota exceeded: {body.get('error')}&quot;)</code></pre>
+    stop_reason = resp.headers.get(&quot;X-FASTCRW-Stop-Reason&quot;)
+    upgrade_url = resp.headers.get(&quot;X-FASTCRW-Upgrade-Url&quot;, &quot;https://fastcrw.com/dashboard/billing&quot;)
+    raise RuntimeError(f&quot;{body.get('errorCode')} ({stop_reason or 'no auto-recharge'}): {body.get('error')} Top up at {upgrade_url}&quot;)
+elif resp.status_code == 429:
+    # Rate or concurrency limit: wait for Retry-After, then retry.
+    time.sleep(int(resp.headers.get(&quot;Retry-After&quot;, &quot;2&quot;)))</code></pre>
 <h2 id="handling-js-gated-pages">Handling JS-Gated Pages</h2>
 <p>If <code>crw_scrape</code> returns an empty or near-empty <code>markdown</code> field for a page that visually has content, the page is likely JS-gated (client-side rendered, anti-bot wall, or heavy SPA). The engine&#39;s auto-detect heuristic may have missed it, or the page requires real browser interaction (login flow, cookie consent, infinite scroll).</p>
 <p>In that case, use <strong>crw-browse</strong> — the separate interactive browser MCP server that gives your agent full CDP control:</p>

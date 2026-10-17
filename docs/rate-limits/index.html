@@ -283,7 +283,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 
     <main class="content" id="content">
       <article id="article" role="main"><h1 id="rate-limits">Rate Limits</h1>
-<h2 id="window">Window</h2>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">**Behaviour change (2026-10):** on the cloud API, running out of credits now answers `402 Payment Required` with `errorCode: "insufficient_credits"` instead of `429`. This applies to `/v1` and every surface except the legacy Firecrawl-compatible `/v2` (root `/v2`, `/firecrawl/v2` and `compat.fastcrw.com`), which keeps the credit `429` without an `errorCode`. A `429` on `/v1` now only means a request-rate or concurrency limit.</div></div><h2 id="window">Window</h2>
 <p>CRW uses a <strong>token-bucket rate limiter</strong> scoped to the server process. Tokens refill continuously at the configured rate (<code>rate_limit_rps</code>). A burst can drain the bucket immediately; tokens replenish every second proportional to elapsed time.</p>
 <p>Self-hosted instances set <code>[server].rate_limit_rps</code> in their config (default: 10 RPS, 0 = unlimited). Cloud plans (fastcrw.com) enforce per-API-key plan limits instead.</p>
 <h2 id="concurrency-is-the-public-entitlement">Concurrency is the public entitlement</h2>
@@ -323,24 +323,63 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 </tr>
 </tbody></table>
 <p>A batch request (for example a batch scrape) counts as one POST for this limit: it does not itself grant extra parallelism beyond what the plan allows for other in-flight requests.</p>
-<h2 id="three-429-causes-and-one-402">Three <code>429</code> causes, and one <code>402</code></h2>
-<p>A <code>429</code> response can mean three different things on the cloud API, and a <code>402</code> means a fourth. None of these currently carry a machine-readable <code>error_code</code> (or <code>errorCode</code>) field in the response body, only a human-readable <code>error</code> string. Do not write client logic that branches on an error code for these; branch on the HTTP status and, if you need to tell the causes apart, on the response headers noted below.</p>
+<h2 id="two-429-causes-and-402">Two <code>429</code> causes, and <code>402</code></h2>
+<p>On the cloud API a <code>429</code> means slow down: a request-rate guard or your plan&#39;s concurrency cap. A <code>402</code> means the request cannot run until the account changes. Branch on the body&#39;s <code>errorCode</code> first and on the HTTP status as a fallback.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th><code>errorCode</code></th>
+<th>Cause</th>
+<th>Retry?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>429</code></td>
+<td>none</td>
+<td>Request-rate guard exceeded</td>
+<td>Yes, after <code>Retry-After</code></td>
+</tr>
+<tr>
+<td><code>429</code></td>
+<td>none</td>
+<td>Concurrency cap reached</td>
+<td>Yes, once an in-flight request completes</td>
+</tr>
+<tr>
+<td><code>402</code></td>
+<td><code>insufficient_credits</code></td>
+<td>Credit balance cannot cover the request</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>402</code></td>
+<td><code>llm_not_available</code></td>
+<td>Managed-LLM feature requested on the FREE plan</td>
+<td>No</td>
+</tr>
+</tbody></table>
 <h3 id="cause-1-request-rate-guard-exceeded">Cause 1: Request-rate guard exceeded</h3>
 <p>You exceeded the Cloud request-rate guard. The response includes <code>Retry-After</code>, <code>X-RateLimit-Limit</code>, and <code>X-RateLimit-Remaining</code> headers. Treat those response headers as the authority for that request; do not hard-code an internal threshold.</p>
 <p><strong>Action:</strong> back off and retry. Apply exponential backoff starting at 1 second:</p>
 <pre data-lang="ts"><code class="language-ts">async function callWithRetry(fn: () =&gt; Promise&lt;Response&gt;, maxRetries = 5): Promise&lt;Response&gt; {
   for (let attempt = 0; attempt &lt; maxRetries; attempt++) {
     const res = await fn();
+    if (res.status === 402) {
+      // Out of credits or a plan gate: no retry can succeed. Halt.
+      const { errorCode, error } = await res.json();
+      throw new Error(`${errorCode}: ${error}`);
+    }
     if (res.status !== 429) return res;
 
-    // Distinguish by header, not by a machine-readable error code (none exists
-    // for any 429 cause today). Credit exhaustion carries an
-    // X-FASTCRW-Credits-Available header; do not retry that one.
+    // Legacy /v2 surface only: an exhausted balance there is still a 429,
+    // recognisable by the X-FASTCRW-Credits-Available header. Do not retry it.
     if (res.headers.has(&quot;X-FASTCRW-Credits-Available&quot;)) {
       throw new Error(&quot;Credit balance exhausted, top up at fastcrw.com/billing&quot;);
     }
 
-    const backoffMs = Math.min(1000 * 2 ** attempt, 30_000);
+    const retryAfter = Number(res.headers.get(&quot;Retry-After&quot;));
+    const backoffMs = retryAfter &gt; 0 ? retryAfter * 1000 : Math.min(1000 * 2 ** attempt, 30_000);
     await new Promise(r =&gt; setTimeout(r, backoffMs));
   }
   throw new Error(&quot;Max retries exceeded&quot;);
@@ -348,19 +387,17 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <h3 id="cause-2-concurrency-cap-reached">Cause 2: Concurrency cap reached</h3>
 <p>You already have as many requests in flight as your plan allows. The response includes a <code>Retry-After</code> header and an <code>X-Concurrency-Limit</code> header naming your plan&#39;s cap.</p>
 <p><strong>Action:</strong> retry once an in-flight request completes, or reduce your worker pool&#39;s parallelism to stay under the cap. This is not a request-rate problem, so simply slowing down your request rate without also lowering concurrency will not fix it.</p>
-<h3 id="cause-3-credits-exhausted">Cause 3: Credits exhausted</h3>
-<p>Once your available balance reaches zero, the API returns <code>429</code>. This covers a FREE account that has spent its lifetime 500 credits (plus up to 500 more from onboarding tasks), and a paid account that is out of credits without an active auto-recharge attempt in progress. The response includes <code>X-FASTCRW-Credits-Available</code>, <code>X-FASTCRW-Included-Remaining</code>, <code>X-FASTCRW-Purchased-Remaining</code>, and <code>X-FASTCRW-Upgrade-Url</code> headers. There is no reset header: a FREE account&#39;s credits are a one-time lifetime grant, not a monthly allowance, so there is nothing to reset.</p>
-<p><strong>Action:</strong> do NOT retry. Retrying burns no credits (the request is rejected before processing) but creates noise in your logs and may hide the real cause. Alert or pause your pipeline and top up your balance or upgrade your plan.</p>
-<h3 id="cause-4-402-paid-account-with-auto-recharge-stopped">Cause 4: <code>402</code>, paid account with auto-recharge stopped</h3>
-<p>A paid account whose auto-recharge attempted to run and stopped (spending cap reached, card declined, bank confirmation required, or no payment method on file) gets <code>402</code>, not <code>429</code>. This is a distinct, retryable-after-payment signal. The response includes the same credit headers plus <code>X-FASTCRW-Stop-Reason</code> naming why auto-recharge stopped.</p>
-<p><strong>Action:</strong> do NOT retry as-is. Resolve the payment issue (raise the spending cap, update the card, authorize the charge) and retry after.</p>
-<pre data-lang="ts"><code class="language-ts">if (res.status === 429 &amp;&amp; res.headers.has(&quot;X-FASTCRW-Credits-Available&quot;)) {
-  // Alert your team, halt the pipeline.
-  throw new Error(&quot;Credit balance exhausted, top up at fastcrw.com/billing&quot;);
-}
-if (res.status === 402) {
+<h3 id="402-with-insufficient_credits-credits-exhausted"><code>402</code> with <code>insufficient_credits</code>: credits exhausted</h3>
+<p>Once your available balance cannot cover a request, the API returns <code>402</code> with <code>errorCode: &quot;insufficient_credits&quot;</code>. This covers a FREE account that has spent its lifetime 500 credits (plus up to 500 more from onboarding tasks), and a paid account that is out of included and top-up credits. The response includes <code>X-FASTCRW-Credits-Available</code>, <code>X-FASTCRW-Included-Remaining</code>, <code>X-FASTCRW-Purchased-Remaining</code>, and <code>X-FASTCRW-Upgrade-Url</code> headers. When an enabled auto-recharge could not run (card declined, bank confirmation required, no payment method on file), the same <code>402</code> also carries <code>X-FASTCRW-Stop-Reason</code> naming why. There is no <code>Retry-After</code> and no reset header: a refill depends on a payment, not on the clock, and a FREE account&#39;s credits are a one-time lifetime grant.</p>
+<p><strong>Action:</strong> do NOT retry. Retrying burns no credits (the request is rejected before processing) but creates noise in your logs and may hide the real cause. Alert or pause your pipeline, then top up, upgrade, or fix the payment method named in <code>X-FASTCRW-Stop-Reason</code>.</p>
+<p>On the legacy <code>/v2</code> surface (root <code>/v2</code>, <code>/firecrawl/v2</code>, <code>compat.fastcrw.com</code>) the same condition still answers <code>429</code> without an <code>errorCode</code>, with the same <code>X-FASTCRW-*</code> headers; an auto-recharge stop there is a <code>402</code>.</p>
+<pre data-lang="ts"><code class="language-ts">if (res.status === 402) {
   const body = await res.json();
-  throw new Error(`Auto-recharge stopped: ${body.error}`);
+  if (body.errorCode === &quot;insufficient_credits&quot;) {
+    // Alert your team, halt the pipeline.
+    throw new Error(`Out of credits: ${body.error}`);
+  }
+  throw new Error(`${body.errorCode}: ${body.error}`);
 }
 // Otherwise a 429 is request-rate or concurrency: backoff and retry (see above).</code></pre>
 <h2 id="handling-503">Handling <code>503</code></h2>
@@ -393,9 +430,9 @@ if (res.status === 402) {
 <h2 id="practical-client-behavior">Practical Client Behavior</h2>
 <p>A well-behaved client should:</p>
 <ul>
-<li>inspect the response headers on every <code>429</code>/<code>402</code> to tell RPM, concurrency, and credit exhaustion apart (there is no machine-readable error code to branch on),</li>
+<li>branch on <code>errorCode</code> (with the HTTP status as a fallback) on every <code>402</code>,</li>
 <li>use exponential backoff (not a fixed delay) for request-rate <code>429</code>, concurrency <code>429</code>, and <code>503</code> responses,</li>
-<li>NOT retry on a credit-exhaustion <code>429</code> or on a <code>402</code> (alert and halt instead),</li>
+<li>NOT retry a <code>402</code> (alert and halt instead), nor a legacy <code>/v2</code> <code>429</code> that carries <code>X-FASTCRW-Credits-Available</code>,</li>
 <li>centralize throttling when multiple workers share one API key.</li>
 </ul>
 <p>The problem with per-worker retry logic is that it reacts too late. A central limiter prevents avoidable <code>429</code>s in the first place.</p>
@@ -409,14 +446,14 @@ if (res.status === 402) {
 <h2 id="rate-limits-vs-target-limits">Rate Limits vs Target Limits</h2>
 <p>The CRW API rate limit is separate from the target website&#39;s own rate limit.</p>
 <ul>
-<li>CRW returns <code>429</code> (at the API layer) when your key exceeds plan limits or your balance is exhausted.</li>
+<li>CRW returns <code>429</code> (at the API layer) when your key exceeds plan limits, and <code>402</code> when your balance is exhausted.</li>
 <li>The target site may return <code>429</code> to CRW&#39;s crawler; this appears in <code>metadata.statusCode</code> or as a <code>warning</code> field in the scrape response -- it is NOT an API-level <code>429</code>.</li>
 </ul>
 <p>Those are different problems and should be handled differently.</p>
 <h2 id="common-mistakes">Common Mistakes</h2>
 <ul>
-<li>Retrying a credit-exhaustion <code>429</code> or a <code>402</code> -- the request will keep failing until you top up or fix the payment method.</li>
-<li>Assuming a <code>429</code> response carries a machine-readable <code>error_code</code> field -- it does not; branch on headers or HTTP status instead.</li>
+<li>Retrying a <code>402</code>: the request will keep failing until you top up, upgrade or fix the payment method.</li>
+<li>Treating every <code>429</code> as &quot;out of credits&quot; or every <code>402</code> as &quot;out of credits&quot;: read <code>errorCode</code> (<code>insufficient_credits</code> or <code>llm_not_available</code>).</li>
 <li>Hard-coding an observed request-rate threshold instead of using response headers and the published concurrency entitlement.</li>
 <li>Confusing API plan limits with the target website&#39;s own anti-bot or rate-limit behavior.</li>
 </ul>

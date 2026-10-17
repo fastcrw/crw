@@ -489,7 +489,7 @@ console.log(data);</code></pre>
 <h2 id="production-checklist">Production Checklist</h2>
 <ul>
 <li>Load <code>CRW_API_KEY</code> from an environment variable, never hardcode.</li>
-<li>Respect <code>Retry-After</code> on <code>429</code> responses.</li>
+<li>Respect <code>Retry-After</code> on <code>429</code> responses, and never retry a <code>402</code> (out of credits or a plan gate: read <code>errorCode</code>).</li>
 <li>Log <code>warning</code> and <code>metadata.statusCode</code> in addition to the HTTP status.</li>
 <li>Validate a single page through <code>scrape()</code> before wiring in <code>crawl()</code> or extraction.</li>
 <li>Use the <code>with</code> statement (Python) or call <code>client.close()</code> (TypeScript) to release the subprocess when running in local mode.</li>

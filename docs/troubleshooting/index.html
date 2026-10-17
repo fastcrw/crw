@@ -294,10 +294,10 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <p>Before diving into individual patterns:</p>
 <ol>
 <li>Check <code>success</code> in the response body — <code>false</code> means a hard failure.</li>
-<li>Check <code>error_code</code> (snake_case string) for the machine-readable cause.</li>
-<li>Check <code>data.warnings[]</code> when <code>success: true</code> — soft issues like truncation, unsupported formats, and renderer fallbacks surface there. Anti-bot blocks are <strong>not</strong> in <code>data.warnings[]</code>; they always return <code>success: false</code> + <code>error_code: &quot;anti_bot&quot;</code> (see pattern 2). A page the origin answered with a <code>&gt;= 400</code> status returns <code>success: false</code>; if it is a plain origin error page the code is <code>&quot;http_error&quot;</code> and the page stays in <code>data</code>, but when the anti-bot classifier recognises it as a wall (Cloudflare and friends serve their challenge with a 403) the code is <code>&quot;anti_bot&quot;</code> and the challenge shell is stripped from <code>data</code>.</li>
+<li>Check <code>errorCode</code> (a snake_case string) for the machine-readable cause.</li>
+<li>Check <code>data.warnings[]</code> when <code>success: true</code>: soft issues like truncation, unsupported formats, and renderer fallbacks surface there. Anti-bot blocks are <strong>not</strong> in <code>data.warnings[]</code>; they always return <code>success: false</code> + <code>errorCode: &quot;anti_bot&quot;</code> (see pattern 2). A page the origin answered with a <code>&gt;= 400</code> status returns <code>success: false</code>; if it is a plain origin error page the code is <code>&quot;http_error&quot;</code> and the page stays in <code>data</code>, but when the anti-bot classifier recognises it as a wall (Cloudflare and friends serve their challenge with a 403) the code is <code>&quot;anti_bot&quot;</code> and the challenge shell is stripped from <code>data</code>.</li>
 <li>Check <code>metadata.statusCode</code> — this is the <strong>target site&#39;s</strong> HTTP status, not fastCRW&#39;s.</li>
-<li>Check the fastCRW HTTP status separately — <code>401</code>/<code>422</code>/<code>429</code> all mean different things.</li>
+<li>Check the fastCRW HTTP status separately: <code>401</code>/<code>402</code>/<code>422</code>/<code>429</code> all mean different things.</li>
 </ol>
 <hr>
 <h2 id="1-empty-or-minimal-markdown">1. Empty or minimal markdown</h2>
@@ -327,11 +327,11 @@ print(result[&quot;markdown&quot;][:300])</code></pre>
 <p><strong><code>wait_for</code> guidance:</strong> Start with <code>1000</code>–<code>2000</code> ms for most SPAs. Complex hydration (Next.js App Router, React 18 concurrent mode) may need <code>3000</code>–<code>5000</code> ms.</p>
 <hr>
 <h2 id="2-anti-bot-block-cloudflare-challenge-page">2. Anti-bot block / Cloudflare challenge page</h2>
-<p><strong>Symptom:</strong> Response contains <code>success: false</code>, <code>error_code: &quot;anti_bot&quot;</code>, and the error message names the protection class (e.g., <code>&quot;Blocked by anti-bot (cloudflare): ...&quot;</code> or <code>&quot;Blocked by anti-bot (datadome): ...&quot;</code>).</p>
+<p><strong>Symptom:</strong> Response contains <code>success: false</code>, <code>errorCode: &quot;anti_bot&quot;</code>, and the error message names the protection class (e.g., <code>&quot;Blocked by anti-bot (cloudflare): ...&quot;</code> or <code>&quot;Blocked by anti-bot (datadome): ...&quot;</code>).</p>
 <p><strong>Cause:</strong> The target site fingerprints the request as non-browser traffic. Common triggers: missing <code>User-Agent</code>, no <code>Sec-Fetch-*</code> headers, a datacenter IP, or a detectable headless browser.</p>
 <blockquote>
 <p><strong>Not a block: <code>&quot;No usable content could be extracted (...)&quot;</code>.</strong> That case has
-its own code, <code>error_code: &quot;no_usable_content&quot;</code> — we fetched the page fine but
+its own code, <code>errorCode: &quot;no_usable_content&quot;</code>: we fetched the page fine but
 it held nothing usable: a handful of visible characters, no content
 elements. That is usually a broken TLS certificate serving an error stub, a
 parked domain, or a JS shell that never hydrated. The staged anti-bot fixes
@@ -378,7 +378,7 @@ print(result[&quot;markdown&quot;][:300])</code></pre>
 <p><strong>Do not retry anti-bot blocks in a tight loop</strong> — each failed attempt teaches the WAF more about your traffic pattern.</p>
 <hr>
 <h2 id="3-http-422-target_unreachable">3. HTTP 422 <code>target_unreachable</code></h2>
-<p><strong>Symptom:</strong> API returns HTTP <code>422</code> with <code>error_code: &quot;target_unreachable&quot;</code> and an error like <code>&quot;Target unreachable: dns error: failed to lookup address&quot;</code> or <code>&quot;connection refused&quot;</code>.</p>
+<p><strong>Symptom:</strong> API returns HTTP <code>422</code> with <code>errorCode: &quot;target_unreachable&quot;</code> and an error like <code>&quot;Target unreachable: dns error: failed to lookup address&quot;</code> or <code>&quot;connection refused&quot;</code>.</p>
 <p><strong>Cause:</strong> The fastCRW engine could not establish a TCP connection to the target host. Most common reasons:</p>
 <ul>
 <li>The hostname does not resolve (typo, private DNS, or the domain is down).</li>
@@ -429,29 +429,39 @@ curl -X POST https://api.fastcrw.com/v1/scrape \
 client = CrwClient(api_key=&quot;crw_live_YOUR_KEY&quot;)</code></pre>
 <p><strong>Self-hosted:</strong> If you did not set <code>[auth].api_keys</code> in your config, the API is open to all. If you set keys, pass one of them verbatim as the Bearer token.</p>
 <hr>
-<h2 id="5-http-429-rate-limit-vs-credit-exhausted">5. HTTP 429 — rate limit vs. credit exhausted</h2>
-<p><strong>Symptom:</strong> Requests return HTTP <code>429</code>. But two completely different problems share this status code.</p>
+<h2 id="5-http-429-rate-limit-vs-http-402-out-of-credits">5. HTTP 429 rate limit vs. HTTP 402 out of credits</h2>
+<p><strong>Symptom:</strong> Requests return HTTP <code>429</code> or HTTP <code>402</code>. They are different problems with different fixes.</p>
 <p><strong>How to tell them apart:</strong></p>
 <table>
 <thead>
 <tr>
 <th>Condition</th>
-<th>Body <code>error</code> contains</th>
+<th>Status</th>
+<th><code>errorCode</code></th>
 <th>Has <code>Retry-After</code> header?</th>
 <th>Fix</th>
 </tr>
 </thead>
 <tbody><tr>
-<td>RPM rate limit</td>
-<td><code>&quot;Rate limit exceeded&quot;</code> or <code>&quot;Rate limited&quot;</code></td>
-<td>Yes (fastcrw.com SaaS load balancer); absent on self-hosted</td>
+<td>Request-rate or concurrency limit</td>
+<td><code>429</code></td>
+<td>none</td>
+<td>Yes (fastcrw.com); absent on self-hosted</td>
 <td>Respect <code>Retry-After</code>; use exponential backoff on self-hosted</td>
 </tr>
 <tr>
-<td>Credit exhausted</td>
-<td><code>&quot;Insufficient credits&quot;</code></td>
+<td>Out of credits</td>
+<td><code>402</code></td>
+<td><code>insufficient_credits</code></td>
 <td><strong>No</strong></td>
-<td>Top up or enable auto-recharge</td>
+<td>Top up, upgrade or enable auto-recharge</td>
+</tr>
+<tr>
+<td>Out of credits, legacy <code>/v2</code> surface only</td>
+<td><code>429</code></td>
+<td>none (<code>X-FASTCRW-Credits-Available</code> header present)</td>
+<td><strong>No</strong></td>
+<td>Same as above</td>
 </tr>
 </tbody></table>
 <p><strong>Rate limit (RPM):</strong></p>
@@ -471,11 +481,12 @@ def scrape_with_retry(url, api_key, max_retries=5):
             headers=headers,
             json={&quot;url&quot;: url},
         )
-        if resp.status_code == 429:
+        if resp.status_code == 402:
             body = resp.json()
-            if &quot;Insufficient credits&quot; in body.get(&quot;error&quot;, &quot;&quot;):
-                raise RuntimeError(&quot;Credits exhausted — top up at fastcrw.com/dashboard&quot;)
-            # RPM rate limit — back off
+            # insufficient_credits or llm_not_available: a retry cannot succeed.
+            raise RuntimeError(f&quot;{body.get('errorCode')}: {body.get('error')}&quot;)
+        if resp.status_code == 429:
+            # Rate or concurrency limit: back off
             wait = int(resp.headers.get(&quot;Retry-After&quot;, 2 ** attempt))
             time.sleep(wait)
             continue
@@ -484,13 +495,13 @@ def scrape_with_retry(url, api_key, max_retries=5):
     raise RuntimeError(&quot;Max retries exceeded&quot;)
 
 result = scrape_with_retry(&quot;https://example.com&quot;, &quot;crw_live_YOUR_KEY&quot;)</code></pre>
-<p><strong>Credit exhausted:</strong> Retrying on a timer does not help — the balance does not replenish on its own. Go to <code>fastcrw.com/dashboard</code> to top up or enable auto-recharge.</p>
+<p><strong>Out of credits:</strong> Retrying on a timer does not help, because the balance does not replenish on its own. Go to <code>fastcrw.com/dashboard</code> to top up, upgrade or enable auto-recharge.</p>
 <p><strong>Self-hosted:</strong> <code>429</code> from a self-hosted instance is always the RPM rate limiter (<code>rate_limit_rps</code> in config). There is no credit system on self-hosted. No <code>Retry-After</code> header is emitted; use client-side exponential backoff.</p>
 <hr>
 <h2 id="6-search-returns-empty-results">6. Search returns empty results</h2>
-<p><strong>Symptom:</strong> <code>POST /v1/search</code> returns HTTP <code>503</code> with <code>error_code: &quot;search_disabled&quot;</code>, or it returns <code>success: true</code> but <code>data.results</code> is an empty array <code>[]</code>.</p>
+<p><strong>Symptom:</strong> <code>POST /v1/search</code> returns HTTP <code>503</code> with <code>errorCode: &quot;search_disabled&quot;</code>, or it returns <code>success: true</code> but <code>data.results</code> is an empty array <code>[]</code>.</p>
 <p><strong>Two separate problems:</strong></p>
-<h3 id="6a-error_code-search_disabled-503">6a. <code>error_code: &quot;search_disabled&quot;</code> (503)</h3>
+<h3 id="6a-errorcode-search_disabled-503">6a. <code>errorCode: &quot;search_disabled&quot;</code> (503)</h3>
 <p><strong>Cause:</strong> The engine has no search backend configured. The search route requires <code>[search].search_backend_url</code> in config or the <code>CRW_SEARCH__SEARCH_BACKEND_URL</code> environment variable.</p>
 <p><strong>Fix (self-hosted):</strong></p>
 <pre data-lang="bash"><code class="language-bash"># Quickest self-hosted setup — boot the bundled search sidecar
@@ -568,29 +579,34 @@ curl &quot;http://localhost:8080/config&quot; | jq '.engines[] | select(.enabled
 echo '{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}' | npx -y crw-mcp 2&gt;/dev/null</code></pre>
 <p>If this produces a JSON response with a <code>tools</code> array, the binary works and the problem is in the client config.</p>
 <hr>
-<h2 id="8-credit-exhausted-402-vs-429">8. Credit exhausted — 402 vs 429</h2>
-<p><strong>Symptom:</strong> The fastcrw.com SaaS returns either HTTP <code>402</code> or HTTP <code>429</code> related to credits or billing.</p>
+<h2 id="8-credit-exhausted-402">8. Credit exhausted: 402</h2>
+<p><strong>Symptom:</strong> The fastcrw.com SaaS returns HTTP <code>402</code> with <code>errorCode: &quot;insufficient_credits&quot;</code> (or, on the legacy <code>/v2</code> surface only, a <code>429</code> carrying the <code>X-FASTCRW-Credits-Available</code> header).</p>
 <p><strong>How the SaaS uses these codes:</strong></p>
 <table>
 <thead>
 <tr>
 <th>HTTP status</th>
+<th><code>errorCode</code></th>
 <th>When</th>
-<th>Body <code>error</code></th>
 </tr>
 </thead>
 <tbody><tr>
-<td><code>429</code></td>
-<td>Credits balance is zero when the request arrives</td>
-<td><code>&quot;Insufficient credits&quot;</code></td>
+<td><code>402</code></td>
+<td><code>insufficient_credits</code></td>
+<td>The credit balance cannot cover the request. <code>X-FASTCRW-Stop-Reason</code> is added when an enabled auto-recharge could not run</td>
 </tr>
 <tr>
 <td><code>402</code></td>
-<td>Payment required (e.g., free tier cap reached, plan expired)</td>
-<td>Various billing messages</td>
+<td><code>llm_not_available</code></td>
+<td>A managed-LLM feature was requested on the FREE plan</td>
+</tr>
+<tr>
+<td><code>429</code></td>
+<td>none</td>
+<td>Legacy <code>/v2</code> surface only (root <code>/v2</code>, <code>/firecrawl/v2</code>, <code>compat.fastcrw.com</code>): the credit balance cannot cover the request</td>
 </tr>
 </tbody></table>
-<p><strong>Note for self-hosted users:</strong> Neither <code>402</code> nor credit-<code>429</code> exists on self-hosted. The only <code>429</code> on self-hosted is the RPM rate limiter (<code>rate_limited</code> error code). Self-hosted has no billing system.</p>
+<p><strong>Note for self-hosted users:</strong> No credit <code>402</code> or credit <code>429</code> exists on self-hosted. The only <code>429</code> on self-hosted is the RPM rate limiter (<code>rate_limited</code> error code). Self-hosted has no billing system.</p>
 <p><strong>Fix:</strong></p>
 <pre data-lang="bash"><code class="language-bash"># Check your balance (fastcrw.com SaaS)
 curl https://fastcrw.com/api/v1/account/balance \
@@ -606,13 +622,13 @@ data = resp.json()
 print(f&quot;Balance: {data['balance']} credits&quot;)
 if data[&quot;balance&quot;] &lt; 100:
     print(&quot;Warning: low balance — top up at fastcrw.com/dashboard&quot;)</code></pre>
-<p><strong>Do not retry a credit-<code>429</code> on a timer</strong> — the balance is exhausted and retrying consumes no credits (the request is rejected before any work starts) but it does waste time and may look like abuse. Replenish the balance first.</p>
+<p><strong>Do not retry an out-of-credit <code>402</code> (or a legacy <code>/v2</code> credit <code>429</code>) on a timer.</strong> The balance is exhausted and retrying consumes no credits (the request is rejected before any work starts), but it does waste time and may look like abuse. Replenish the balance first.</p>
 <hr>
 <h2 id="error-code-reference">Error code reference</h2>
 <table>
 <thead>
 <tr>
-<th><code>error_code</code></th>
+<th><code>errorCode</code></th>
 <th>HTTP</th>
 <th>Source</th>
 </tr>
@@ -661,6 +677,16 @@ if data[&quot;balance&quot;] &lt; 100:
 <td><code>rate_limited</code></td>
 <td>429</td>
 <td>RPM rate limit (engine-level)</td>
+</tr>
+<tr>
+<td><code>insufficient_credits</code></td>
+<td>402</td>
+<td>Cloud only: the credit balance cannot cover the request</td>
+</tr>
+<tr>
+<td><code>llm_not_available</code></td>
+<td>402</td>
+<td>Cloud only: managed-LLM feature requested on the FREE plan</td>
 </tr>
 <tr>
 <td><code>search_disabled</code></td>
