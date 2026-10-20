@@ -6,9 +6,8 @@
 //! * the auto-chain hop between the plain reqwest HTTP tier and the browser
 //!   ladder, fired only when the plain tier hit a wall-shaped response (the
 //!   Amazon interstitial class) or a transport error, never on SPA/thin/empty
-//!   shapes that need JS. The hop runs on a FRESH client per attempt (see
-//!   `FallbackRenderer::impersonated_hop_factory`): no pooled impersonated
-//!   identity for a wall vendor to build per-fingerprint reputation on;
+//!   shapes that need JS. The hop runs on a fresh client per attempt (see
+//!   `FallbackRenderer::impersonated_hop_factory`);
 //! * the explicit `renderer = "impersonated-http"` pin, which uses the warm
 //!   pooled client: deliberate bulk use is where pooling pays.
 //!
@@ -700,32 +699,24 @@ mod tests {
             serde_json::from_str(&r.html).expect("fingerprint endpoint returns JSON");
 
         let tls = &v["tls"];
-        // Post-quantum key share: both in the offered groups AND actually sent.
-        let groups = tls["extensions"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|e| e["name"].as_str().unwrap_or("").contains("supported_groups"))
-            .and_then(|e| e["supported_groups"].as_array().cloned())
-            .unwrap_or_default();
-        let group_names: Vec<String> = groups
-            .iter()
-            .filter_map(|g| g.as_str().map(|s| s.to_string()))
-            .collect();
-        assert!(
-            group_names.iter().any(|g| g.contains("X25519MLKEM768")),
-            "supported_groups must offer the post-quantum group; got {group_names:?}"
-        );
-        let key_share_str = tls["extensions"].to_string();
-        assert!(
-            key_share_str.contains("X25519MLKEM768"),
-            "key_share must actually carry the ML-KEM share, not just offer the group"
-        );
+        // Post-quantum key share: both offered in supported_groups AND sent
+        // in key_share. Each check reads only its own extension entry.
+        for name in ["supported_groups", "key_share"] {
+            let entry = tls["extensions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|e| e["name"].as_str().unwrap_or("").starts_with(name))
+                .map(|e| e.to_string())
+                .unwrap_or_default();
+            assert!(
+                entry.contains("X25519MLKEM768"),
+                "{name} must carry the post-quantum group; got {entry}"
+            );
+        }
 
         // HTTP/2 fingerprint present (the Akamai SETTINGS/pseudo-header shape).
-        let h2 = v["http2"]["akamai_fingerprint_hash"]
-            .as_str()
-            .unwrap_or("");
+        let h2 = v["http2"]["akamai_fingerprint_hash"].as_str().unwrap_or("");
         assert!(!h2.is_empty(), "HTTP/2 fingerprint hash must be reported");
     }
 }
