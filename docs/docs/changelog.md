@@ -8,6 +8,45 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.38.0](https://github.com/fastcrw/crw/compare/v0.37.2...v0.38.0) (2026-10-17)
+
+
+### Features
+
+* **extract:** configurable LLM timeout for JSON extraction ([fa65e80](https://github.com/fastcrw/crw/commit/fa65e804223fc648067cee79f62047f31f10be10))
+* **renderer:** configurable residential proxy username format ([808f654](https://github.com/fastcrw/crw/commit/808f6540af69cc26445d4e3a5e5cf8501947d39c))
+
+
+### Bug Fixes
+
+* **batch:** keep a refused .pdf page in batch, as /v1/scrape does ([14ea8a7](https://github.com/fastcrw/crw/commit/14ea8a708ef9cf3ecb294c58ec30e0ef6c7b7f44))
+* **ci:** authenticate the legacy image mirror with a PAT ([55c2056](https://github.com/fastcrw/crw/commit/55c2056b85339675ea97eb67d4f4b4aa99b4a5af))
+* **config:** honour extraction.only_main_content as the request default ([53a6baf](https://github.com/fastcrw/crw/commit/53a6baf2ad51113f69f5e9718ad8c4c53113d383)), closes [#614](https://github.com/fastcrw/crw/issues/614)
+* **core:** log target URLs as origin plus a keyed tag ([a0ef20b](https://github.com/fastcrw/crw/commit/a0ef20bfd44daa83f0e5728a9e54c5f18b7db333))
+* **crawl:** record a wall no renderer tier could clear as a failed page ([f18a3cb](https://github.com/fastcrw/crw/commit/f18a3cba77c8884f47c71d310c052d86983fafe6))
+* **crawl:** report the real timeout and stop crawling binary assets ([df29f00](https://github.com/fastcrw/crw/commit/df29f0000a5fff3234ce77394ae1fd376bed5c5b))
+* **crawl:** stop logging a renderer verdict as an anti-bot wall ([e173c0c](https://github.com/fastcrw/crw/commit/e173c0c12b1148007bdc2fef0bf140298fb10c39))
+* **extract:** current Anthropic models as defaults, parse thinking blocks ([5590aad](https://github.com/fastcrw/crw/commit/5590aad5649b3593d7dffb6950db86ef494ccd58))
+* **map:** read no links or sitemap entries from a carried wall ([7d124b8](https://github.com/fastcrw/crw/commit/7d124b80dbfae5e3ece68557b1a50491cf283ee5))
+* **mcp:** keep structural and parked pages as data, like the CLI ([f6a80bb](https://github.com/fastcrw/crw/commit/f6a80bb288c1b954e9bfb8fef3aeddf8e4703c36))
+* **mcp:** read only a scrape's failure envelope as a tool error ([939ba77](https://github.com/fastcrw/crw/commit/939ba778395d3a7c2b7140b156dc10a5d1a9a589))
+* **renderer:** a ladder that never reached the wall keeps its error ([5a12321](https://github.com/fastcrw/crw/commit/5a12321fa9b9562fc5df8fc084c8ced37c343530))
+* **renderer:** give the PDF gate an honest verdict and keep /v1 as main ([4624c9e](https://github.com/fastcrw/crw/commit/4624c9e5df09eb88f91b1540bfd64bfa7c8c42d1))
+* **renderer:** launch headless Chrome with --use-mock-keychain ([f12e95b](https://github.com/fastcrw/crw/commit/f12e95b1de12cea38bbcbba1eab6f2903f1641f3))
+* **renderer:** skip a body tag inside head scripts when measuring body text ([baacc11](https://github.com/fastcrw/crw/commit/baacc112bb1a9d1dac5ff2b797254f93a78da826)), closes [#605](https://github.com/fastcrw/crw/issues/605)
+* **renderer:** stop closing Web Worker targets mid-render ([3622b86](https://github.com/fastcrw/crw/commit/3622b86f1a56ef5d74e573e2834c6922932f8013))
+* **renderer:** stop reporting an anti-bot wall as a gateway failure ([ba8610c](https://github.com/fastcrw/crw/commit/ba8610cfc3cedf35328b3e222b454383556b71cc))
+* **renderer:** stop sending failed PDF fetches to browser tiers ([4bf631d](https://github.com/fastcrw/crw/commit/4bf631db211e604dce576cf1a969977bf16b2e95))
+* **renderer:** stop sending LightPanda a Mozilla-stripped user agent ([4f5c6c0](https://github.com/fastcrw/crw/commit/4f5c6c0a64ff7f6c9be770fa0b37caa98d45b3ae))
+* **renderer:** treat a .pdf hard-block status as an unclearable wall ([30622db](https://github.com/fastcrw/crw/commit/30622dbd12b83e20293b383fb508b46917aba18b))
+* **scrape:** carry the block verdict correctly on every surface ([7f154b2](https://github.com/fastcrw/crw/commit/7f154b26bae8d23a81af0eda30582a222d9746d7))
+* **scrape:** never accept or re-run an escalation over a condemned wall ([8caac65](https://github.com/fastcrw/crw/commit/8caac65b85e6fec004375ba56a6cdc8004e8e615))
+* **scrape:** skip change tracking on a blocked page ([bb9c292](https://github.com/fastcrw/crw/commit/bb9c292134ca7a8afda7e8b302d63658af377f00))
+* **scrape:** skip change tracking only on a wall no tier could clear ([60c19e3](https://github.com/fastcrw/crw/commit/60c19e376d3f4fa823d2d45fb59730fbf6e35d6e))
+* **search:** drop enrichment bodies only for a wall no tier could clear ([31e6e26](https://github.com/fastcrw/crw/commit/31e6e268a795f65fa1dfa486e04091da803836cb))
+* **server:** log every request with its route, status and error code ([a498ed7](https://github.com/fastcrw/crw/commit/a498ed7c2795ca596a7de4cc97edd7daa483387d))
+* **v2:** keep a wall no renderer tier could clear unbilled on a 4xx ([834a9f1](https://github.com/fastcrw/crw/commit/834a9f1864e244408854c73408591b12d6f90e56))
+
 ## [0.37.2](https://github.com/fastcrw/crw/compare/v0.37.1...v0.37.2) (2026-09-30)
 
 
