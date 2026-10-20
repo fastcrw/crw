@@ -903,8 +903,9 @@ pub struct FallbackRenderer {
     #[cfg(feature = "impersonated")]
     impersonated: Option<Arc<dyn PageFetcher>>,
     /// Warm per-proxy impersonated clients, mirroring `proxy_client_cache`
-    /// (same 512 bound): a set REQUEST_PROXY is honored by the hop and the pin
-    /// alike, never bypassed. wreq reads no env proxies implicitly, so nothing
+    /// (same 512 bound), used by the pin arm only (the hop builds a use-once
+    /// client via `impersonated_hop_factory`): a set REQUEST_PROXY is honored
+    /// by both, never bypassed. wreq reads no env proxies implicitly, so nothing
     /// implicit is wired either way.
     #[cfg(feature = "impersonated")]
     impersonated_client_cache:
@@ -912,15 +913,14 @@ pub struct FallbackRenderer {
     /// Saved impersonated-tier timeout for the per-proxy cache.
     #[cfg(feature = "impersonated")]
     impersonated_timeout_ms: u64,
-    /// Builds the use-once fetcher for each hop attempt. The hop is a cold
-    /// retry path, so it gets a FRESH client per attempt: a new TLS session and
-    /// no pooled identity. A persistent impersonated session lets a wall vendor
-    /// build per-fingerprint reputation and quietly stop serving it, the
-    /// failure pywaze paid to learn (eifinger/pywaze#110: a pinned impersonated
-    /// session was re-blocked in six days; #111 fixed it with a fresh session
-    /// per fallback request). The pin arm keeps the warm pooled client: bulk
-    /// deliberate use is exactly where pooling pays. A factory field rather
-    /// than a method so tests can inject a counter and assert freshness.
+    /// Builds a FRESH use-once fetcher for each hop attempt: a new connection
+    /// and TLS session, no pooled state carried from one walled page to the
+    /// next. The preset is the same, so the fingerprint itself does not
+    /// change; this is insurance against per-session reputation, after
+    /// eifinger/pywaze#111 (which paired a fresh session per fallback with a
+    /// floating preset). The pin arm keeps the warm pooled client: bulk
+    /// deliberate use is where pooling pays. A field rather than a method so
+    /// tests can inject a mock.
     #[cfg(feature = "impersonated")]
     impersonated_hop_factory: ImpersonatedHopFactory,
 }
@@ -1024,8 +1024,7 @@ impl FallbackRenderer {
             None
         };
 
-        // The hop's use-once client builder (see the field's doc). Built in
-        // every feature build; inert until a hop actually runs.
+        // The hop's use-once client builder (see the field's doc).
         #[cfg(feature = "impersonated")]
         let impersonated_hop_factory: ImpersonatedHopFactory = {
             let timeout = std::time::Duration::from_millis(config.impersonated_timeout());
@@ -1665,9 +1664,7 @@ impl FallbackRenderer {
         // typo'd literal cannot fork the series.
         let kind = RendererKind::ImpersonatedHttp;
         // Fresh, use-once client for this attempt (see the factory field's
-        // doc): no pooled identity for the wall to learn across hops.
-        // REQUEST_PROXY is honored fail-closed through the same with_proxy
-        // constructor the warm path uses.
+        // doc). REQUEST_PROXY stays fail-closed through `with_proxy`.
         let proxy_raw = REQUEST_PROXY
             .try_with(|p| p.as_ref().map(|e| e.raw().to_string()))
             .ok()
@@ -6403,11 +6400,21 @@ mod tests {
 
     /// Inject a mock impersonated tier the way the routing tests need: the
     /// presence/pin path reads `impersonated`, the hop takes its fetcher from
-    /// the factory, so the mock must sit in both.
+    /// the factory, so the mock must sit in both. Returns how many hop
+    /// clients the factory built.
     #[cfg(feature = "impersonated")]
-    fn inject_impersonated(r: &mut FallbackRenderer, tier: Arc<dyn PageFetcher>) {
+    fn inject_impersonated(
+        r: &mut FallbackRenderer,
+        tier: Arc<dyn PageFetcher>,
+    ) -> Arc<std::sync::atomic::AtomicUsize> {
+        let built = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = built.clone();
         r.impersonated = Some(tier.clone());
-        r.impersonated_hop_factory = Arc::new(move |_| Ok(tier.clone()));
+        r.impersonated_hop_factory = Arc::new(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(tier.clone())
+        });
+        built
     }
 
     fn make_renderer_with_mocks(mocks: Vec<Arc<dyn PageFetcher>>) -> FallbackRenderer {
@@ -6637,103 +6644,6 @@ mod tests {
         );
     }
 
-    /// The hop builds a FRESH client per attempt: a pooled impersonated
-    /// identity is exactly what lets a wall vendor accumulate per-fingerprint
-    /// reputation (eifinger/pywaze#110, fixed by a fresh session per fallback
-    /// in #111). The counting factory proves one construction per hop attempt.
-    #[cfg(feature = "impersonated")]
-    #[tokio::test]
-    async fn hop_builds_a_fresh_session_per_attempt() {
-        let http = Arc::new(MockFetcher {
-            name: "http",
-            behavior: MockBehavior::OkStatus(200, amazon_interstitial_html()),
-        }) as Arc<dyn PageFetcher>;
-        // The hop attempt misses (the impersonated client gets the same wall),
-        // so the ladder must finish the job.
-        let impersonated = Arc::new(MockFetcher {
-            name: "impersonated-http",
-            behavior: MockBehavior::OkStatus(200, amazon_interstitial_html()),
-        }) as Arc<dyn PageFetcher>;
-        let chrome = Arc::new(MockFetcher {
-            name: "chrome",
-            behavior: MockBehavior::Ok(rich_html("LADDER-")),
-        }) as Arc<dyn PageFetcher>;
-        let mut r = make_renderer_with_mocks(vec![chrome]);
-        r.http = http;
-        let built = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter = built.clone();
-        let tier = impersonated.clone();
-        r.impersonated = Some(tier.clone());
-        r.impersonated_hop_factory = Arc::new(move |_| {
-            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(tier.clone())
-        });
-
-        let result = r
-            .fetch(
-                "https://www.amazon.it/dp/B0FHQGLXBP",
-                &HashMap::new(),
-                None,
-                None,
-                None,
-                tdl(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            result.rendered_with.as_deref(),
-            Some("chrome"),
-            "a hop that still sees the wall must fall through to the ladder"
-        );
-        assert_eq!(
-            built.load(std::sync::atomic::Ordering::SeqCst),
-            1,
-            "exactly one fresh session per hop attempt"
-        );
-    }
-
-    /// Clean sites never construct a hop client at all: no wall, no session.
-    #[cfg(feature = "impersonated")]
-    #[tokio::test]
-    async fn clean_site_builds_no_hop_session() {
-        let http = Arc::new(MockFetcher {
-            name: "http",
-            behavior: MockBehavior::Ok(rich_html("CLEAN-")),
-        }) as Arc<dyn PageFetcher>;
-        let impersonated = Arc::new(MockFetcher {
-            name: "impersonated-http",
-            behavior: MockBehavior::Panic("no hop may run on a clean site"),
-        }) as Arc<dyn PageFetcher>;
-        let mut r = make_renderer_with_mocks(Vec::new());
-        r.http = http;
-        let built = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter = built.clone();
-        let tier = impersonated.clone();
-        r.impersonated = Some(tier.clone());
-        r.impersonated_hop_factory = Arc::new(move |_| {
-            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(tier.clone())
-        });
-
-        let result = r
-            .fetch(
-                "https://example.com",
-                &HashMap::new(),
-                None,
-                None,
-                None,
-                tdl(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.rendered_with.as_deref(), Some("http"));
-        assert_eq!(
-            built.load(std::sync::atomic::Ordering::SeqCst),
-            0,
-            "no hop session is built when the plain tier succeeds"
-        );
-    }
-
     #[cfg(feature = "impersonated")]
     #[tokio::test]
     async fn fetch_auto_impersonated_still_blocked_continues_to_ladder() {
@@ -6751,7 +6661,7 @@ mod tests {
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(vec![chrome]);
         r.http = http;
-        inject_impersonated(&mut r, impersonated);
+        let built = inject_impersonated(&mut r, impersonated);
 
         let result = r
             .fetch(
@@ -6768,6 +6678,11 @@ mod tests {
             result.rendered_with.as_deref(),
             Some("chrome"),
             "a hop that stays blocked must fall through to the ladder"
+        );
+        assert_eq!(
+            built.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "exactly one fresh hop client per walled fetch"
         );
     }
 
