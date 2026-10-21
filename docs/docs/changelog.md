@@ -8,6 +8,19 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.39.0](https://github.com/fastcrw/crw/compare/v0.38.0...v0.39.0) (2026-10-21)
+
+
+### Features
+
+* **renderer:** fresh impersonated session per hop attempt ([b4d226b](https://github.com/fastcrw/crw/commit/b4d226ba29ecddc94ec841fda070fefdd1233b2c))
+
+
+### Bug Fixes
+
+* **deps:** build with rmcp 3.5 ServerConfig, keep pdf-inspector 1.17 ([4ce178f](https://github.com/fastcrw/crw/commit/4ce178f6727ea89c824abf1c1ad6e30f95ce7c75))
+* **renderer:** check the key_share entry in the preset sentinel ([48864af](https://github.com/fastcrw/crw/commit/48864affbcc7433d0bfd6e967be7bfe1dd1a1809))
+
 ## [0.38.0](https://github.com/fastcrw/crw/compare/v0.37.2...v0.38.0) (2026-10-17)
 
 
