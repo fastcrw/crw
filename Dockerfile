@@ -37,7 +37,7 @@ ARG CARGO_PKGS="-p crw-server --features cdp,impersonated -p crw-mcp -p crw-cli"
 ARG CARGO_BUILD_JOBS=default
 
 # ---- shared toolchain base --------------------------------------------------
-FROM --platform=$BUILDPLATFORM rust:1.99-bookworm@sha256:114c7a4425406451c2866b6aafe69fe29b1b298832db1277d411ac73c82d04d6 AS chef
+FROM --platform=$BUILDPLATFORM rust:1.99-bookworm@sha256:e12566d5abc17a0da741628782cdb504b68b8961f5bfcf677936bf3e8b32de29 AS chef
 
 # Provided automatically by buildx: amd64 | arm64.
 ARG TARGETARCH
