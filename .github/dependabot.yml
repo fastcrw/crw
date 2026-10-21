@@ -16,6 +16,8 @@ updates:
       # scraper 0.25 (latest) pins ego-tree 0.10; NodeId comes from scraper's
       # ElementRef, so a direct ego-tree 0.11 bump is a type mismatch.
       - dependency-name: "ego-tree"
+      # Pinned in Cargo.toml: 1.25.2 drops word recall up to 3.8 points on 3 of 29 benchmark PDFs.
+      - dependency-name: "pdf-inspector"
 
   - package-ecosystem: "github-actions"
     directory: "/"
