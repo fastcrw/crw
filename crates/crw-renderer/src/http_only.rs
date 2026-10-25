@@ -1088,7 +1088,19 @@ fn charset_from_content_type(ct: &str) -> Option<String> {
 pub(crate) async fn read_body_capped(resp: reqwest::Response, max: usize) -> CrwResult<Vec<u8>> {
     let (body, truncated) = crw_core::body::read_capped(resp.bytes_stream(), max)
         .await
-        .map_err(|e| CrwError::HttpError(crw_core::error::reqwest_message(e)))?;
+        .map_err(|e| {
+            // The caller only sees the outer "error decoding response body";
+            // the reason (a truncated chunk, a bad gzip stream) is in the
+            // sources, so it goes to the operator log. The returned message is
+            // unchanged.
+            let e = e.without_url();
+            let message = e.to_string();
+            tracing::warn!(
+                "response body read failed ({})",
+                crw_core::error::reqwest_error_chain(e)
+            );
+            CrwError::HttpError(message)
+        })?;
     if truncated {
         return Err(CrwError::HttpError(format!(
             "Response too large: exceeds {max} bytes"
