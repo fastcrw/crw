@@ -139,63 +139,81 @@ fn screenshot_max_height_px() -> f64 {
 
 /// JavaScript injected via `Page.addScriptToEvaluateOnNewDocument` before every
 /// navigation to prevent headless browser detection by anti-bot systems.
+///
+/// Every section is its own `try`: one property a renderer refuses to redefine
+/// (Lightpanda throws `Cannot redefine property: webdriver` in iframes) must not
+/// abort the sections after it.
 const STEALTH_JS: &str = r#"
 // 1. Hide navigator.webdriver (primary headless signal for Cloudflare)
-Object.defineProperty(navigator, 'webdriver', { get: () => false });
+try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+} catch (_) {}
 
 // 2. Fake chrome runtime object (missing in headless)
-if (!window.chrome) {
-    window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){} };
-}
+try {
+    if (!window.chrome) {
+        window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){} };
+    }
+} catch (_) {}
 
 // 3. Spoof plugins array (headless has 0 plugins)
-Object.defineProperty(navigator, 'plugins', {
-    get: () => {
-        const arr = [
-            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-            { name: 'Native Client', filename: 'internal-nacl-plugin' },
-        ];
-        arr.item = (i) => arr[i];
-        arr.namedItem = (n) => arr.find(p => p.name === n);
-        arr.refresh = () => {};
-        return arr;
-    }
-});
-
-// 4. Spoof languages (headless sometimes returns empty)
-Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-
-// 5. Override permissions query to hide "denied" for notifications
-const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
-window.navigator.permissions.query = (params) =>
-    params.name === 'notifications'
-        ? Promise.resolve({ state: Notification.permission })
-        : originalQuery(params);
-
-// 6. Prevent detection via iframe contentWindow
-const origHTMLElement = HTMLIFrameElement.prototype.__lookupGetter__('contentWindow');
-if (origHTMLElement) {
-    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
-        get: function() {
-            const w = origHTMLElement.call(this);
-            if (w && !w.chrome) w.chrome = window.chrome;
-            return w;
+try {
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+            const arr = [
+                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                { name: 'Native Client', filename: 'internal-nacl-plugin' },
+            ];
+            arr.item = (i) => arr[i];
+            arr.namedItem = (n) => arr.find(p => p.name === n);
+            arr.refresh = () => {};
+            return arr;
         }
     });
-}
+} catch (_) {}
+
+// 4. Spoof languages (headless sometimes returns empty)
+try {
+    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+} catch (_) {}
+
+// 5. Override permissions query to hide "denied" for notifications
+try {
+    const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+    window.navigator.permissions.query = (params) =>
+        params.name === 'notifications'
+            ? Promise.resolve({ state: Notification.permission })
+            : originalQuery(params);
+} catch (_) {}
+
+// 6. Prevent detection via iframe contentWindow
+try {
+    const origHTMLElement = HTMLIFrameElement.prototype.__lookupGetter__('contentWindow');
+    if (origHTMLElement) {
+        Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+            get: function() {
+                const w = origHTMLElement.call(this);
+                if (w && !w.chrome) w.chrome = window.chrome;
+                return w;
+            }
+        });
+    }
+} catch (_) {}
 
 // 7. Fix broken toString for overridden functions (anti-detection fingerprinting)
-const nativeToString = Function.prototype.toString;
-const overrides = new Map();
-const proxy = new Proxy(nativeToString, {
-    apply(target, thisArg, args) {
-        const override = overrides.get(thisArg);
-        return override || nativeToString.call(thisArg);
-    }
-});
-Function.prototype.toString = proxy;
-overrides.set(Function.prototype.toString, 'function toString() { [native code] }');
+try {
+    const nativeToString = Function.prototype.toString;
+    const overrides = new Map();
+    const proxy = new Proxy(nativeToString, {
+        apply(target, thisArg, args) {
+            const override = overrides.get(thisArg);
+            return override || nativeToString.call(thisArg);
+        }
+    });
+    Function.prototype.toString = proxy;
+    overrides.set(Function.prototype.toString, 'function toString() { [native code] }');
+} catch (_) {}
 
 // 8. WebGL vendor/renderer spoof — anti-bot scripts inspect UNMASKED_VENDOR_WEBGL
 // (37445) and UNMASKED_RENDERER_WEBGL (37446) to detect headless software rendering.
