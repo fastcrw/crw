@@ -459,6 +459,45 @@ enum HedgeOutcome {
     /// if the size-race stitch dropped that attempt's HTML). Mirrors the serial
     /// loop's `thin_result` + `saw_hard_block` + `saw_unrecoverable_wall`.
     Thin(FetchResult, bool, bool),
+    /// Both tiers errored. Each leg's error is kept so the serial loop can replay
+    /// one an immediate rerun would only repeat (see [`hedge_error_repeats`])
+    /// instead of fetching the same tier again.
+    BothErrored {
+        lightpanda: CrwError,
+        chrome: CrwError,
+    },
+}
+
+/// Is this hedge-leg error one that rerunning the same tier straight away only
+/// repeats?
+///
+/// Measured on production hedges where both legs errored: none of these codes
+/// was ever rescued by the serial rerun, which returned the same error each
+/// time. The `ERR_CERT_` family is included for the same reason a certificate
+/// that is expired or names another host does not fix itself a second later.
+///
+/// Left out on purpose, so they still rerun: `Timeout` (a rerun on the remaining
+/// budget did rescue a few requests), our own faults such as CDP discovery or a
+/// proxy tunnel, and transient network codes (reset, closed, DNS) the data does
+/// not cover.
+fn hedge_error_repeats(e: &CrwError) -> bool {
+    const REPEATS: &[&str] = &[
+        "PeerFailedVerification",
+        "SslConnectError",
+        "CouldntConnect",
+        "ERR_SSL_PROTOCOL_ERROR",
+        "ERR_CONNECTION_REFUSED",
+        "ERR_ABORTED",
+        "ERR_HTTP2_PROTOCOL_ERROR",
+    ];
+    let CrwError::RendererError(m) = e else {
+        return false;
+    };
+    let Some(code) = m.strip_prefix("Navigation failed: ") else {
+        return false;
+    };
+    let code = code.trim().trim_start_matches("net::");
+    code.starts_with("ERR_CERT_") || REPEATS.contains(&code)
 }
 
 /// Did this renderer error come from failing to reach/navigate the ORIGIN, as
@@ -2987,8 +3026,9 @@ impl FallbackRenderer {
 
     /// Conditional hedge: race lightpanda + chrome CONCURRENTLY (chrome's render
     /// clock starts immediately instead of after lightpanda fails) and take the
-    /// best result by tier priority. Returns `None` if a breaker was open (caller
-    /// falls back to serial). Success/recall ≡ serial:
+    /// best result by tier priority. Returns `None` if a breaker was open or the
+    /// budget drained while waiting for a permit (caller falls back to serial),
+    /// and `BothErrored` when both legs failed. Success/recall ≡ serial:
     ///   * Rule A: among gate-passing results, lightpanda wins (serial accepts
     ///     lightpanda when it passes, never seeing chrome); a faster-arriving
     ///     chrome only wins if lightpanda is NOT acceptable.
@@ -3155,6 +3195,19 @@ impl FallbackRenderer {
             }
         }
 
+        // Both tiers errored. The caller falls back to the serial loop with the
+        // budget that is left, which is most of it when the legs failed fast (a
+        // certificate or refused connect fails in well under a second). The
+        // serial loop replays the errors a rerun would only repeat and reruns
+        // the rest, so each leg still gets the breaker and preference
+        // bookkeeping exactly once.
+        let (lp_res, ch_res) = match (lp_res, ch_res) {
+            (Some(Err(lightpanda)), Some(Err(chrome))) => {
+                return Ok(Some(HedgeOutcome::BothErrored { lightpanda, chrome }));
+            }
+            other => other,
+        };
+
         // Rule B: best-thin = richest HTML among completed Ok results.
         let thin = [lp_res, ch_res]
             .into_iter()
@@ -3167,10 +3220,6 @@ impl FallbackRenderer {
                 saw_hard_block,
                 saw_unrecoverable_wall,
             ))),
-            // Both tiers errored. The caller falls back to the serial loop,
-            // which will skip every tier on the spent budget and report
-            // `Timeout(requested_ms)`. That status is preserved deliberately;
-            // the legs' real causes are on the `warn!` lines above.
             None => Ok(None),
         }
     }
@@ -3415,6 +3464,8 @@ impl FallbackRenderer {
         // fails. Headroom-gated (try_acquire) so it can't deadlock the pool; on no
         // permit / open breaker / both-errored it falls through to the serial loop.
         let mut hedge_done = false;
+        // Hedge-leg errors the serial loop replays instead of rerunning the tier.
+        let mut hedge_replay: Vec<(RendererKind, CrwError)> = Vec::new();
         if self.chrome_hedge
             && !is_user_pinned
             && !proxy_active
@@ -3447,7 +3498,16 @@ impl FallbackRenderer {
                     chain.push(RendererKind::Chrome);
                     hedge_done = true;
                 }
-                // breaker open / both-errored → fall back to the serial loop.
+                Ok(Some(HedgeOutcome::BothErrored { lightpanda, chrome })) => {
+                    hedge_replay = [
+                        (RendererKind::Lightpanda, lightpanda),
+                        (RendererKind::Chrome, chrome),
+                    ]
+                    .into_iter()
+                    .filter(|(_, e)| hedge_error_repeats(e))
+                    .collect();
+                }
+                // breaker open / no permit → fall back to the serial loop.
                 Ok(None) => {}
                 Err(e) => last_error = Some(e),
             }
@@ -3575,7 +3635,25 @@ impl FallbackRenderer {
             // accepted render itself (a hedge would NOT). Feeds the Phase 1.5
             // kill-gate. Off in prod (gated by `latency_breakdown`).
             let attempt_start = std::time::Instant::now();
-            let attempt_outcome = renderer.fetch(url, headers, wait_for_ms, deadline).await;
+            // This tier already failed in the hedge with an error a rerun only
+            // repeats: replay it through the arms below so the bookkeeping is the
+            // same as a real attempt, without spending a pool slot on it.
+            let replayed = kind.and_then(|k| {
+                let i = hedge_replay.iter().position(|(rk, _)| *rk == k)?;
+                Some(hedge_replay.swap_remove(i).1)
+            });
+            let was_replayed = replayed.is_some();
+            let attempt_outcome = match replayed {
+                Some(e) => {
+                    tracing::info!(
+                        renderer = renderer.name(),
+                        "hedge leg already failed with an error a rerun repeats, not rerunning: {e}",
+                        e = LogErr(&e),
+                    );
+                    Err(e)
+                }
+                None => renderer.fetch(url, headers, wait_for_ms, deadline).await,
+            };
             if self.latency_breakdown {
                 let attempt_ms = attempt_start.elapsed().as_millis() as u64;
                 let tier = renderer.name();
@@ -3594,6 +3672,7 @@ impl FallbackRenderer {
                         url = %LogUrl(&url),
                         tier,
                         attempt_ms,
+                        replayed = was_replayed,
                         error = %LogErr(&e),
                         "hedge attempt (error)",
                     ),
@@ -3952,11 +4031,14 @@ impl FallbackRenderer {
                     });
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        renderer = renderer.name(),
-                        "JS renderer failed: {e}",
-                        e = LogErr(&e),
-                    );
+                    // A replayed hedge leg was already logged as `hedge leg failed`.
+                    if !was_replayed {
+                        tracing::warn!(
+                            renderer = renderer.name(),
+                            "JS renderer failed: {e}",
+                            e = LogErr(&e),
+                        );
+                    }
                     let err_kind = classify_renderer_error(&e);
                     last_failover_reason = Some(err_kind.clone());
                     if let Some(k) = trackable {
@@ -6426,6 +6508,187 @@ mod tests {
             FallbackRenderer::new(&cfg, "crw-test", None, &StealthConfig::default()).unwrap();
         r.js_renderers = mocks;
         r
+    }
+
+    /// A JS tier that plays `script` one entry per call (the last entry repeats)
+    /// and counts how often it was actually fetched.
+    struct SeqFetcher {
+        name: &'static str,
+        script: Vec<MockBehavior>,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl SeqFetcher {
+        fn new(name: &'static str, script: Vec<MockBehavior>) -> Arc<Self> {
+            Arc::new(Self {
+                name,
+                script,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            })
+        }
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl PageFetcher for SeqFetcher {
+        async fn fetch(
+            &self,
+            url: &str,
+            headers: &HashMap<String, String>,
+            wait_for_ms: Option<u64>,
+            deadline: crw_core::Deadline,
+        ) -> CrwResult<FetchResult> {
+            let i = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let behavior = self.script[i.min(self.script.len() - 1)].clone();
+            MockFetcher {
+                name: self.name,
+                behavior,
+            }
+            .fetch(url, headers, wait_for_ms, deadline)
+            .await
+        }
+        fn name(&self) -> &str {
+            self.name
+        }
+        fn supports_js(&self) -> bool {
+            true
+        }
+        async fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    async fn hedged_fetch(lp: Arc<SeqFetcher>, chrome: Arc<SeqFetcher>) -> CrwResult<FetchResult> {
+        let mut r = make_renderer_with_mocks(vec![
+            lp as Arc<dyn PageFetcher>,
+            chrome as Arc<dyn PageFetcher>,
+        ]);
+        r.chrome_hedge = true;
+        r.fetch_with_js(
+            "https://example.com",
+            &HashMap::new(),
+            None,
+            None,
+            false,
+            crw_core::Deadline::from_request_ms(30_000),
+        )
+        .await
+    }
+
+    #[test]
+    fn hedge_error_repeats_only_for_the_measured_origin_codes() {
+        let e = |m: &str| CrwError::RendererError(m.to_string());
+        for m in [
+            "Navigation failed: PeerFailedVerification",
+            "Navigation failed: SslConnectError",
+            "Navigation failed: CouldntConnect",
+            "Navigation failed: net::ERR_CERT_COMMON_NAME_INVALID",
+            "Navigation failed: net::ERR_CERT_DATE_INVALID",
+            "Navigation failed: net::ERR_SSL_PROTOCOL_ERROR",
+            "Navigation failed: net::ERR_CONNECTION_REFUSED",
+            "Navigation failed: net::ERR_ABORTED",
+            "Navigation failed: net::ERR_HTTP2_PROTOCOL_ERROR",
+        ] {
+            assert!(hedge_error_repeats(&e(m)), "{m} should be replayed");
+        }
+        for m in [
+            "Navigation failed: net::ERR_CONNECTION_RESET",
+            "Navigation failed: net::ERR_NAME_NOT_RESOLVED",
+            "Navigation failed: net::ERR_TUNNEL_CONNECTION_FAILED",
+            "Navigation failed: Abort",
+            "CDP discovery failed: connection refused",
+            "Empty HTML from CDP renderer",
+        ] {
+            assert!(!hedge_error_repeats(&e(m)), "{m} must still rerun");
+        }
+        assert!(!hedge_error_repeats(&CrwError::Timeout(30_000)));
+    }
+
+    #[tokio::test]
+    async fn hedge_both_origin_fault_does_not_rerun_either_tier() {
+        let lp = SeqFetcher::new(
+            "lightpanda",
+            vec![MockBehavior::Err(
+                "Navigation failed: PeerFailedVerification".into(),
+            )],
+        );
+        let chrome = SeqFetcher::new(
+            "chrome",
+            vec![MockBehavior::Err(
+                "Navigation failed: net::ERR_CERT_COMMON_NAME_INVALID".into(),
+            )],
+        );
+        let res = hedged_fetch(lp.clone(), chrome.clone()).await;
+        assert_eq!(lp.calls(), 1, "lightpanda must not be rerun");
+        assert_eq!(chrome.calls(), 1, "chrome must not be rerun");
+        match res {
+            Err(CrwError::RendererError(m)) => {
+                assert!(m.contains("ERR_CERT_COMMON_NAME_INVALID"), "{m}")
+            }
+            other => panic!("expected chrome's error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn hedge_both_timeout_still_reruns_and_can_be_rescued() {
+        let lp = SeqFetcher::new("lightpanda", vec![MockBehavior::Timeout]);
+        let chrome = SeqFetcher::new(
+            "chrome",
+            vec![
+                MockBehavior::Timeout,
+                MockBehavior::Ok(rich_html("CHROME-")),
+            ],
+        );
+        let res = hedged_fetch(lp.clone(), chrome.clone()).await;
+        assert_eq!(lp.calls(), 2, "a timed-out lightpanda leg is rerun");
+        assert_eq!(chrome.calls(), 2, "a timed-out chrome leg is rerun");
+        let r = res.expect("the chrome rerun rescues the request");
+        assert!(r.html.contains("CHROME-"));
+    }
+
+    #[tokio::test]
+    async fn hedge_mixed_timeout_and_origin_fault_reruns_only_the_timeout() {
+        let lp = SeqFetcher::new("lightpanda", vec![MockBehavior::Timeout]);
+        let chrome = SeqFetcher::new(
+            "chrome",
+            vec![MockBehavior::Err(
+                "Navigation failed: net::ERR_CONNECTION_REFUSED".into(),
+            )],
+        );
+        let res = hedged_fetch(lp.clone(), chrome.clone()).await;
+        assert_eq!(lp.calls(), 2, "the timed-out leg is rerun");
+        assert_eq!(chrome.calls(), 1, "the refused leg is replayed, not rerun");
+        match res {
+            Err(CrwError::RendererError(m)) => assert!(m.contains("ERR_CONNECTION_REFUSED"), "{m}"),
+            other => panic!("expected chrome's error last, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn hedge_internal_fault_still_reruns() {
+        let lp = SeqFetcher::new(
+            "lightpanda",
+            vec![MockBehavior::Err(
+                "Navigation failed: SslConnectError".into(),
+            )],
+        );
+        let chrome = SeqFetcher::new(
+            "chrome",
+            vec![
+                MockBehavior::Err("CDP discovery failed: connection refused".into()),
+                MockBehavior::Ok(rich_html("CHROME-")),
+            ],
+        );
+        let res = hedged_fetch(lp.clone(), chrome.clone()).await;
+        assert_eq!(lp.calls(), 1, "lightpanda's origin fault is replayed");
+        assert_eq!(chrome.calls(), 2, "our own CDP fault is rerun");
+        assert!(
+            res.expect("rescued by the chrome rerun")
+                .html
+                .contains("CHROME-")
+        );
     }
 
     #[tokio::test]
