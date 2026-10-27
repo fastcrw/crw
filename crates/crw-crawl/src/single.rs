@@ -1137,15 +1137,34 @@ async fn scrape_url_inner(
     }
 
     if is_empty_truncated_render(data.truncated, &req.formats, data.markdown.as_deref()) {
-        tracing::warn!(
-            url = %LogUrl(&req.url),
-            elapsed_ms = fetch_result.elapsed_ms,
-            "render budget expired with no extractable content; failing instead of billing an empty page",
-        );
-        // The caller's budget, not `elapsed_ms`: that is when the partial render
-        // was taken (about 2.5s into a 30s request), and reporting it told callers
-        // their `timeout` had been ignored.
-        return Err(crw_core::error::CrwError::Timeout(deadline.requested_ms()));
+        if wall_explains_empty_render(
+            data.block.as_ref(),
+            fetch_result.block.is_some(),
+            fetch_result.status_code,
+        ) {
+            // Nothing came back because the site answered with a wall, not
+            // because the page was slow. Report it the way an untruncated wall
+            // is reported, so the caller is told a retry will not help instead of
+            // to raise its timeout. `unclearable_wall` is what keeps `/v2` from
+            // turning a walled 4xx into a billed document.
+            tracing::warn!(
+                url = %LogUrl(&req.url),
+                status = fetch_result.status_code,
+                elapsed_ms = fetch_result.elapsed_ms,
+                "render budget expired on a wall with no extractable content; reporting the wall",
+            );
+            data.unclearable_wall = true;
+        } else {
+            tracing::warn!(
+                url = %LogUrl(&req.url),
+                elapsed_ms = fetch_result.elapsed_ms,
+                "render budget expired with no extractable content; failing instead of billing an empty page",
+            );
+            // The caller's budget, not `elapsed_ms`: that is when the partial render
+            // was taken (about 2.5s into a 30s request), and reporting it told callers
+            // their `timeout` had been ignored.
+            return Err(crw_core::error::CrwError::Timeout(deadline.requested_ms()));
+        }
     }
 
     // Wrap the raw base64 screenshot in a `data:image/png;base64,` URL exactly
@@ -1402,6 +1421,30 @@ fn redirect_is_material(requested: &str, final_url: &str) -> bool {
 /// for one customer, on the same source, since June.
 pub(crate) fn is_cdn_origin_error(status_code: u16) -> bool {
     (520..=527).contains(&status_code)
+}
+
+/// Does a wall explain why a truncated render came back empty?
+///
+/// Only a real wall verdict counts: not a structural failure or a parked
+/// domain (those say "nothing usable", not "blocked"), not a PDF the origin
+/// refused. And the verdict alone is not enough, because a partial DOM of a
+/// healthy page can carry a vendor's script marker. It must be backed by the
+/// renderer's own wall verdict or a blocking status on the tier that answered.
+fn wall_explains_empty_render(
+    block: Option<&BlockOutcome>,
+    carried_wall: bool,
+    status: u16,
+) -> bool {
+    let Some(b) = block else {
+        return false;
+    };
+    if b.vendor == STRUCTURAL_FAILURE_VENDOR
+        || b.vendor == crw_core::types::PARKED_DOMAIN_VENDOR
+        || b.is_unrenderable_pdf()
+    {
+        return false;
+    }
+    carried_wall || matches!(status, 401 | 403 | 429 | 503)
 }
 
 /// A truncated render that extracted to nothing: the render budget expired
@@ -1892,6 +1935,43 @@ mod tests {
     use crw_core::config::{RendererConfig, StealthConfig};
 
     const THRESH: usize = 100;
+
+    #[test]
+    fn a_wall_explains_an_empty_render_only_with_a_blocking_status_or_carried_verdict() {
+        let block = |vendor: &str| BlockOutcome {
+            vendor: vendor.to_string(),
+            reason: "test".to_string(),
+        };
+        let rate = block("rate_limited");
+        assert!(wall_explains_empty_render(Some(&rate), false, 429));
+        assert!(wall_explains_empty_render(
+            Some(&block("datadome")),
+            false,
+            403
+        ));
+        assert!(wall_explains_empty_render(
+            Some(&block("generic_block")),
+            true,
+            200
+        ));
+        // A vendor marker in a healthy page's partial DOM is not a wall.
+        assert!(!wall_explains_empty_render(
+            Some(&block("perimeterx")),
+            false,
+            200
+        ));
+        assert!(!wall_explains_empty_render(None, false, 429));
+        assert!(!wall_explains_empty_render(
+            Some(&block(STRUCTURAL_FAILURE_VENDOR)),
+            true,
+            429
+        ));
+        assert!(!wall_explains_empty_render(
+            Some(&block(crw_core::types::PARKED_DOMAIN_VENDOR)),
+            false,
+            403
+        ));
+    }
 
     #[test]
     fn quality_escalation_skips_json_only() {
