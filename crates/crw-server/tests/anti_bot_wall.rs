@@ -55,6 +55,7 @@ fn app(with_browser: bool) -> TestServer {
             name: "chrome",
             status_code: 403,
             html: CAPTCHA_WALL.to_string(),
+            truncated: false,
         }) as Arc<dyn PageFetcher>;
         renderer = renderer.with_js_tiers(vec![browser]);
     }
@@ -401,4 +402,77 @@ async fn batch_keeps_a_pdf_the_origin_refused_as_main_does() {
     assert_eq!(v1["block"]["vendor"], "http_error", "{v1}");
     assert_eq!(v1["blocked"], 1, "a refused page is never billed: {v1}");
     assert_eq!(v1["statusCode"], 403);
+}
+
+/// A browser tier that ran out of budget on a wall: an empty partial snapshot
+/// served with `status`. A rate-limiting origin answers 429 this way, and the
+/// request used to end as a timeout the client kept retrying.
+fn app_with_truncated_browser(status: u16) -> TestServer {
+    allow_loopback();
+    let config: AppConfig = toml::from_str("").unwrap();
+    let mut state = AppState::new(config).expect("AppState::new failed");
+    let mut cfg = RendererConfig {
+        mode: RendererMode::None,
+        ..Default::default()
+    };
+    cfg.impersonated.enabled = false;
+    let browser = Arc::new(StaticTier {
+        name: "chrome",
+        status_code: status,
+        html: "<html><head></head><body></body></html>".to_string(),
+        truncated: true,
+    }) as Arc<dyn PageFetcher>;
+    let renderer = FallbackRenderer::new(&cfg, "crw-test", None, &StealthConfig::default())
+        .expect("renderer builds")
+        .with_js_tiers(vec![browser]);
+    state.renderer = Arc::new(renderer);
+    TestServer::new(create_app(state))
+}
+
+/// The raw answer to a scrape that must go through the browser tier.
+async fn forced_js(s: &TestServer, route: &str, url: &str) -> Value {
+    s.post(route)
+        .json(&json!({"url": url, "formats": ["markdown"], "renderJs": true}))
+        .await
+        .json()
+}
+
+/// An empty partial render on a 429 is the wall, not a timeout, on every
+/// surface, and it stays unbilled.
+#[tokio::test]
+async fn an_empty_truncated_render_on_a_rate_limit_answers_the_wall() {
+    let origin = MockServer::start().await;
+    let url = serve(&origin, "/rate-limited", 429, "").await;
+    let s = app_with_truncated_browser(429);
+
+    let v1 = forced_js(&s, "/v1/scrape", &url).await;
+    assert_eq!(v1["data"]["metadata"]["renderedWith"], "chrome", "{v1}");
+    assert_eq!(v1["success"], false, "{v1}");
+    assert_eq!(v1["errorCode"], "anti_bot", "{v1}");
+    assert_eq!(v1["data"]["block"]["vendor"], "rate_limited", "{v1}");
+
+    for route in ["/v2/scrape", "/firecrawl/v2/scrape"] {
+        let v2 = forced_js(&s, route, &url).await;
+        assert_eq!(v2["success"], false, "{route}: {v2}");
+        assert_eq!(v2["data"]["metadata"]["creditsUsed"], 0, "{route}: {v2}");
+    }
+}
+
+/// Without a wall the same empty partial render is still a timeout: the caller
+/// should raise its budget, not give up on the site.
+#[tokio::test]
+async fn an_empty_truncated_render_without_a_wall_is_still_a_timeout() {
+    let origin = MockServer::start().await;
+    let url = serve(&origin, "/slow", 200, "<html><body></body></html>").await;
+    let s = app_with_truncated_browser(200);
+
+    let body = forced_js(&s, "/v1/scrape", &url).await;
+    assert_eq!(body["success"], false, "{body}");
+    assert_eq!(body["errorCode"], "timeout", "{body}");
+
+    let r = s
+        .post("/v2/scrape")
+        .json(&json!({"url": url, "formats": ["markdown"], "renderJs": true}))
+        .await;
+    assert_eq!(r.status_code(), StatusCode::REQUEST_TIMEOUT, "{}", r.text());
 }

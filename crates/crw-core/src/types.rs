@@ -845,6 +845,8 @@ pub struct ScrapeData {
     /// The renderer's verdict that no browser tier could have done better
     /// (`FetchResult.block`): every tier the ladder tried hit a wall, or the PDF
     /// gate skipped a ladder no browser could help (see `FetchResult.block`).
+    /// The scrape also sets it when a truncated render came back empty on a wall
+    /// (`crw_crawl::single`): nothing was delivered, so it is a wall, not a page.
     /// Implies `block` is `Some`.
     ///
     /// `/v2` needs this apart from `block`, because there a page served with a

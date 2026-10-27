@@ -236,4 +236,10 @@ v2-scoped change. It should be the next thing fixed.
   (12s nav budget) and lightpanda before anything concludes. Same end state as
   Firecrawl, reached far more expensively. The same shape shows on
   `/status/404` inside a crawl — see §5b.
+- **An empty truncated render on a wall is the wall, not a timeout.** When the
+  render budget ran out and nothing was extracted, but the tier that answered
+  was walled (401/403/429/503 with a wall verdict, or the renderer's own "no
+  tier could clear" verdict), `/v2` answers the blocked envelope (200,
+  `success:false`, `creditsUsed: 0`) instead of `408 SCRAPE_TIMEOUT`. Firecrawl
+  answers such a page `success:true` with `metadata.statusCode`.
 - **The `/lie/*` group** (3 fixtures) has no expectation on either side.
