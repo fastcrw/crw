@@ -322,27 +322,7 @@ pub fn system_time_rfc3339(expires_at: SystemTime) -> String {
     rfc3339_utc(unix_secs)
 }
 
-/// Format a Unix-epoch second count as `YYYY-MM-DDTHH:MM:SS.000Z` (UTC).
-/// Hand-rolled (Howard Hinnant's `civil_from_days`) to avoid a chrono/time
-/// dependency.
-pub fn rfc3339_utc(unix_secs: u64) -> String {
-    let days = (unix_secs / 86_400) as i64;
-    let sod = unix_secs % 86_400;
-    let (hh, mm, ss) = (sod / 3600, (sod % 3600) / 60, sod % 60);
-
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097; // [0, 146096]
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let mth = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    let year = if mth <= 2 { y + 1 } else { y };
-
-    format!("{year:04}-{mth:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}.000Z")
-}
+pub use crw_core::types::rfc3339_utc;
 
 /// Firecrawl v2 `/v2/map` link object.
 #[derive(Debug, Serialize)]

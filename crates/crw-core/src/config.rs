@@ -93,7 +93,7 @@ pub struct McpConfig {
 /// commands such as `crw search`, plus `crw mcp` / `crw-mcp`. Both fields are
 /// `Option` so an unconfigured user runs in local mode without surprise
 /// overrides.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 pub struct ClientConfig {
     /// Base URL of the hosted CRW API, e.g. `https://api.fastcrw.com`.
     #[serde(default)]
@@ -101,6 +101,23 @@ pub struct ClientConfig {
     /// API key for the hosted CRW API.
     #[serde(default)]
     pub api_key: Option<String>,
+    /// Anonymous per-call counts for data sources that run on this machine
+    /// (provider, capability, outcome, latency; never the URL, options or any
+    /// key). `None` means on; `false` (or `CRW_CLIENT__TELEMETRY=false`) turns
+    /// it off.
+    #[serde(default)]
+    pub telemetry: Option<bool>,
+}
+
+// Manual so the key never reaches a log line through `{:?}`.
+impl std::fmt::Debug for ClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientConfig")
+            .field("api_url", &self.api_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "REDACTED"))
+            .field("telemetry", &self.telemetry)
+            .finish()
+    }
 }
 
 /// `[document]` section — controls PDF (and future binary-document) parsing.

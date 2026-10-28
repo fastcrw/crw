@@ -612,10 +612,14 @@ async fn run_inline_llm_setup()
 
     // Persist to config.toml so the next `crw … --summary` just works.
     let user_cfg = UserConfig {
+        rest: Default::default(),
+        connectors: None,
         client: None,
         search: None,
         extraction: Some(ExtractionSection {
+            rest: Default::default(),
             llm: Some(LlmSection {
+                rest: Default::default(),
                 provider: Some(result.provider.config_value().to_string()),
                 api_key: Some(result.api_key.clone()),
                 model: Some(result.model.clone()),

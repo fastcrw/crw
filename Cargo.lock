@@ -1066,6 +1066,7 @@ dependencies = [
 name = "crw-core"
 version = "0.40.0"
 dependencies = [
+ "base64 0.23.1",
  "config",
  "crw-mcp-proto",
  "futures",
@@ -1081,6 +1082,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

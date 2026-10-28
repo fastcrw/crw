@@ -1,0 +1,569 @@
+{
+  "fixtureVersion": 1,
+  "vectors": [
+    {
+      "name": "plain value",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "W123"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works/W123"
+      }
+    },
+    {
+      "name": "encodeURIComponent keeps !'()*",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "a!b'c(d)e*f"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works/a!b'c(d)e*f"
+      }
+    },
+    {
+      "name": "reserved chars are encoded",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "a/b?c#d&e=f"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works/a%2Fb%3Fc%23d%26e%3Df"
+      }
+    },
+    {
+      "name": "unicode",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/artist/{name}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "name": "Björk Guðmundsdóttir"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/artist/Bj%C3%B6rk%20Gu%C3%B0mundsd%C3%B3ttir"
+      }
+    },
+    {
+      "name": "cjk",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/artist/{name}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "name": "坂本龍一"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/artist/%E5%9D%82%E6%9C%AC%E9%BE%8D%E4%B8%80"
+      }
+    },
+    {
+      "name": "emoji",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/search/{q}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "q": "rock 🎸 band"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/search/rock%20%F0%9F%8E%B8%20band"
+      }
+    },
+    {
+      "name": "percent is encoded, not decoded",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/pkg/{name}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "name": "100%25 a%2Fb"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/pkg/100%2525%20a%252Fb"
+      }
+    },
+    {
+      "name": "plus and space in a path value",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/pkg/{name}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "name": "a+b c"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/pkg/a%2Bb%20c"
+      }
+    },
+    {
+      "name": "plus and space in a fixed query value",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/search?q={q}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "q": "a+b c"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/search?q=a%2Bb%20c"
+      }
+    },
+    {
+      "name": "plus and space in a forwarded value",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/search",
+      "baseUrlOverride": null,
+      "forwardParams": [
+        "q"
+      ],
+      "params": {
+        "q": "a+b c"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/search?q=a%2Bb+c"
+      }
+    },
+    {
+      "name": "200-char value accepted",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    },
+    {
+      "name": "201-char value rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "201-char forwarded value rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works",
+      "baseUrlOverride": null,
+      "forwardParams": [
+        "filter"
+      ],
+      "params": {
+        "filter": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "whitespace is trimmed",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "  W123 \t"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works/W123"
+      }
+    },
+    {
+      "name": "whitespace-only is missing",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "   "
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "dot rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "."
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "dot-dot rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": ".."
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "dot-dot after trim rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": " .. "
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "three dots allowed",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "..."
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/a/..."
+      }
+    },
+    {
+      "name": "dot-dot inside a value allowed",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "../etc"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/a/..%2Fetc"
+      }
+    },
+    {
+      "name": "NUL rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "a\u0000b"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "newline rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "a\nb"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "DEL rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "ab"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "repeated placeholder",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}/b/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "x y"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/a/x%20y/b/x%20y"
+      }
+    },
+    {
+      "name": "placeholder in path and fixed query",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}?ref={id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "z"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/a/z?ref=z"
+      }
+    },
+    {
+      "name": "missing required placeholder",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}/{rev}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "x"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "fixed query in the template",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/search?format=json&q={q}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "q": "cats"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/search?format=json&q=cats"
+      }
+    },
+    {
+      "name": "forwarded param overrides a fixed query key",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/search?format=json&per_page=10",
+      "baseUrlOverride": null,
+      "forwardParams": [
+        "per_page"
+      ],
+      "params": {
+        "per_page": "50"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/search?format=json&per_page=50"
+      }
+    },
+    {
+      "name": "forward param that is not allowlisted is dropped",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works",
+      "baseUrlOverride": null,
+      "forwardParams": [
+        "page"
+      ],
+      "params": {
+        "filter": "x",
+        "page": "2"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works?page=2"
+      }
+    },
+    {
+      "name": "empty forward value skipped",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works",
+      "baseUrlOverride": null,
+      "forwardParams": [
+        "page",
+        "per_page"
+      ],
+      "params": {
+        "page": "",
+        "per_page": "  "
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works"
+      }
+    },
+    {
+      "name": "forwarded values are set in allowlist order",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/works",
+      "baseUrlOverride": null,
+      "forwardParams": [
+        "a",
+        "b"
+      ],
+      "params": {
+        "b": "2",
+        "a": "1"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/works?a=1&b=2"
+      }
+    },
+    {
+      "name": "base with a path prefix",
+      "baseUrl": "https://api.example.org/v2/",
+      "pathTemplate": "/works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "W1"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/v2/works/W1"
+      }
+    },
+    {
+      "name": "template without a leading slash",
+      "baseUrl": "https://api.example.org/v2",
+      "pathTemplate": "works/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "W1"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/v2/works/W1"
+      }
+    },
+    {
+      "name": "baseUrlOverride wins over the provider base",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/v1/{id}",
+      "baseUrlOverride": "https://other.example.net/root",
+      "forwardParams": [],
+      "params": {
+        "id": "q"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://other.example.net/root/v1/q"
+      }
+    },
+    {
+      "name": "http base rejected",
+      "baseUrl": "http://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "x"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "http baseUrlOverride rejected",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": "http://api.example.org",
+      "forwardParams": [],
+      "params": {
+        "id": "x"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "unparseable base rejected",
+      "baseUrl": "not a url",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "x"
+      },
+      "expect": {
+        "ok": false
+      }
+    },
+    {
+      "name": "encoded slash cannot climb",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}/b",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "../../x"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/a/..%2F..%2Fx/b"
+      }
+    },
+    {
+      "name": "at sign cannot change the host",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "@evil.example"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/%40evil.example"
+      }
+    },
+    {
+      "name": "backslash is encoded",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/a/{id}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "id": "a\\b"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/a/a%5Cb"
+      }
+    }
+  ]
+}

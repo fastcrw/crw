@@ -264,9 +264,13 @@ async fn validate_api_key(key: &str) -> ApiKeyStatus {
 /// merge in `config_file::write_user_config`.
 fn build_user_config(api_key: &str) -> UserConfig {
     UserConfig {
+        rest: Default::default(),
+        connectors: None,
         client: Some(ClientSection {
+            rest: Default::default(),
             api_url: Some(API_BASE_URL.to_string()),
             api_key: Some(api_key.to_string()),
+            telemetry: None,
         }),
         search: None,
         extraction: None,

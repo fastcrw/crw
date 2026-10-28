@@ -160,6 +160,9 @@ enum Commands {
     /// Start the browser automation MCP server
     Browse(commands::browse::BrowseArgs),
 
+    /// Data sources that run on this machine: list them, store your own keys
+    Connectors(commands::connectors::ConnectorsArgs),
+
     /// Interactive setup wizard (Cloud or Local)
     Setup(commands::setup::SetupArgs),
 
@@ -231,6 +234,7 @@ async fn main() {
             }
             Ok(())
         }
+        Some(Commands::Connectors(args)) => commands::connectors::run(args).await,
         Some(Commands::Setup(args)) => {
             commands::setup::run(args).await;
             Ok(())

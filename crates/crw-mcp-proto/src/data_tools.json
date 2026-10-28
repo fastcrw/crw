@@ -1,0 +1,121 @@
+[
+  {
+    "name": "crw_find_data",
+    "title": "Find data sources",
+    "description": "Find structured data sources from named public APIs (papers, packages, registries, music metadata). Returns the provider, capability and options to pass to crw_get_data.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Words to match against source names and descriptions"
+        },
+        "category": {
+          "type": "string",
+          "description": "Only sources in this category, e.g. Research"
+        },
+        "provider": {
+          "type": "string",
+          "description": "Only this provider, e.g. openalex"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Results per page (default 10)"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Results to skip; pass nextOffset to get the next page"
+        }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "provider": { "type": "string" },
+              "capability": { "type": "string" },
+              "name": { "type": ["string", "null"] },
+              "description": { "type": ["string", "null"] },
+              "creditsCost": { "type": ["number", "null"] },
+              "requiredOptions": { "type": "array", "items": { "type": "string" } },
+              "optionalOptions": { "type": "array", "items": { "type": "string" } },
+              "keyRequired": { "type": "boolean" },
+              "licence": { "type": ["string", "null"] },
+              "keyConfigured": { "type": "boolean" },
+              "requiresLocalInstall": { "type": "boolean" }
+            },
+            "required": ["provider", "capability"]
+          }
+        },
+        "total": { "type": ["integer", "null"] },
+        "nextOffset": { "type": "integer" }
+      },
+      "required": ["items"]
+    }
+  },
+  {
+    "name": "crw_get_data",
+    "title": "Get structured data",
+    "description": "Structured data from named public APIs (papers, packages, registries, music metadata). Call crw_find_data first. Use crw_search for open web search and crw_scrape for a known URL.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "provider from a crw_find_data item"
+        },
+        "capability": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "description": "capability from a crw_find_data item"
+        },
+        "options": {
+          "type": "object",
+          "description": "Values for the item's requiredOptions and optionalOptions (strings, numbers or booleans)"
+        }
+      },
+      "required": ["provider", "capability"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "capability": { "type": "string" },
+        "creditsUsed": { "type": ["number", "null"] },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "source": { "type": ["string", "null"] },
+            "upstreamUrl": { "type": ["string", "null"] },
+            "licence": { "type": ["string", "null"] },
+            "licenceUrl": { "type": ["string", "null"] },
+            "attributionText": { "type": ["string", "null"] },
+            "retrievedAt": { "type": ["string", "null"] }
+          }
+        },
+        "data": {}
+      },
+      "required": ["provider", "capability", "provenance", "data"]
+    }
+  }
+]

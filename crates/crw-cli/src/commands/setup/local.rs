@@ -354,8 +354,11 @@ async fn ensure_docker_ready() -> Result<bool, SetupError> {
 /// `merge_config` preserves prior values across re-runs.
 fn build_user_config(search_backend_url: Option<&str>) -> UserConfig {
     UserConfig {
+        rest: Default::default(),
+        connectors: None,
         client: None,
         search: search_backend_url.map(|url| SearchSection {
+            rest: Default::default(),
             search_backend_url: Some(url.to_string()),
         }),
         extraction: None,
