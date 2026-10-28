@@ -8,6 +8,16 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.39.1](https://github.com/fastcrw/crw/compare/v0.39.0...v0.39.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* **crawl:** report an empty truncated render on a wall as the wall ([6ffd008](https://github.com/fastcrw/crw/commit/6ffd008cda793b7bd6198f64f6398359490b1f58))
+* **renderer:** do not rerun a hedge tier on an error it only repeats ([b8eee36](https://github.com/fastcrw/crw/commit/b8eee36169136a8c4bf04648060e7bfa46a5e3e2))
+* **renderer:** guard each stealth script section on its own ([b28d6bd](https://github.com/fastcrw/crw/commit/b28d6bd1a73a302dbc99f9fb3d95ca70c60d28f7))
+* **renderer:** log the cause of a failed response body read ([3d5c2f1](https://github.com/fastcrw/crw/commit/3d5c2f122769679be30efa1c291df58c355f04b1))
+
 ## [0.39.0](https://github.com/fastcrw/crw/compare/v0.38.0...v0.39.0) (2026-10-21)
 
 
