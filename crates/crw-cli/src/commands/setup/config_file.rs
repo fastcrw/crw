@@ -9,7 +9,9 @@
 //! symlink targets refused, write goes through `O_NOFOLLOW` so a swap-in
 //! between our check and our open cannot redirect the write elsewhere.
 
+use crw_core::connectors::keys::ConnectorEntry;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 const USER_CONFIG_FILENAME: &str = "config.toml";
@@ -29,6 +31,15 @@ pub struct UserConfig {
     pub search: Option<SearchSection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extraction: Option<ExtractionSection>,
+    /// `[connectors.<slug>]`: the user's own keys for data sources that run on
+    /// this machine, written by `crw connectors set-key`. Setup never fills it
+    /// but must carry it through, or a re-run would erase the keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connectors: Option<BTreeMap<String, ConnectorEntry>>,
+    /// Every section this struct does not model (`[mcp]`, `[renderer]`, ...),
+    /// kept verbatim so a write never drops what the user set by hand.
+    #[serde(flatten)]
+    pub rest: toml::Table,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -37,6 +48,12 @@ pub struct ClientSection {
     pub api_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+    /// `false` turns off data-source usage counts; kept across re-runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<bool>,
+    /// Keys this section does not model, kept verbatim across rewrites.
+    #[serde(flatten)]
+    pub rest: toml::Table,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -50,12 +67,18 @@ pub struct SearchSection {
         alias = "searxng_url"
     )]
     pub search_backend_url: Option<String>,
+    /// Keys this section does not model, kept verbatim across rewrites.
+    #[serde(flatten)]
+    pub rest: toml::Table,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExtractionSection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llm: Option<LlmSection>,
+    /// Keys this section does not model, kept verbatim across rewrites.
+    #[serde(flatten)]
+    pub rest: toml::Table,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -70,6 +93,9 @@ pub struct LlmSection {
     pub base_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub azure_api_version: Option<String>,
+    /// Keys this section does not model, kept verbatim across rewrites.
+    #[serde(flatten)]
+    pub rest: toml::Table,
 }
 
 /// Resolve the path of the per-user config file. Honors
@@ -104,6 +130,30 @@ pub fn merge_config(base: UserConfig, update: UserConfig) -> UserConfig {
         client: merge_client(base.client, update.client),
         search: merge_search(base.search, update.search),
         extraction: merge_extraction(base.extraction, update.extraction),
+        connectors: merge_connectors(base.connectors, update.connectors),
+        rest: merge_rest(base.rest, update.rest),
+    }
+}
+
+/// Unmodelled keys: the update's win, the base's stay.
+fn merge_rest(mut base: toml::Table, update: toml::Table) -> toml::Table {
+    base.extend(update);
+    base
+}
+
+/// Per slug, an update replaces the whole entry: a key and the origins it was
+/// approved for must never come from two different writes.
+fn merge_connectors(
+    base: Option<BTreeMap<String, ConnectorEntry>>,
+    update: Option<BTreeMap<String, ConnectorEntry>>,
+) -> Option<BTreeMap<String, ConnectorEntry>> {
+    match (base, update) {
+        (None, u) => u,
+        (b, None) => b,
+        (Some(mut b), Some(u)) => {
+            b.extend(u);
+            Some(b)
+        }
     }
 }
 
@@ -117,6 +167,8 @@ fn merge_client(
         (Some(b), Some(u)) => Some(ClientSection {
             api_url: u.api_url.or(b.api_url),
             api_key: u.api_key.or(b.api_key),
+            telemetry: u.telemetry.or(b.telemetry),
+            rest: merge_rest(b.rest, u.rest),
         }),
     }
 }
@@ -130,6 +182,7 @@ fn merge_search(
         (b, None) => b,
         (Some(b), Some(u)) => Some(SearchSection {
             search_backend_url: u.search_backend_url.or(b.search_backend_url),
+            rest: merge_rest(b.rest, u.rest),
         }),
     }
 }
@@ -143,6 +196,7 @@ fn merge_extraction(
         (b, None) => b,
         (Some(b), Some(u)) => Some(ExtractionSection {
             llm: merge_llm(b.llm, u.llm),
+            rest: merge_rest(b.rest, u.rest),
         }),
     }
 }
@@ -157,6 +211,7 @@ fn merge_llm(base: Option<LlmSection>, update: Option<LlmSection>) -> Option<Llm
             model: u.model.or(b.model),
             base_url: u.base_url.or(b.base_url),
             azure_api_version: u.azure_api_version.or(b.azure_api_version),
+            rest: merge_rest(b.rest, u.rest),
         }),
     }
 }
@@ -195,12 +250,25 @@ fn write_user_config_inner(
     let local_search_selection = clear_cloud_client.then(|| update.search.clone());
     let mut merged = merge_config(read_user_config(&path)?, update);
     if clear_cloud_client {
-        merged.client = None;
+        // The routing credentials go; a telemetry opt-out and hand-set keys
+        // are not routing credentials.
+        merged.client = merged
+            .client
+            .map(|c| ClientSection {
+                api_url: None,
+                api_key: None,
+                ..c
+            })
+            .filter(|c| c.telemetry.is_some() || !c.rest.is_empty());
     }
     if let Some(search) = local_search_selection {
         // In Local mode, None means the user explicitly skipped local search;
-        // keeping a stale URL would contradict the completion summary.
-        merged.search = search;
+        // keeping a stale URL would contradict the completion summary. Other
+        // `[search]` keys stay.
+        let mut section = merged.search.take().unwrap_or_default();
+        section.search_backend_url = search.and_then(|s| s.search_backend_url);
+        merged.search =
+            (section.search_backend_url.is_some() || !section.rest.is_empty()).then_some(section);
     }
     let body = render(&merged);
 
@@ -375,11 +443,16 @@ mod tests {
         let _g = env_lock();
         let dir = isolated_dir("roundtrip");
         let cfg = UserConfig {
+            rest: Default::default(),
+            connectors: None,
             client: Some(ClientSection {
+                rest: Default::default(),
                 api_url: Some("https://api.example.com".into()),
                 api_key: Some("test-key".into()),
+                telemetry: None,
             }),
             search: Some(SearchSection {
+                rest: Default::default(),
                 search_backend_url: Some("http://localhost:8080".into()),
             }),
             extraction: None,
@@ -406,6 +479,7 @@ mod tests {
 
         let first = UserConfig {
             search: Some(SearchSection {
+                rest: Default::default(),
                 search_backend_url: Some("http://localhost:8080".into()),
             }),
             ..Default::default()
@@ -414,6 +488,7 @@ mod tests {
 
         let second = UserConfig {
             extraction: Some(ExtractionSection {
+                rest: Default::default(),
                 llm: Some(LlmSection {
                     provider: Some("deepseek".into()),
                     api_key: Some("sk-1".into()),
@@ -437,14 +512,228 @@ mod tests {
     }
 
     #[test]
+    fn setup_rerun_keeps_connector_keys_and_telemetry_opt_out() {
+        let _g = env_lock();
+        let dir = isolated_dir("connectors");
+        let path = dir.join("config.toml");
+        // As `crw connectors set-key` and a hand edit leave it.
+        std::fs::write(
+            &path,
+            r#"
+[client]
+api_url = "https://api.fastcrw.com"
+api_key = "old"
+telemetry = false
+
+[connectors.open-alex]
+api_key = "user-key"
+origins = ["https://api.openalex.org"]
+auth = "query:api_key"
+
+[mcp]
+hide_credits = true
+
+[renderer]
+mode = "auto"
+
+[renderer.chrome]
+ws_url = "ws://127.0.0.1:9222"
+"#,
+        )
+        .unwrap();
+        let unmodelled_survive = || {
+            let cfg = read_user_config(&path).unwrap();
+            assert_eq!(cfg.rest["mcp"]["hide_credits"].as_bool(), Some(true));
+            assert_eq!(cfg.rest["renderer"]["mode"].as_str(), Some("auto"));
+            assert_eq!(
+                cfg.rest["renderer"]["chrome"]["ws_url"].as_str(),
+                Some("ws://127.0.0.1:9222")
+            );
+        };
+
+        // `crw connectors set-key` writes only `[connectors.<slug>]`.
+        write_user_config(UserConfig {
+            connectors: Some(BTreeMap::from([(
+                "dockerhub".to_string(),
+                ConnectorEntry {
+                    api_key: Some("dh".into()),
+                    origins: vec!["https://hub.docker.com".into()],
+                    auth: Some("header:Authorization".into()),
+                },
+            )])),
+            ..Default::default()
+        })
+        .unwrap();
+        unmodelled_survive();
+
+        // `crw setup --cloud` writes only `[client]`.
+        write_user_config(UserConfig {
+            connectors: None,
+            client: Some(ClientSection {
+                rest: Default::default(),
+                api_url: Some("https://api.fastcrw.com".into()),
+                api_key: Some("new".into()),
+                telemetry: None,
+            }),
+            ..Default::default()
+        })
+        .unwrap();
+        let cfg = read_user_config(&path).unwrap();
+        let client = cfg.client.unwrap();
+        assert_eq!(client.api_key.as_deref(), Some("new"));
+        assert_eq!(client.telemetry, Some(false));
+        let entry = &cfg.connectors.as_ref().unwrap()["open-alex"];
+        assert_eq!(entry.api_key.as_deref(), Some("user-key"));
+        assert_eq!(entry.origins, vec!["https://api.openalex.org"]);
+        assert_eq!(entry.auth.as_deref(), Some("query:api_key"));
+
+        assert!(cfg.connectors.as_ref().unwrap().contains_key("dockerhub"));
+        unmodelled_survive();
+
+        // The reader in crw-core sees the same entry after the rewrite.
+        let read = crw_core::connectors::keys::load("open-alex").unwrap();
+        assert_eq!(read.api_key.as_deref(), Some("user-key"));
+
+        // A local-mode switch drops the cloud routing credentials but keeps the
+        // connector keys and the telemetry opt-out.
+        write_local_user_config(UserConfig::default()).unwrap();
+        let local = read_user_config(&path).unwrap();
+        assert!(local.connectors.is_some());
+        let client = local.client.expect("[client] kept for telemetry");
+        assert_eq!(client.telemetry, Some(false));
+        assert!(client.api_url.is_none() && client.api_key.is_none());
+        unmodelled_survive();
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn unmodelled_keys_inside_modelled_sections_survive_every_write() {
+        let _g = env_lock();
+        let dir = isolated_dir("nested-rest");
+        let path = dir.join("config.toml");
+        std::fs::write(
+            &path,
+            r#"
+[search]
+search_backend_url = "http://localhost:8080"
+openalex_api_key = "nested-secret"
+
+[extraction]
+only_main_content = false
+
+[extraction.llm]
+provider = "anthropic"
+max_tokens = 4096
+"#,
+        )
+        .unwrap();
+        let survive = |when: &str| {
+            let cfg = read_user_config(&path).unwrap();
+            let search = cfg.search.expect(when);
+            assert_eq!(
+                search.rest["openalex_api_key"].as_str(),
+                Some("nested-secret"),
+                "{when}"
+            );
+            let extraction = cfg.extraction.expect(when);
+            assert_eq!(
+                extraction.rest["only_main_content"].as_bool(),
+                Some(false),
+                "{when}"
+            );
+            let llm = extraction.llm.expect(when);
+            assert_eq!(llm.rest["max_tokens"].as_integer(), Some(4096), "{when}");
+        };
+
+        // `crw connectors set-key`.
+        write_user_config(UserConfig {
+            connectors: Some(BTreeMap::from([(
+                "openalex".to_string(),
+                ConnectorEntry {
+                    api_key: Some("k".into()),
+                    origins: vec!["https://api.openalex.org".into()],
+                    auth: Some("query:api_key".into()),
+                },
+            )])),
+            ..Default::default()
+        })
+        .unwrap();
+        survive("set-key");
+
+        // `crw setup` touching each modelled section.
+        write_user_config(UserConfig {
+            client: Some(ClientSection {
+                api_url: Some("https://api.fastcrw.com".into()),
+                api_key: Some("c".into()),
+                ..Default::default()
+            }),
+            search: Some(SearchSection {
+                search_backend_url: Some("http://localhost:9090".into()),
+                ..Default::default()
+            }),
+            extraction: Some(ExtractionSection {
+                llm: Some(LlmSection {
+                    provider: Some("deepseek".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap();
+        survive("cloud and llm setup");
+
+        // Local setup replaces the search URL, not the rest of `[search]`.
+        write_local_user_config(UserConfig {
+            search: Some(SearchSection {
+                search_backend_url: Some("http://127.0.0.1:8080".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+        .unwrap();
+        survive("local setup");
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn connector_entry_update_replaces_the_whole_entry() {
+        let entry = |key: &str, origin: &str| ConnectorEntry {
+            api_key: Some(key.into()),
+            origins: vec![origin.into()],
+            auth: Some("query:api_key".into()),
+        };
+        let base = BTreeMap::from([
+            ("a".to_string(), entry("k1", "https://a.example")),
+            ("b".to_string(), entry("k2", "https://b.example")),
+        ]);
+        let update = BTreeMap::from([(
+            "a".to_string(),
+            ConnectorEntry {
+                api_key: Some("k3".into()),
+                ..Default::default()
+            },
+        )]);
+        let merged = merge_connectors(Some(base), Some(update)).unwrap();
+        assert!(
+            merged["a"].origins.is_empty(),
+            "no origins carried from the old key"
+        );
+        assert_eq!(merged["b"].api_key.as_deref(), Some("k2"));
+    }
+
+    #[test]
     fn local_mode_switch_removes_cloud_credentials() {
         let _g = env_lock();
         let dir = isolated_dir("local-mode-switch");
 
         write_user_config(UserConfig {
+            connectors: None,
             client: Some(ClientSection {
+                rest: Default::default(),
                 api_url: Some("https://api.fastcrw.com".into()),
                 api_key: Some("fc-test".into()),
+                telemetry: None,
             }),
             ..Default::default()
         })
@@ -452,6 +741,7 @@ mod tests {
 
         let path = write_local_user_config(UserConfig {
             search: Some(SearchSection {
+                rest: Default::default(),
                 search_backend_url: Some("http://127.0.0.1:8080".into()),
             }),
             ..Default::default()
@@ -474,6 +764,7 @@ mod tests {
 
         write_user_config(UserConfig {
             search: Some(SearchSection {
+                rest: Default::default(),
                 search_backend_url: Some("http://old-search:8080".into()),
             }),
             ..Default::default()
@@ -494,6 +785,7 @@ mod tests {
         let dir = isolated_dir("replace");
         write_user_config(UserConfig {
             extraction: Some(ExtractionSection {
+                rest: Default::default(),
                 llm: Some(LlmSection {
                     provider: Some("anthropic".into()),
                     api_key: Some("old-key".into()),
@@ -505,6 +797,7 @@ mod tests {
         .unwrap();
         let path = write_user_config(UserConfig {
             extraction: Some(ExtractionSection {
+                rest: Default::default(),
                 llm: Some(LlmSection {
                     provider: Some("deepseek".into()),
                     api_key: Some("new-key".into()),
@@ -532,9 +825,12 @@ mod tests {
         let _g = env_lock();
         let dir = isolated_dir("perms");
         let path = write_user_config(UserConfig {
+            connectors: None,
             client: Some(ClientSection {
+                rest: Default::default(),
                 api_url: Some("u".into()),
                 api_key: None,
+                telemetry: None,
             }),
             ..Default::default()
         })
@@ -673,11 +969,16 @@ mod tests {
     #[test]
     fn merge_config_update_none_keeps_base_untouched() {
         let base = UserConfig {
+            rest: Default::default(),
+            connectors: None,
             client: Some(ClientSection {
+                rest: Default::default(),
                 api_url: Some("https://api.example.com".into()),
                 api_key: Some("k".into()),
+                telemetry: None,
             }),
             search: Some(SearchSection {
+                rest: Default::default(),
                 search_backend_url: Some("http://localhost:8080".into()),
             }),
             extraction: None,
@@ -693,9 +994,12 @@ mod tests {
     #[test]
     fn merge_config_base_none_takes_update_wholesale() {
         let update = UserConfig {
+            connectors: None,
             client: Some(ClientSection {
+                rest: Default::default(),
                 api_url: Some("https://new.example.com".into()),
                 api_key: None,
+                telemetry: None,
             }),
             ..Default::default()
         };
@@ -711,6 +1015,7 @@ mod tests {
         // update.api_key is None so base's key must survive; update.model is
         // Some so it must win — proves the merge is per-field, not per-section.
         let base = LlmSection {
+            rest: Default::default(),
             provider: Some("anthropic".into()),
             api_key: Some("old-key".into()),
             model: Some("old-model".into()),
@@ -718,6 +1023,7 @@ mod tests {
             azure_api_version: None,
         };
         let update = LlmSection {
+            rest: Default::default(),
             provider: None,
             api_key: None,
             model: Some("new-model".into()),
@@ -760,10 +1066,14 @@ mod tests {
         let _g = env_lock();
         let dir = isolated_dir("extraction-only");
         let cfg = UserConfig {
+            rest: Default::default(),
+            connectors: None,
             client: None,
             search: None,
             extraction: Some(ExtractionSection {
+                rest: Default::default(),
                 llm: Some(LlmSection {
+                    rest: Default::default(),
                     provider: Some("openai".into()),
                     api_key: Some("sk-test".into()),
                     model: Some("gpt-5".into()),

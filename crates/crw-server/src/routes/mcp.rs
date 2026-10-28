@@ -286,7 +286,7 @@ pub async fn handle_request(state: &AppState, req: JsonRpcRequest) -> Option<Jso
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             // Unknown tool name → JSON-RPC -32602 (not an isError execution result).
-            if !crw_core::mcp::is_known_tool(tool_name) {
+            if !crw_core::mcp::is_known_tool(tool_name, false) {
                 return Some(JsonRpcResponse::error(
                     id,
                     -32602,

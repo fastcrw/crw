@@ -53,6 +53,8 @@ enum Backend {
         base_url: String,
         api_key: Option<String>,
         hide_credits: bool,
+        /// State for `crw_find_data` / `crw_get_data` (manifest, pacing).
+        data: Box<crw_core::connectors::DataToolContext>,
     },
     #[cfg(feature = "mcp-embedded")]
     Embedded { state: crw_server::state::AppState },
@@ -61,6 +63,9 @@ enum Backend {
 impl Backend {
     async fn call_tool(&self, tool_name: &str, args: Value) -> Result<Value, String> {
         match self {
+            Backend::Proxy { data, .. } if crw_core::connectors::is_data_tool(tool_name) => {
+                crw_core::connectors::call_data_tool(tool_name, args, data).await
+            }
             Backend::Proxy {
                 client,
                 base_url,
@@ -121,7 +126,7 @@ impl Backend {
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 // Unknown tool name → JSON-RPC -32602 (not an isError result).
-                if !crw_core::mcp::is_known_tool(tool_name) {
+                if !crw_core::mcp::is_known_tool(tool_name, self.is_proxy()) {
                     return Some(JsonRpcResponse::error(
                         id,
                         -32602,
@@ -136,7 +141,7 @@ impl Backend {
                 let result = self.call_tool(tool_name, arguments.clone()).await.map(|v| {
                     let mut v = crw_core::mcp::apply_bounds(tool_name, &arguments, v);
                     if hide_credits {
-                        crw_core::mcp::strip_credit_fields(&mut v);
+                        crw_core::mcp::strip_tool_credit_fields(tool_name, &mut v);
                     }
                     v
                 });
@@ -448,11 +453,18 @@ pub async fn run(args: McpArgs) -> Result<(), CmdError> {
             .build()
             .expect("reqwest client build failed");
 
+        let data = Box::new(crw_core::connectors::DataToolContext::new(
+            api_url.clone(),
+            resolved_api_key.clone(),
+            crw_core::connectors::telemetry_enabled(),
+        ));
+
         Backend::Proxy {
             client,
             base_url: api_url,
             api_key: resolved_api_key,
             hide_credits,
+            data,
         }
     } else {
         #[cfg(feature = "mcp-embedded")]

@@ -29,7 +29,7 @@ export default {
     {
       label: "MCP",
       href: "/mcp",
-      match: ["mcp", "mcp-clients", "crw-browse", "sdk-reference", "sdk-examples", "integrations", "agent-onboarding"],
+      match: ["mcp", "mcp-clients", "data-sources", "crw-browse", "sdk-reference", "sdk-examples", "integrations", "agent-onboarding"],
     },
     {
       label: "Guides",
@@ -92,6 +92,7 @@ export default {
       children: [
         { title: "MCP Server", slug: "mcp", icon: "plug" },
         { title: "MCP Client Setup", slug: "mcp-clients", icon: "settings" },
+        { title: "Data Sources", slug: "data-sources", icon: "layers" },
         { title: "Browser Automation (crw-browse)", slug: "crw-browse", icon: "globe" },
         { title: "SDK Reference", slug: "sdk-reference", icon: "book" },
         { title: "SDK Examples", slug: "sdk-examples", icon: "code" },

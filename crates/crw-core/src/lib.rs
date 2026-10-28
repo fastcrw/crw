@@ -18,6 +18,7 @@
 
 pub mod body;
 pub mod config;
+pub mod connectors;
 pub mod deadline;
 pub mod error;
 pub mod evidence;

@@ -50,6 +50,8 @@ fastcrw.com cloud mode exposes all 9 tools:
 - `crw_parse_file`
 - `crw_search` — always available (managed search backend)
 
+Cloud mode also adds `crw_find_data` and `crw_get_data` for structured data sources; see [Data Sources](#data-sources).
+
 Browser automation mode (`crw-browse`, separate server — v0.4.0+) exposes:
 
 - `goto` — navigate the browser to an URL

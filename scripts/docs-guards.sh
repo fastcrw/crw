@@ -33,6 +33,11 @@
 #   from onboarding tasks. Hand-maintained: this job has no checkout of
 #   crw-saas, so it cannot read `src/lib/plans-client.ts` to derive the number.
 #
+# Guard 7: data-source wording
+#   Fails on internal registry terms (resell, resale, terms_review, termsNote,
+#   termsVerdict) anywhere in docs/docs/*.md, and on "markup" in the
+#   data-sources page.
+#
 # Portable: bash + standard POSIX tools plus python3. Works on ubuntu-latest
 # and macOS without extra dependencies.
 
@@ -360,6 +365,30 @@ if [ -n "$free_tier_hits" ]; then
   FAIL=1
 else
   echo "ok: no flat 1000-credit free-tier claim"
+fi
+
+# ---------------------------------------------------------------------------
+# Guard 7: data-source wording
+#   Internal registry terms and the economics behind which sources run where
+#   never reach the docs. "markup" is only checked on the data-sources page,
+#   since elsewhere it means HTML markup.
+# ---------------------------------------------------------------------------
+
+echo "==> Guard 7: data-source wording"
+
+wording_hits=$(
+  {
+    grep -rniE --include="*.md" 'resell|resale|terms_review|termsNote|termsVerdict' docs/docs || true
+    grep -niE 'markup' docs/docs/data-sources.md 2>/dev/null | sed 's|^|docs/docs/data-sources.md:|' || true
+  }
+)
+
+if [ -n "$wording_hits" ]; then
+  echo "FAIL: internal data-source wording in the docs:" >&2
+  echo "$wording_hits" | sed 's/^/  /' >&2
+  FAIL=1
+else
+  echo "ok: no internal data-source wording"
 fi
 
 # ---------------------------------------------------------------------------

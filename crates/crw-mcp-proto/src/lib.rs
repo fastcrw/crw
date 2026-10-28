@@ -30,6 +30,9 @@ pub const SERVER_INSTRUCTIONS: &str = "fastCRW reads public web pages and search
 /// client can never call — the two surfaces must agree.
 pub const SERVER_INSTRUCTIONS_NO_SEARCH: &str = "fastCRW reads public web pages. crw_scrape reads one URL as clean markdown, crw_map lists the URLs a site publishes, crw_crawl reads a bounded set of pages under one URL (poll crw_check_crawl_status), and crw_extract returns structured JSON from pages against a prompt or schema. Every result carries its source URL.";
 
+/// Appended in proxy mode only, the one mode that advertises the data tools.
+pub const DATA_TOOLS_INSTRUCTION: &str = "For structured data from named public APIs (package registries, papers, datasets, statistics), call crw_find_data first, then crw_get_data with the provider, capability and options it returns.";
+
 /// The `instructions` string that matches the tool set actually advertised.
 pub fn server_instructions(search_available: bool) -> &'static str {
     if search_available {
@@ -583,9 +586,24 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                 });
             }
         }
+        // Added after the strip on purpose: their result is shaped on this side
+        // (`crw_core::connectors`), not passed through from the remote, so the
+        // schema they declare is one we can keep.
+        tools.extend(data_tool_definitions());
     }
 
     json!({ "tools": tools })
+}
+
+/// `crw_find_data` / `crw_get_data`, proxy mode only: the catalogue lives on the
+/// fastCRW API, and the engine's own `/mcp` never advertises them.
+///
+/// `data_tools.json` is the one definition of both tools. The hosted MCP in
+/// crw-saas copies it and tests for equality, so local and hosted agents see
+/// the same contract. `creditsUsed` is optional there because `[mcp]
+/// hide_credits` strips it.
+fn data_tool_definitions() -> Vec<Value> {
+    serde_json::from_str(include_str!("data_tools.json")).expect("data_tools.json is valid JSON")
 }
 
 /// Returns the ENGINE's declared `outputSchema` for a tool, if it declares one.
@@ -599,12 +617,17 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
 /// `structuredContent` on the proxy. Pinned by
 /// `proxy_mode_still_emits_structured_content_without_a_schema`.
 ///
+/// The proxy-only data tools are looked up too: their schema is advertised and
+/// their result is shaped locally, so `structuredContent` must accompany it.
+///
 /// Recomputes `tool_definitions` per call — `tools/call` is not hot; memoize behind a
 /// `OnceLock` only if profiling ever demands it.
 pub fn tool_output_schema(tool_name: &str) -> Option<Value> {
-    tool_definitions(false)["tools"]
+    let engine = tool_definitions(false);
+    engine["tools"]
         .as_array()?
         .iter()
+        .chain(data_tool_definitions().iter())
         .find(|t| t["name"] == tool_name)
         .and_then(|t| t.get("outputSchema").cloned())
 }
@@ -614,8 +637,9 @@ pub fn tool_output_schema(tool_name: &str) -> Option<Value> {
 /// more gracefully than on an `isError` execution result). Checks the full set
 /// regardless of runtime availability (e.g. `crw_search` is a known name even when
 /// no search backend is configured — calling it then yields a clear runtime error).
-pub fn is_known_tool(name: &str) -> bool {
-    tool_definitions(false)["tools"]
+/// The data tools exist in proxy mode only, so `proxy_mode` decides those.
+pub fn is_known_tool(name: &str, proxy_mode: bool) -> bool {
+    tool_definitions(proxy_mode)["tools"]
         .as_array()
         .is_some_and(|tools| tools.iter().any(|t| t["name"] == name))
 }
@@ -668,7 +692,11 @@ pub fn handle_protocol_method(
                         "name": server_name,
                         "version": server_version
                     },
-                    "instructions": server_instructions(search_available)
+                    "instructions": if proxy_mode {
+                        format!("{} {DATA_TOOLS_INSTRUCTION}", server_instructions(search_available))
+                    } else {
+                        server_instructions(search_available).to_string()
+                    }
                 }),
             ))
         }
@@ -1007,9 +1035,31 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
                 bound_search_results(&mut value, max);
             }
         }
+        "crw_get_data" => bound_data_payload(&mut value),
         _ => {}
     }
     value
+}
+
+/// Cap on a `crw_get_data` payload, measured as serialized `data`. An upstream
+/// may answer with up to 8 MiB, which the result would then carry twice (text
+/// block and `structuredContent`).
+pub const MAX_DATA_PAYLOAD_BYTES: usize = 256 * 1024;
+
+/// Replace an oversized `data` with a line the agent can act on. Applies to the
+/// locally run and the forwarded result alike, since both reach here.
+fn bound_data_payload(value: &mut Value) {
+    let Some(data) = value.get_mut("data") else {
+        return;
+    };
+    let size = serde_json::to_string(data).map_or(0, |s| s.len());
+    if size > MAX_DATA_PAYLOAD_BYTES {
+        *data = Value::String(format!(
+            "[result_too_large] The result is {} KiB, over the {} KiB limit. Narrow the options (a filter, fewer fields, a smaller page) and call again.",
+            size / 1024,
+            MAX_DATA_PAYLOAD_BYTES / 1024
+        ));
+    }
 }
 
 /// Remove MCP-only control args (`maxLength`) before a proxy forwards the call
@@ -1080,6 +1130,20 @@ const CREDIT_FIELDS: &[&str] = &["creditCost", "creditsUsed"];
 /// text content block and `structuredContent`.
 pub fn strip_credit_fields(value: &mut Value) {
     strip_credit_fields_inner(value, false);
+}
+
+/// [`strip_credit_fields`] for one tool's result, which is what the MCP
+/// dispatchers call. The data tools carry a third party's payload in `data`,
+/// where a key named `creditsUsed` is that source's own value, so for them only
+/// the top-level field goes.
+pub fn strip_tool_credit_fields(tool_name: &str, value: &mut Value) {
+    if matches!(tool_name, "crw_find_data" | "crw_get_data") {
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("creditsUsed");
+        }
+    } else {
+        strip_credit_fields(value);
+    }
 }
 
 /// `in_results` marks that `value` sits under an extract `results` array, where
@@ -1714,10 +1778,10 @@ mod tests {
             "crw_check_extract_status",
             "crw_cancel_extract",
         ] {
-            assert!(is_known_tool(name), "{name} should be known");
+            assert!(is_known_tool(name, false), "{name} should be known");
         }
-        assert!(!is_known_tool("nonexistent"));
-        assert!(!is_known_tool(""));
+        assert!(!is_known_tool("nonexistent", false));
+        assert!(!is_known_tool("", false));
     }
 
     /// A3 — tools/list suppresses crw_search when no backend; includes it otherwise.
@@ -1868,7 +1932,13 @@ mod tests {
     #[test]
     fn p1_proxy_mode_advertises_no_output_schema() {
         let proxied = tool_definitions(true);
-        for tool in proxied["tools"].as_array().expect("tools array") {
+        for tool in proxied["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            // The data tools' results are shaped locally, not passed through.
+            .filter(|t| !matches!(t["name"].as_str(), Some("crw_find_data" | "crw_get_data")))
+        {
             assert!(
                 tool.get("outputSchema").is_none(),
                 "{} must not advertise an outputSchema in proxy mode",
@@ -2164,6 +2234,33 @@ mod tests {
     }
 
     #[test]
+    fn data_tools_instruction_only_in_proxy_mode() {
+        let instructions = |proxy_mode: bool| {
+            let req = JsonRpcRequest {
+                jsonrpc: "2.0".into(),
+                id: Some(json!(1)),
+                method: "initialize".into(),
+                params: Value::Null,
+            };
+            let ProtocolResult::Response(resp) =
+                handle_protocol_method("crw", "0", &req, proxy_mode, true)
+            else {
+                panic!("expected response");
+            };
+            resp.result.unwrap()["instructions"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(
+            instructions(true),
+            format!("{SERVER_INSTRUCTIONS} {DATA_TOOLS_INSTRUCTION}")
+        );
+        assert_eq!(instructions(false), SERVER_INSTRUCTIONS);
+        assert!(!instructions(false).contains("crw_find_data"));
+    }
+
+    #[test]
     fn server_instructions_fn_picks_the_matching_variant() {
         assert_eq!(server_instructions(true), SERVER_INSTRUCTIONS);
         assert_eq!(server_instructions(false), SERVER_INSTRUCTIONS_NO_SEARCH);
@@ -2321,12 +2418,66 @@ mod tests {
     // --- tool_definitions(): tool set shape ---
 
     #[test]
-    fn tool_definitions_has_exactly_9_tools_regardless_of_proxy_mode() {
+    fn tool_definitions_has_9_engine_tools_and_11_proxy_tools() {
         assert_eq!(
             tool_definitions(false)["tools"].as_array().unwrap().len(),
             9
         );
-        assert_eq!(tool_definitions(true)["tools"].as_array().unwrap().len(), 9);
+        assert_eq!(
+            tool_definitions(true)["tools"].as_array().unwrap().len(),
+            11
+        );
+    }
+
+    #[test]
+    fn get_data_payload_over_the_cap_is_replaced_with_a_line() {
+        let small = json!({"provider": "p", "data": {"a": 1}});
+        assert_eq!(
+            apply_bounds("crw_get_data", &json!({}), small.clone()),
+            small
+        );
+
+        let big = json!({"provider": "p", "data": {"blob": "x".repeat(MAX_DATA_PAYLOAD_BYTES)}});
+        let out = apply_bounds("crw_get_data", &json!({}), big);
+        let line = out["data"].as_str().expect("data replaced by a line");
+        assert!(line.starts_with("[result_too_large]"), "{line}");
+        assert_eq!(out["provider"], "p");
+    }
+
+    #[test]
+    fn data_tool_credit_strip_never_touches_the_payload() {
+        let mut v = json!({"creditsUsed": 1, "data": {"creditsUsed": 7, "creditCost": 2}});
+        strip_tool_credit_fields("crw_get_data", &mut v);
+        assert_eq!(v, json!({"data": {"creditsUsed": 7, "creditCost": 2}}));
+
+        let mut other = json!({"creditsUsed": 1, "data": {"creditCost": 2}});
+        strip_tool_credit_fields("crw_scrape", &mut other);
+        assert_eq!(other, json!({"data": {}}));
+    }
+
+    #[test]
+    fn data_tools_are_proxy_only_and_keep_their_output_schema() {
+        let proxied = tool_definitions(true);
+        for name in ["crw_find_data", "crw_get_data"] {
+            assert!(is_known_tool(name, true), "{name} known in proxy mode");
+            assert!(!is_known_tool(name, false), "{name} unknown to the engine");
+            let tool = tool_by_name(&proxied, name);
+            assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            assert!(
+                tool.get("outputSchema").is_some(),
+                "{name} keeps its schema"
+            );
+            assert!(tool_output_schema(name).is_some());
+        }
+        let get = tool_by_name(&proxied, "crw_get_data");
+        assert_eq!(
+            get["inputSchema"]["required"],
+            json!(["provider", "capability"])
+        );
+        // An advertised schema means a strict client expects structuredContent.
+        let value = json!({"provider": "p", "capability": "c", "provenance": {}, "data": [1]});
+        let resp = tool_result_response(json!(1), "crw_get_data", Ok(value.clone()));
+        assert_eq!(result_of(&resp)["structuredContent"], value);
     }
 
     #[test]
@@ -2756,23 +2907,23 @@ mod tests {
 
     #[test]
     fn is_known_tool_is_case_sensitive() {
-        assert!(is_known_tool("crw_scrape"));
-        assert!(!is_known_tool("CRW_SCRAPE"));
-        assert!(!is_known_tool("Crw_Scrape"));
+        assert!(is_known_tool("crw_scrape", false));
+        assert!(!is_known_tool("CRW_SCRAPE", false));
+        assert!(!is_known_tool("Crw_Scrape", false));
     }
 
     #[test]
     fn is_known_tool_rejects_near_miss_names() {
-        assert!(!is_known_tool("crw-scrape"));
-        assert!(!is_known_tool("crw_scrape "));
-        assert!(!is_known_tool(" crw_scrape"));
-        assert!(!is_known_tool("crw_scrape\n"));
-        assert!(!is_known_tool("crw_scrap"));
+        assert!(!is_known_tool("crw-scrape", false));
+        assert!(!is_known_tool("crw_scrape ", false));
+        assert!(!is_known_tool(" crw_scrape", false));
+        assert!(!is_known_tool("crw_scrape\n", false));
+        assert!(!is_known_tool("crw_scrap", false));
     }
 
     #[test]
     fn is_known_tool_rejects_unicode_lookalike() {
-        assert!(!is_known_tool("crw_scräpe"));
+        assert!(!is_known_tool("crw_scräpe", false));
     }
 
     // --- handle_protocol_method ---
@@ -2931,14 +3082,17 @@ mod tests {
             panic!("expected response");
         };
         let tools = resp.result.unwrap()["tools"].as_array().unwrap().clone();
-        for t in &tools {
+        for t in tools
+            .iter()
+            .filter(|t| !matches!(t["name"].as_str(), Some("crw_find_data" | "crw_get_data")))
+        {
             assert!(
                 t.get("outputSchema").is_none(),
                 "{} kept a schema in proxy mode",
                 t["name"]
             );
         }
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 11);
     }
 
     #[test]
@@ -3708,7 +3862,7 @@ mod tests {
         ($fn_name:ident, $name:expr) => {
             #[test]
             fn $fn_name() {
-                assert!(is_known_tool($name));
+                assert!(is_known_tool($name, false));
             }
         };
     }
@@ -3911,7 +4065,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_definitions_proxy_and_embedded_modes_have_the_same_tool_names_in_the_same_order() {
+    fn tool_definitions_proxy_mode_is_the_engine_list_plus_the_data_tools() {
         let names = |defs: &Value| -> Vec<String> {
             defs["tools"]
                 .as_array()
@@ -3920,10 +4074,9 @@ mod tests {
                 .map(|t| t["name"].as_str().unwrap().to_string())
                 .collect()
         };
-        assert_eq!(
-            names(&tool_definitions(false)),
-            names(&tool_definitions(true))
-        );
+        let mut expected = names(&tool_definitions(false));
+        expected.extend(["crw_find_data".to_string(), "crw_get_data".to_string()]);
+        assert_eq!(names(&tool_definitions(true)), expected);
     }
 
     #[test]
