@@ -349,13 +349,13 @@ mod tests {
             ("mailto:a@b.example?subject=s3cret", "mailto:<opaque> (u:"),
             ("data:text/plain;base64,QUFBQQ==", "data:<opaque> (u:"),
             ("javascript:alert(1)", "javascript:<opaque> (u:"),
-            ("blob:https://h.example/0b1c", "blob:<opaque> (u:"),
+            ("blob:https://h.example/xq7z", "blob:<opaque> (u:"),
             ("about:blank", "about:<opaque> (u:"),
             ("file:///etc/secret-file", "file:<opaque> (u:"),
         ] {
             let out = render(raw);
             assert!(out.starts_with(prefix), "{raw} rendered as {out}");
-            assert_none_of(&out, &["s3cret", "QUFBQQ", "alert", "0b1c", "secret-file"]);
+            assert_none_of(&out, &["s3cret", "QUFBQQ", "alert", "xq7z", "secret-file"]);
         }
     }
 
