@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import {
   CLOUD_API_URL,
+  CrwApiError,
+  CrwBinaryNotFoundError,
   CrwClient,
   CrwError,
   CrwExtractCancelledError,
@@ -475,6 +480,238 @@ test("the local subprocess does not inherit CRW_API_URL", () => {
   assert.equal(env.CRW_CLIENT__API_URL, undefined);
   // The key is harmless: an embedded child ignores it.
   assert.equal(env.CRW_API_KEY, "crw_live_test");
+});
+
+// --- data sources ---
+
+/**
+ * A stand-in `crw-mcp`: answers `initialize`, then `crw_get_data` with the env
+ * and pid it saw, or an isError result for provider "boom".
+ */
+function fakeCrwMcp(): string {
+  const dir = mkdtempSync(join(tmpdir(), "crw-fake-mcp-"));
+  const file = join(dir, "crw-mcp");
+  writeFileSync(
+    file,
+    `#!${process.execPath}
+const rl = require("node:readline").createInterface({ input: process.stdin });
+let initialized = false;
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\\n");
+  if (msg.method === "initialize") { initialized = true; return reply({ protocolVersion: "2025-06-18" }); }
+  const args = msg.params.arguments;
+  if (args.provider === "boom") return reply({ isError: true, content: [{ type: "text", text: "[upstream_failed] boom" }] });
+  const out = { provider: args.provider, capability: args.capability, creditsUsed: 0,
+    provenance: { source: "Fake", upstreamUrl: null, licence: "CC0 1.0", licenceUrl: null, attributionText: null, retrievedAt: null },
+    data: { initialized, pid: process.pid, options: args.options, apiUrl: process.env.CRW_API_URL, apiKey: process.env.CRW_API_KEY } };
+  reply({ content: [{ type: "text", text: JSON.stringify(out) }], structuredContent: out });
+});
+`,
+  );
+  chmodSync(file, 0o755);
+  return file;
+}
+
+const CLIENT_REQUIRED = { success: false, errorCode: "client_execution_required", error: "[client_execution_required] runs locally" };
+
+test("findData maps catalogue items and passes paging", async () => {
+  const calls = mockFetch({
+    items: [
+      {
+        provider: "openalex",
+        capability: "works",
+        name: "Works",
+        description: "Papers",
+        execution: "server",
+        creditsCost: 1,
+        keyRequired: false,
+        options: { required: ["search"], optional: ["page"] },
+        provenance: { source: "OpenAlex", licence: "CC0 1.0", licence_url: null, attribution_text: null },
+      },
+    ],
+    total: 7,
+    nextOffset: 6,
+  });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  const page = await c.findData({ query: " papers ", provider: "OpenAlex", limit: 5, offset: 1 });
+  const url = new URL(calls[0].url);
+  assert.equal(url.pathname, "/v1/data/find");
+  assert.equal(url.searchParams.get("query"), "papers");
+  assert.equal(url.searchParams.get("provider"), "openalex");
+  assert.equal(url.searchParams.get("limit"), "5");
+  assert.equal(url.searchParams.get("offset"), "1");
+  assert.deepEqual(page, {
+    items: [
+      {
+        provider: "openalex",
+        capability: "works",
+        name: "Works",
+        description: "Papers",
+        creditsCost: 1,
+        requiredOptions: ["search"],
+        optionalOptions: ["page"],
+        keyRequired: false,
+        licence: "CC0 1.0",
+      },
+    ],
+    total: 7,
+    nextOffset: 6,
+  });
+
+  mockFetch({ items: [], total: 7, nextOffset: null });
+  const last = await c.findData({ offset: 6 });
+  assert.equal("nextOffset" in last, false, "no next page on the last one");
+});
+
+test("getData maps the snake_case envelope to camelCase", async () => {
+  const calls = mockFetch({
+    success: true,
+    provider: "openalex",
+    capability: "works",
+    credits_used: 1,
+    request_id: "r1",
+    provenance: {
+      source: "OpenAlex",
+      upstream_url: "https://api.openalex.org/works?search=x",
+      licence: "CC0 1.0",
+      licence_url: "https://creativecommons.org/publicdomain/zero/1.0/",
+      attribution_text: null,
+      retrieved_at: "2026-10-29T00:00:00Z",
+    },
+    data: { results: [1] },
+  });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  const out = await c.getData("openalex", "works", { search: "x y", page: 2, oa: true, skip: undefined });
+  assert.equal(calls[0].url, `${CLOUD_API_URL}/v1/data/openalex/works?search=x+y&page=2&oa=true`);
+  assert.deepEqual(out, {
+    provider: "openalex",
+    capability: "works",
+    creditsUsed: 1,
+    provenance: {
+      source: "OpenAlex",
+      upstreamUrl: "https://api.openalex.org/works?search=x",
+      licence: "CC0 1.0",
+      licenceUrl: "https://creativecommons.org/publicdomain/zero/1.0/",
+      attributionText: null,
+      retrievedAt: "2026-10-29T00:00:00Z",
+    },
+    data: { results: [1] },
+  });
+});
+
+test("getData runs a client source through a proxy-mode crw-mcp and reuses it", async () => {
+  process.env.CRW_BINARY = fakeCrwMcp();
+  process.env.CRW_API_URL = "https://shell.example";
+  mockFetch(CLIENT_REQUIRED, false, 409);
+  const c = new CrwClient({ apiUrl: "https://api.example", apiKey: "crw_live_test" });
+  try {
+    const first = await c.getData("depsdev", "package", { name: "react" });
+    const second = await c.getData("depsdev", "package", { name: "vue" });
+    const data = first.data as Record<string, unknown>;
+    assert.equal(first.provider, "depsdev");
+    assert.equal(first.provenance.licence, "CC0 1.0");
+    assert.equal(data.initialized, true);
+    assert.deepEqual(data.options, { name: "react" });
+    assert.equal(data.apiUrl, "https://api.example", "the client's URL, not the shell's");
+    assert.equal(data.apiKey, "crw_live_test");
+    assert.equal((second.data as Record<string, unknown>).pid, data.pid, "one process per client");
+  } finally {
+    await c.close();
+  }
+});
+
+test("getData surfaces an isError from crw-mcp as CrwApiError", async () => {
+  process.env.CRW_BINARY = fakeCrwMcp();
+  mockFetch(CLIENT_REQUIRED, false, 409);
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  try {
+    await assert.rejects(
+      () => c.getData("boom", "x"),
+      (err: unknown) => err instanceof CrwApiError && err.message === "[upstream_failed] boom",
+    );
+  } finally {
+    await c.close();
+  }
+});
+
+test("getData names the install routes when crw-mcp is missing", async () => {
+  process.env.CRW_BINARY = join(tmpdir(), "crw-no-such-binary");
+  mockFetch(CLIENT_REQUIRED, false, 409);
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  try {
+    await assert.rejects(
+      () => c.getData("depsdev", "package"),
+      (err: unknown) =>
+        err instanceof CrwBinaryNotFoundError &&
+        /npm i -g crw-mcp/.test(err.message) &&
+        err.message.includes(`at CRW_BINARY=${process.env.CRW_BINARY}`),
+    );
+  } finally {
+    await c.close();
+  }
+});
+
+test("close() lets crw-mcp finish after EOF, then kills it after the grace period", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "crw-fake-mcp-"));
+  const marker = join(dir, "done");
+  const make = (name: string, onEnd: string) => {
+    const file = join(dir, name);
+    writeFileSync(
+      file,
+      `#!${process.execPath}
+const fs = require("node:fs");
+process.stdin.on("data", (b) => {
+  const msg = JSON.parse(String(b).trim().split("\\n")[0]);
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }) + "\\n");
+});
+process.stdin.on("end", () => { ${onEnd} });
+setInterval(() => {}, 1000);
+`,
+    );
+    chmodSync(file, 0o755);
+    return file;
+  };
+  // Finishes its work 200 ms after EOF, like a pending usage ping.
+  process.env.CRW_BINARY = make("polite", `setTimeout(() => { fs.writeFileSync(${JSON.stringify(marker)}, "1"); process.exit(0); }, 200);`);
+  mockFetch(CLIENT_REQUIRED, false, 409);
+  const polite = new CrwClient({ apiKey: "crw_live_test" });
+  await assert.rejects(() => polite.getData("depsdev", "package")); // `{}` is not a tool result
+  await polite.close();
+  assert.equal(existsSync(marker), true, "the child finished before close() resolved");
+
+  // Ignores EOF: close() still returns, bounded by the grace period.
+  process.env.CRW_BINARY = make("stubborn", "");
+  const stubborn = new CrwClient({ apiKey: "crw_live_test" });
+  await assert.rejects(() => stubborn.getData("depsdev", "package"));
+  const started = Date.now();
+  await stubborn.close();
+  assert.ok(Date.now() - started < 2000);
+});
+
+test("getData maps other API errors without spawning crw-mcp", async () => {
+  process.env.CRW_BINARY = join(tmpdir(), "crw-no-such-binary");
+  mockFetch({ success: false, error: "Insufficient credits" }, false, 402);
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  await assert.rejects(
+    () => c.getData("openalex", "works"),
+    (err: unknown) => err instanceof CrwApiError && err.statusCode === 402 && /Insufficient credits/.test(err.message),
+  );
+});
+
+test("getData rejects a provider or capability that is not a slug", async () => {
+  const calls = mockFetch({ success: true });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  await assert.rejects(() => c.getData("../admin", "works"), /provider must be a lowercase id/);
+  await assert.rejects(() => c.getData("openalex", "Works"), /capability must be a lowercase id/);
+  assert.equal(calls.length, 0);
+});
+
+test("data methods need the API in CRW_LOCAL mode", async () => {
+  process.env.CRW_LOCAL = "1";
+  const c = new CrwClient();
+  await assert.rejects(() => c.findData(), /data sources need the fastCRW API/);
+  await assert.rejects(() => c.getData("openalex", "works"), /not available in CRW_LOCAL mode/);
 });
 
 // silence unused import lint in some configs

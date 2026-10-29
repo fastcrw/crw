@@ -5,14 +5,22 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
+import threading
 import time
 from collections.abc import Iterable
 from typing import Any, cast
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from crw._binary import ensure_binary
-from crw.exceptions import CrwApiError, CrwError, CrwExtractCancelledError, CrwTimeoutError
+from crw.exceptions import (
+    CrwApiError,
+    CrwBinaryNotFoundError,
+    CrwError,
+    CrwExtractCancelledError,
+    CrwTimeoutError,
+)
 from crw.types import ExtractAccepted, ExtractStatus, ExtractUrlResult
 
 _REQUEST_ID = 0
@@ -36,6 +44,12 @@ _HTTP_ONLY_HINT = (
     "{name}() requires HTTP mode ({reason}). It is not available with CRW_LOCAL=1. "
     "Use the cloud (set CRW_API_KEY) or pass api_url=... for a self-hosted server."
 )
+
+_DATA_LOCAL_HINT = (
+    "data sources need the fastCRW API (set api_url/api_key); "
+    "not available in CRW_LOCAL mode"
+)
+_SLUG = re.compile(r"[a-z0-9-]+")
 
 
 def _env_truthy(value: str | None) -> bool:
@@ -81,7 +95,7 @@ def _read_json_response(req: Any) -> dict:
         except Exception:
             raise CrwApiError(f"HTTP {e.code}: {e.reason}") from e
         message = payload.get("error") or payload.get("message") or f"HTTP {e.code}"
-        raise CrwApiError(message) from e
+        raise CrwApiError(message, e.code, payload.get("errorCode")) from e
 
 
 def _encode_multipart(filename: str, content: bytes, options: dict[str, Any]) -> tuple[bytes, str]:
@@ -176,6 +190,32 @@ def _local_child_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in _PROXY_MODE_ENV_VARS}
 
 
+def _proxy_child_env(api_url: str, api_key: str | None) -> dict[str, str]:
+    """Environment for a `crw-mcp` subprocess in PROXY mode.
+
+    It talks to ``api_url`` with the client's own key, whatever the shell says.
+    Only the data tools use it, for a source the API answered with
+    ``client_execution_required``.
+    """
+    env = {**os.environ, "CRW_API_URL": api_url}
+    if api_key:
+        env["CRW_API_KEY"] = api_key
+    else:
+        env.pop("CRW_API_KEY", None)
+    return env
+
+
+def _query_value(key: str, value: Any) -> str:
+    # JSON spelling, as the engine and the TypeScript SDK send it: `true`, not `True`.
+    if isinstance(value, bool):
+        return json.dumps(value)
+    if isinstance(value, (str, int, float)):
+        return str(value)
+    raise CrwError(
+        f'[invalid_options] Option "{key}" must be a string, number or boolean'
+    )
+
+
 def _map_payload(result: dict[str, Any]) -> dict[str, Any]:
     """Pick `crw_map`'s payload out of whichever shape the local `crw-mcp` sent.
 
@@ -194,6 +234,18 @@ def _map_payload(result: dict[str, Any]) -> dict[str, Any]:
     if isinstance(envelope, dict) and "links" in envelope:
         return envelope
     return result
+
+
+def _stop(proc: subprocess.Popen | None) -> None:
+    """Close a ``crw-mcp`` subprocess: EOF on stdin first, then terminate."""
+    if proc and proc.poll() is None:
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            proc.wait(timeout=5)
 
 
 class CrwClient:
@@ -233,6 +285,9 @@ class CrwClient:
     def __init__(self, api_url: str | None = None, api_key: str | None = None):
         self._api_key = api_key or os.environ.get("CRW_API_KEY")
         self._process: subprocess.Popen | None = None
+        self._data_process: subprocess.Popen | None = None
+        # One proxy process per client, and one request in flight on its pipes.
+        self._data_lock = threading.Lock()
 
         if _env_truthy(os.environ.get("CRW_LOCAL")):
             # Explicit self-host opt-in: zero-config local engine (subprocess),
@@ -803,17 +858,124 @@ class CrwClient:
         body.update(kwargs)
         return self._http_post("/v1/change-tracking/diff", body)
 
+    # --- Data sources ---
+
+    def find_data(
+        self,
+        query: str | None = None,
+        *,
+        category: str | None = None,
+        provider: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        """Find data sources (``GET /v1/data/find``).
+
+        Returns ``{"items": [...], "total": int, "nextOffset": int}``; pass
+        ``offset=result["nextOffset"]`` for the next page (absent on the last).
+        Each item has ``provider``, ``capability``, ``name``, ``description``,
+        ``creditsCost``, ``requiredOptions``, ``optionalOptions``,
+        ``keyRequired`` and ``licence``.
+        """
+        if not self._api_url:
+            raise CrwError(_DATA_LOCAL_HINT)
+        params: dict[str, Any] = {}
+        for key, value in (
+            ("query", query),
+            ("category", category),
+            ("provider", provider),
+        ):
+            if value and value.strip():
+                params[key] = (
+                    value.strip().lower() if key == "provider" else value.strip()
+                )
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+        qs = urlencode(params)
+        reply = self._http_request(
+            "GET", f"/v1/data/find?{qs}" if qs else "/v1/data/find", raw=True
+        )
+        items = []
+        for tool in reply.get("items") or []:
+            options = tool.get("options") or {}
+            items.append(
+                {
+                    "provider": tool.get("provider"),
+                    "capability": tool.get("capability"),
+                    "name": tool.get("name"),
+                    "description": tool.get("description"),
+                    "creditsCost": tool.get("creditsCost"),
+                    "requiredOptions": list(options.get("required") or []),
+                    "optionalOptions": list(options.get("optional") or []),
+                    "keyRequired": tool.get("keyRequired") is True,
+                    "licence": (tool.get("provenance") or {}).get("licence") or "",
+                }
+            )
+        result: dict[str, Any] = {"items": items, "total": reply.get("total")}
+        if isinstance(reply.get("nextOffset"), int):
+            result["nextOffset"] = reply["nextOffset"]
+        return result
+
+    def get_data(
+        self, provider: str, capability: str, options: dict | None = None
+    ) -> dict:
+        """Call one data source capability (``GET /v1/data/<provider>/<capability>``).
+
+        Returns ``{"provider", "capability", "creditsUsed", "provenance", "data"}``.
+        A source that runs on your machine instead of the API is run through a
+        local ``crw-mcp`` (CRW_BINARY, PATH or the verified download) that talks
+        to the same API with your key.
+        """
+        if not self._api_url:
+            raise CrwError(_DATA_LOCAL_HINT)
+        for field, value in (("provider", provider), ("capability", capability)):
+            if not isinstance(value, str) or not _SLUG.fullmatch(value):
+                raise CrwError(
+                    f"{field} must be a lowercase id like the ones find_data returns, got {value!r}"
+                )
+        options = options or {}
+        qs = urlencode(
+            {k: _query_value(k, v) for k, v in options.items() if v is not None}
+        )
+        path = f"/v1/data/{provider}/{capability}" + (f"?{qs}" if qs else "")
+        try:
+            body = self._http_request("GET", path, raw=True)
+        except CrwApiError as e:
+            if e.status_code == 409 and e.error_code == "client_execution_required":
+                args = {
+                    "provider": provider,
+                    "capability": capability,
+                    "options": options,
+                }
+                with self._data_lock:
+                    return self._tool_call(
+                        "crw_get_data", args, self._ensure_data_process()
+                    )
+            raise
+        prov = body.get("provenance") or {}
+        return {
+            "provider": body.get("provider"),
+            "capability": body.get("capability"),
+            "creditsUsed": body.get("credits_used"),
+            "provenance": {
+                "source": prov.get("source"),
+                "upstreamUrl": prov.get("upstream_url"),
+                "licence": prov.get("licence"),
+                "licenceUrl": prov.get("licence_url"),
+                "attributionText": prov.get("attribution_text"),
+                "retrievedAt": prov.get("retrieved_at"),
+            },
+            "data": body.get("data"),
+        }
+
     def close(self) -> None:
-        """Shut down the subprocess if running."""
-        if self._process and self._process.poll() is None:
-            if self._process.stdin:
-                self._process.stdin.close()
-            try:
-                self._process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self._process.terminate()
-                self._process.wait(timeout=5)
-            self._process = None
+        """Shut down any subprocess (CRW_LOCAL engine or data-source proxy)."""
+        _stop(self._process)
+        _stop(self._data_process)
+        self._process = None
+        self._data_process = None
 
     def __enter__(self) -> CrwClient:
         return self
@@ -839,8 +1001,50 @@ class CrwClient:
             )
         return self._process
 
-    def _jsonrpc(self, method: str, params: dict | None = None) -> Any:
-        proc = self._ensure_process()
+    def _ensure_data_process(self) -> subprocess.Popen:
+        """A proxy-mode ``crw-mcp``, spawned on first use and kept until close()."""
+        if self._data_process is None or self._data_process.poll() is not None:
+            assert self._api_url is not None
+            try:
+                binary = ensure_binary()
+            except CrwBinaryNotFoundError as e:
+                raise CrwBinaryNotFoundError(
+                    f"This data source runs inside crw-mcp, which could not be found ({e}). "
+                    "Install it with `npm i -g crw-mcp` or `cargo install crw-mcp`, "
+                    "or set CRW_BINARY to its path."
+                ) from e
+            self._data_process = subprocess.Popen(
+                [str(binary)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                env=_proxy_child_env(self._api_url, self._api_key),
+            )
+            init = {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "crw-python", "version": "1"},
+            }
+            try:
+                self._jsonrpc("initialize", init, self._data_process)
+            except Exception:
+                _stop(self._data_process)
+                self._data_process = None
+                raise
+        return self._data_process
+
+    def _jsonrpc(
+        self,
+        method: str,
+        params: dict | None = None,
+        proc: subprocess.Popen | None = None,
+    ) -> Any:
+        # A caller-supplied process (the data proxy) also gets its reply id
+        # checked, so a mixed-up pipe fails loudly instead of returning another
+        # call's data.
+        check_id = proc is not None
+        proc = proc or self._ensure_process()
         assert proc.stdin is not None and proc.stdout is not None
         req = {
             "jsonrpc": "2.0",
@@ -856,12 +1060,20 @@ class CrwClient:
             raise CrwError("crw-mcp process closed unexpectedly")
 
         resp = json.loads(line)
+        if check_id and resp.get("id") != req["id"]:
+            raise CrwError(
+                f"crw-mcp answered request {resp.get('id')}, expected {req['id']}"
+            )
         if "error" in resp:
             raise CrwApiError(resp["error"].get("message", str(resp["error"])))
         return resp.get("result")
 
-    def _tool_call(self, tool_name: str, arguments: dict) -> dict:
-        result = self._jsonrpc("tools/call", {"name": tool_name, "arguments": arguments})
+    def _tool_call(
+        self, tool_name: str, arguments: dict, proc: subprocess.Popen | None = None
+    ) -> dict:
+        result = self._jsonrpc(
+            "tools/call", {"name": tool_name, "arguments": arguments}, proc
+        )
         if not result or not result.get("content"):
             raise CrwError(f"Empty response from {tool_name}")
 

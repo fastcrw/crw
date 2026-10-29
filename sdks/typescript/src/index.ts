@@ -64,5 +64,11 @@ export type {
   ChangeDiff,
   ChangeJudgment,
   MeaningfulChange,
+  FindDataOptions,
+  FindDataResult,
+  DataSource,
+  DataOptions,
+  DataResult,
+  DataProvenance,
   Json,
 } from "./types.js";

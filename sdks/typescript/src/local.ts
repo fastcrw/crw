@@ -48,11 +48,26 @@ export function localChildEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([k]) => !drop.has(fold(k))));
 }
 
+/**
+ * Environment for a `crw-mcp` subprocess in PROXY mode: it talks to `apiUrl`
+ * with the client's own key, whatever the shell says. Only the data tools use
+ * it, for a source the API answered with `client_execution_required`.
+ */
+export function proxyChildEnv(apiUrl: string, apiKey: string | undefined): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, CRW_API_URL: apiUrl };
+  if (apiKey) env.CRW_API_KEY = apiKey;
+  else delete env.CRW_API_KEY;
+  return env;
+}
+
 export class LocalTransport {
   private proc: McpProc | null = null;
   private nextId = 0;
   private pending = new Map<number, Pending>();
   private buffer = "";
+
+  /** `env` defaults to {@link localChildEnv} (embedded mode). */
+  constructor(private readonly env?: NodeJS.ProcessEnv) {}
 
   private resolveBinary(): string {
     const env = process.env.CRW_BINARY;
@@ -65,12 +80,13 @@ export class LocalTransport {
   private ensureProcess(): McpProc {
     if (this.proc && this.proc.exitCode === null) return this.proc;
     const bin = this.resolveBinary();
-    const proc = spawn(bin, [], { stdio: ["pipe", "pipe", "ignore"], env: localChildEnv() });
+    const proc = spawn(bin, [], { stdio: ["pipe", "pipe", "ignore"], env: this.env ?? localChildEnv() });
     proc.on("error", (err: NodeJS.ErrnoException) => {
+      const where = bin === BINARY_NAME ? "on PATH" : `at CRW_BINARY=${bin}`;
       const failure =
         err.code === "ENOENT"
           ? new CrwBinaryNotFoundError(
-              `crw-mcp binary not found on PATH. Install it (e.g. \`npm i -g crw-mcp\` or ` +
+              `crw-mcp binary not found ${where}. Install it (e.g. \`npm i -g crw-mcp\` or ` +
                 `\`cargo install crw-mcp\`) or set CRW_BINARY to its path.`,
             )
           : new CrwError(`crw-mcp failed to start: ${err.message}`);
@@ -113,7 +129,16 @@ export class LocalTransport {
     }
   }
 
-  private jsonrpc(method: string, params: Json): Promise<Json> {
+  /** MCP handshake; `crw-mcp` is stateless, so a respawn needs no repeat. */
+  initialize(): Promise<Json> {
+    return this.jsonrpc("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "crw-sdk", version: "1" },
+    });
+  }
+
+  jsonrpc(method: string, params: Json): Promise<Json> {
     const proc = this.ensureProcess();
     const id = ++this.nextId;
     return new Promise<Json>((resolve, reject) => {
@@ -130,11 +155,25 @@ export class LocalTransport {
     return JSON.parse(content.text ?? "{}") as Json;
   }
 
-  close(): void {
-    if (this.proc && this.proc.exitCode === null) {
-      this.proc.stdin.end();
-      this.proc.kill();
-    }
+  /**
+   * EOF first so the child can finish what it started (a proxy-mode data call
+   * sends a usage ping after answering), then kill it if it is still up after
+   * `graceMs`. Resolves once it is gone; not awaiting it is fine.
+   */
+  close(graceMs = 1000): Promise<void> {
+    const proc = this.proc;
     this.proc = null;
+    if (!proc || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        proc.kill();
+        resolve();
+      }, graceMs);
+      proc.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      proc.stdin.end();
+    });
   }
 }

@@ -596,3 +596,58 @@ export interface ResearchSimilarOptions {
   rerank?: boolean;
   anchor?: string[];
 }
+
+/** Filters for `findData()` (`GET /v1/data/find`). */
+export interface FindDataOptions {
+  /** Words to match against source names and descriptions. */
+  query?: string;
+  /** Only sources in this category, e.g. `Research`. */
+  category?: string;
+  /** Only this provider, e.g. `openalex`. */
+  provider?: string;
+  /** Results per page (server default 10, max 50). */
+  limit?: number;
+  /** Results to skip; pass the previous page's `nextOffset`. */
+  offset?: number;
+}
+
+/** One data source capability, as `findData()` lists it. */
+export interface DataSource {
+  provider: string;
+  capability: string;
+  name: string | null;
+  description: string | null;
+  creditsCost: number | null;
+  requiredOptions: string[];
+  optionalOptions: string[];
+  keyRequired: boolean;
+  licence: string | null;
+}
+
+export interface FindDataResult {
+  items: DataSource[];
+  total: number | null;
+  /** Present when another page exists. */
+  nextOffset?: number;
+}
+
+/** Values for a source's `requiredOptions` and `optionalOptions`. */
+export type DataOptions = Record<string, string | number | boolean | null | undefined>;
+
+export interface DataProvenance {
+  source: string | null;
+  upstreamUrl: string | null;
+  licence: string | null;
+  licenceUrl: string | null;
+  attributionText: string | null;
+  retrievedAt: string | null;
+}
+
+/** `getData()` result: the source's record plus where it came from. */
+export interface DataResult {
+  provider: string;
+  capability: string;
+  creditsUsed: number | null;
+  provenance: DataProvenance;
+  data: unknown;
+}
