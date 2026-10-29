@@ -1,7 +1,7 @@
 /** CRW client — cloud (default), self-hosted HTTP, or local subprocess mode. */
 
 import { CrwApiError, CrwError, CrwExtractCancelledError, CrwTimeoutError } from "./errors.js";
-import { LocalTransport } from "./local.js";
+import { LocalTransport, proxyChildEnv } from "./local.js";
 import type {
   BatchResult,
   BatchScrapeOptions,
@@ -10,11 +10,16 @@ import type {
   ClientOptions,
   CrawlOptions,
   CrawlResult,
+  DataOptions,
+  DataResult,
+  DataSource,
   DiffResult,
   ExtractOptions,
   ExtractAccepted,
   ExtractResult,
   ExtractStatus,
+  FindDataOptions,
+  FindDataResult,
   Json,
   MapOptions,
   MapResult,
@@ -51,6 +56,10 @@ function httpOnlyHint(name: string, reason: string): string {
     `Use the cloud (set CRW_API_KEY) or pass apiUrl for a self-hosted server.`
   );
 }
+
+const DATA_LOCAL_HINT =
+  "data sources need the fastCRW API (set apiUrl/apiKey); not available in CRW_LOCAL mode";
+const SLUG = /^[a-z0-9-]+$/;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -95,6 +104,7 @@ export class CrwClient {
   private apiUrl: string | null;
   private apiKey: string | undefined;
   private local: LocalTransport | null = null;
+  private dataProxy: Promise<LocalTransport> | null = null;
 
   /**
    * CRW is cloud-first. With no arguments the client targets the managed cloud
@@ -423,10 +433,104 @@ export class CrwClient {
     return this.httpPost("/v1/change-tracking/diff", body) as Promise<DiffResult>;
   }
 
-  /** Shut down the local subprocess if running. */
-  close(): void {
-    this.local?.close();
+  /** Find data sources (`GET /v1/data/find`). Page with `offset: result.nextOffset`. */
+  async findData(opts: FindDataOptions = {}): Promise<FindDataResult> {
+    if (!this.apiUrl) throw new CrwError(DATA_LOCAL_HINT);
+    const q = new URLSearchParams();
+    for (const key of ["query", "category", "provider"] as const) {
+      const value = opts[key]?.trim();
+      if (value) q.set(key, key === "provider" ? value.toLowerCase() : value);
+    }
+    if (opts.limit !== undefined) q.set("limit", String(opts.limit));
+    if (opts.offset !== undefined) q.set("offset", String(opts.offset));
+    const qs = q.toString();
+    const reply = await this.httpRequest("GET", `/v1/data/find${qs ? `?${qs}` : ""}`, undefined, {
+      raw: true,
+    });
+    const tools = Array.isArray(reply.items) ? (reply.items as Json[]) : [];
+    const list = (v: unknown) => (Array.isArray(v) ? (v as string[]) : []);
+    const items: DataSource[] = tools.map((t) => {
+      const options = (t.options ?? {}) as Json;
+      const provenance = (t.provenance ?? {}) as Json;
+      return {
+        provider: t.provider as string,
+        capability: t.capability as string,
+        name: (t.name as string | undefined) ?? null,
+        description: (t.description as string | undefined) ?? null,
+        creditsCost: (t.creditsCost as number | undefined) ?? null,
+        requiredOptions: list(options.required),
+        optionalOptions: list(options.optional),
+        keyRequired: t.keyRequired === true,
+        licence: (provenance.licence as string | undefined) ?? "",
+      };
+    });
+    const result: FindDataResult = { items, total: (reply.total as number | undefined) ?? null };
+    if (typeof reply.nextOffset === "number") result.nextOffset = reply.nextOffset;
+    return result;
+  }
+
+  /**
+   * Call one data source capability (`GET /v1/data/<provider>/<capability>`).
+   * A source that runs on your machine instead of the API is run through a
+   * local `crw-mcp` (CRW_BINARY or PATH) that talks to the same API with your key.
+   */
+  async getData(provider: string, capability: string, options: DataOptions = {}): Promise<DataResult> {
+    if (!this.apiUrl) throw new CrwError(DATA_LOCAL_HINT);
+    for (const [field, value] of [["provider", provider], ["capability", capability]] as const) {
+      if (!SLUG.test(value)) {
+        throw new CrwError(`${field} must be a lowercase id like the ones findData returns, got ${JSON.stringify(value)}`);
+      }
+    }
+    const q = new URLSearchParams();
+    for (const [key, value] of Object.entries(options)) {
+      if (value !== null && value !== undefined) q.set(key, String(value));
+    }
+    const qs = q.toString();
+    const path = `/v1/data/${provider}/${capability}${qs ? `?${qs}` : ""}`;
+    let body: Json;
+    try {
+      body = await this.httpRequest("GET", path, undefined, { raw: true });
+    } catch (err) {
+      if (err instanceof CrwApiError && err.statusCode === 409 && err.errorCode === "client_execution_required") {
+        const proxy = await this.dataProxyTransport();
+        return (await proxy.toolCall("crw_get_data", { provider, capability, options })) as unknown as DataResult;
+      }
+      throw err;
+    }
+    const p = (body.provenance ?? {}) as Json;
+    const field = (v: unknown) => (v as string | undefined) ?? null;
+    return {
+      provider: body.provider as string,
+      capability: body.capability as string,
+      creditsUsed: (body.credits_used as number | undefined) ?? null,
+      provenance: {
+        source: field(p.source),
+        upstreamUrl: field(p.upstream_url),
+        licence: field(p.licence),
+        licenceUrl: field(p.licence_url),
+        attributionText: field(p.attribution_text),
+        retrievedAt: field(p.retrieved_at),
+      },
+      data: body.data ?? null,
+    };
+  }
+
+  /**
+   * Shut down any local subprocess (CRW_LOCAL engine or data-source proxy).
+   * Each gets up to a second to exit on its own; await it to know they are gone.
+   */
+  async close(): Promise<void> {
+    const local = this.local;
+    const proxy = this.dataProxy;
     this.local = null;
+    this.dataProxy = null;
+    await Promise.all([
+      local?.close(),
+      proxy?.then(
+        (t) => t.close(),
+        () => {},
+      ),
+    ]);
   }
 
   // --- local (subprocess) mode ---
@@ -446,6 +550,27 @@ export class CrwClient {
       if (result.status === "cancelled") throw new CrwError(`Crawl ${jobId} was cancelled`);
       await sleep(pollInterval * 1000);
     }
+  }
+
+  /**
+   * A proxy-mode `crw-mcp`, spawned on first use and kept until close(). The
+   * promise is cached so concurrent calls share one process; a failed start is
+   * forgotten so the next call retries.
+   */
+  private dataProxyTransport(): Promise<LocalTransport> {
+    if (!this.dataProxy) {
+      const transport = new LocalTransport(proxyChildEnv(this.apiUrl!, this.apiKey));
+      const ready = transport.initialize().then(
+        () => transport,
+        (err: unknown) => {
+          void transport.close();
+          if (this.dataProxy === ready) this.dataProxy = null;
+          throw err;
+        },
+      );
+      this.dataProxy = ready;
+    }
+    return this.dataProxy;
   }
 
   // --- HTTP mode ---
@@ -499,7 +624,7 @@ export class CrwClient {
     }
     if (!resp.ok) {
       const message = (parsed.error as string) ?? (parsed.message as string) ?? `HTTP ${resp.status}`;
-      throw new CrwApiError(message, resp.status);
+      throw new CrwApiError(message, resp.status, parsed.errorCode as string | undefined);
     }
     return parsed;
   }

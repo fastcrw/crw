@@ -11,10 +11,13 @@ export class CrwError extends Error {
 
 export class CrwApiError extends CrwError {
   statusCode?: number;
-  constructor(message: string, statusCode?: number) {
+  /** The body's machine-readable `errorCode`, when the server sent one. */
+  errorCode?: string;
+  constructor(message: string, statusCode?: number, errorCode?: string) {
     super(message);
     this.name = "CrwApiError";
     this.statusCode = statusCode;
+    this.errorCode = errorCode;
   }
 }
 

@@ -683,3 +683,283 @@ class TestHttpOnlyMethods:
         assert body["current"] == {"markdown": "new"}
         assert body["previous"] == {"markdown": "old"}
         assert body["modes"] == ["gitDiff"]
+# ---------------------------------------------------------------------------
+# Data sources
+# ---------------------------------------------------------------------------
+
+_FAKE_CRW_MCP = """
+import json, os, sys
+initialized = False
+for line in sys.stdin:
+    msg = json.loads(line)
+    def reply(result):
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}), flush=True)
+    if msg["method"] == "initialize":
+        initialized = True
+        reply({"protocolVersion": "2025-06-18"})
+        continue
+    args = msg["params"]["arguments"]
+    if args["provider"] == "boom":
+        reply({"isError": True, "content": [{"type": "text", "text": "[upstream_failed] boom"}]})
+        continue
+    out = {
+        "provider": args["provider"], "capability": args["capability"], "creditsUsed": 0,
+        "provenance": {"source": "Fake", "licence": "CC0 1.0"},
+        "data": {"initialized": initialized, "pid": os.getpid(), "options": args["options"],
+                 "apiUrl": os.environ.get("CRW_API_URL"), "apiKey": os.environ.get("CRW_API_KEY")},
+    }
+    reply({"content": [{"type": "text", "text": json.dumps(out)}], "structuredContent": out})
+"""
+
+
+def _fake_crw_mcp(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point CRW_BINARY at a stand-in crw-mcp that echoes what it saw."""
+    import sys
+
+    stub = tmp_path / "crw-mcp"
+    stub.write_text(f"#!{sys.executable}\n{_FAKE_CRW_MCP}")
+    stub.chmod(0o755)
+    monkeypatch.setenv("CRW_BINARY", str(stub))
+
+
+def _http_error(status: int, body: dict) -> Exception:
+    import io
+    import urllib.error
+
+    return urllib.error.HTTPError(
+        "https://api.example/v1/data",
+        status,
+        "err",
+        {},
+        io.BytesIO(json.dumps(body).encode()),
+    )
+
+
+_CLIENT_REQUIRED = {
+    "success": False,
+    "errorCode": "client_execution_required",
+    "error": "[client_execution_required] runs locally",
+}
+
+
+@pytest.mark.unit
+class TestDataSources:
+    def test_find_data_maps_items_and_paging(self) -> None:
+        client = CrwClient(api_url="https://api.example", api_key="crw_live_test")
+        reply = {
+            "items": [
+                {
+                    "provider": "openalex",
+                    "capability": "works",
+                    "name": "Works",
+                    "description": "Papers",
+                    "execution": "server",
+                    "creditsCost": 1,
+                    "keyRequired": False,
+                    "options": {"required": ["search"], "optional": ["page"]},
+                    "provenance": {"source": "OpenAlex", "licence": "CC0 1.0"},
+                }
+            ],
+            "total": 7,
+            "nextOffset": 6,
+        }
+        with patch.object(client, "_http_request", return_value=reply) as req:
+            page = client.find_data(" papers ", provider="OpenAlex", limit=5, offset=1)
+        assert req.call_args[0][:2] == (
+            "GET",
+            "/v1/data/find?query=papers&provider=openalex&limit=5&offset=1",
+        )
+        assert page == {
+            "items": [
+                {
+                    "provider": "openalex",
+                    "capability": "works",
+                    "name": "Works",
+                    "description": "Papers",
+                    "creditsCost": 1,
+                    "requiredOptions": ["search"],
+                    "optionalOptions": ["page"],
+                    "keyRequired": False,
+                    "licence": "CC0 1.0",
+                }
+            ],
+            "total": 7,
+            "nextOffset": 6,
+        }
+
+        last_reply = {"items": [], "total": 7, "nextOffset": None}
+        with patch.object(client, "_http_request", return_value=last_reply):
+            assert "nextOffset" not in client.find_data(offset=6)
+
+    def test_get_data_maps_envelope(self) -> None:
+        client = CrwClient(api_url="https://api.example", api_key="crw_live_test")
+        body = {
+            "success": True,
+            "provider": "openalex",
+            "capability": "works",
+            "credits_used": 1,
+            "request_id": "r1",
+            "provenance": {
+                "source": "OpenAlex",
+                "upstream_url": "https://api.openalex.org/works?search=x",
+                "licence": "CC0 1.0",
+                "licence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                "attribution_text": None,
+                "retrieved_at": "2026-10-29T00:00:00Z",
+            },
+            "data": {"results": [1]},
+        }
+        with patch.object(client, "_http_request", return_value=body) as req:
+            out = client.get_data(
+                "openalex",
+                "works",
+                {"search": "x y", "page": 2, "oa": True, "skip": None},
+            )
+        assert req.call_args[0][:2] == (
+            "GET",
+            "/v1/data/openalex/works?search=x+y&page=2&oa=true",
+        )
+        assert out == {
+            "provider": "openalex",
+            "capability": "works",
+            "creditsUsed": 1,
+            "provenance": {
+                "source": "OpenAlex",
+                "upstreamUrl": "https://api.openalex.org/works?search=x",
+                "licence": "CC0 1.0",
+                "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+                "attributionText": None,
+                "retrievedAt": "2026-10-29T00:00:00Z",
+            },
+            "data": {"results": [1]},
+        }
+
+    def test_client_source_runs_through_proxy_crw_mcp(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _fake_crw_mcp(tmp_path, monkeypatch)
+        monkeypatch.setenv("CRW_API_URL", "https://shell.example")
+        client = CrwClient(api_url="https://api.example", api_key="crw_live_test")
+        try:
+            with patch(
+                "urllib.request.urlopen", side_effect=_http_error(409, _CLIENT_REQUIRED)
+            ):
+                first = client.get_data("depsdev", "package", {"name": "react"})
+            with patch(
+                "urllib.request.urlopen", side_effect=_http_error(409, _CLIENT_REQUIRED)
+            ):
+                second = client.get_data("depsdev", "package", {"name": "vue"})
+        finally:
+            client.close()
+        assert first["provider"] == "depsdev"
+        assert first["provenance"]["licence"] == "CC0 1.0"
+        data = first["data"]
+        assert data["initialized"] is True
+        assert data["options"] == {"name": "react"}
+        assert data["apiUrl"] == "https://api.example", (
+            "the client's URL, not the shell's"
+        )
+        assert data["apiKey"] == "crw_live_test"
+        assert second["data"]["pid"] == data["pid"], "one process per client"
+        assert client._data_process is None
+
+    def test_crw_mcp_is_error_raises(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _fake_crw_mcp(tmp_path, monkeypatch)
+        client = CrwClient(api_key="crw_live_test")
+        fail = CrwApiError("x", 409, "client_execution_required")
+        try:
+            with (
+                patch.object(client, "_http_request", side_effect=fail),
+                pytest.raises(CrwApiError, match=r"^\[upstream_failed\] boom$"),
+            ):
+                client.get_data("boom", "x")
+        finally:
+            client.close()
+
+    def test_missing_crw_mcp_names_install_routes(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from crw.exceptions import CrwBinaryNotFoundError
+
+        monkeypatch.setenv("CRW_BINARY", str(tmp_path / "missing"))
+        client = CrwClient(api_key="crw_live_test")
+        fail = CrwApiError("x", 409, "client_execution_required")
+        with (
+            patch.object(client, "_http_request", side_effect=fail),
+            pytest.raises(CrwBinaryNotFoundError, match="npm i -g crw-mcp"),
+        ):
+            client.get_data("depsdev", "package")
+
+    def test_other_api_errors_keep_status(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CRW_BINARY", "/nonexistent/crw-mcp")
+        client = CrwClient(api_key="crw_live_test")
+        err = _http_error(402, {"success": False, "error": "Insufficient credits"})
+        with (
+            patch("urllib.request.urlopen", side_effect=err),
+            pytest.raises(CrwApiError, match="Insufficient credits") as info,
+        ):
+            client.get_data("openalex", "works")
+        assert info.value.status_code == 402
+
+    def test_invalid_slug_rejected_before_request(self) -> None:
+        client = CrwClient(api_key="crw_live_test")
+        with patch.object(client, "_http_request") as req:
+            with pytest.raises(CrwError, match="provider must be a lowercase id"):
+                client.get_data("../admin", "works")
+            with pytest.raises(CrwError, match="capability must be a lowercase id"):
+                client.get_data("openalex", "Works")
+        req.assert_not_called()
+
+    def test_local_mode_needs_the_api(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        client = _local_client(monkeypatch)
+        with pytest.raises(CrwError, match="data sources need the fastCRW API"):
+            client.find_data()
+        with pytest.raises(CrwError, match="not available in CRW_LOCAL mode"):
+            client.get_data("openalex", "works")
+
+    def test_concurrent_get_data_shares_one_proxy(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        _fake_crw_mcp(tmp_path, monkeypatch)
+        client = CrwClient(api_key="crw_live_test")
+        fail = CrwApiError("x", 409, "client_execution_required")
+        results: dict[str, dict] = {}
+        errors: list[BaseException] = []
+
+        def call(name: str) -> None:
+            try:
+                results[name] = client.get_data("depsdev", "package", {"name": name})
+            except BaseException as e:  # noqa: BLE001 - surfaced by the assert below
+                errors.append(e)
+
+        try:
+            with patch.object(client, "_http_request", side_effect=fail):
+                threads = [
+                    threading.Thread(target=call, args=(f"pkg{i}",)) for i in range(8)
+                ]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join(timeout=10)
+                hung = [t for t in threads if t.is_alive()]
+        finally:
+            client.close()
+        assert hung == [], "threads deadlocked on the shared pipe"
+        assert errors == []
+        assert {r["data"]["options"]["name"] for r in results.values()} == set(results)
+        assert len({r["data"]["pid"] for r in results.values()}) == 1
+
+    def test_non_scalar_option_rejected(self) -> None:
+        client = CrwClient(api_key="crw_live_test")
+        with (
+            patch.object(client, "_http_request") as req,
+            pytest.raises(CrwError, match=r'\[invalid_options\] Option "ids"'),
+        ):
+            client.get_data("openalex", "works", {"ids": ["a", "b"]})
+        req.assert_not_called()

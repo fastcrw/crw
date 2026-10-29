@@ -206,3 +206,22 @@ diff = client.change_tracking_diff(
     previous={"markdown": "old content"},
 )
 ```
+
+### Data sources
+
+Structured records from named public APIs (papers, packages, registries). Find a
+source, then call it with the options it lists:
+
+```python
+page = client.find_data("packages")
+# page["items"]: [{provider, capability, name, requiredOptions, optionalOptions, creditsCost, licence, ...}]
+# Next page: client.find_data("packages", offset=page["nextOffset"])
+
+result = client.get_data("depsdev", "package", {"system": "npm", "name": "react"})
+print(result["data"], result["provenance"]["licence"])
+```
+
+A few sources run on your own machine rather than on the API. For those,
+`get_data()` starts a local `crw-mcp` (`CRW_BINARY`, `PATH`, or the verified
+download this package already uses) and calls it with your API URL and key.
+`close()` stops it. Data sources are not available with `CRW_LOCAL=1`.
