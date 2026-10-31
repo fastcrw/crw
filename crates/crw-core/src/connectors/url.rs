@@ -5,7 +5,8 @@
 //! values. Every value is encoded before it reaches the path, only allowlisted
 //! query params are forwarded, and the finished URL's origin must equal the
 //! base's. `tests/fixtures/connectors-url-vectors.json` holds the vectors both
-//! builders must agree on; a rule change lands here first, then in crw-saas.
+//! builders must agree on; crw-saas `scripts/gen-url-vectors.ts` generates it,
+//! so a rule change lands there and the regenerated copy comes here.
 //!
 //! WHATWG details the port has to reproduce: `encodeURIComponent` leaves
 //! `!'()*` alone, value length counts UTF-16 units, `String.prototype.trim`
@@ -21,7 +22,7 @@ const MAX_VALUE_LENGTH: usize = 200;
 pub(crate) const MISCONFIGURED: &str = "This integration is misconfigured";
 
 /// `{name}` placeholders in template order, de-duplicated. Mirrors the TS
-/// regex `/\{([A-Za-z][A-Za-z0-9_]*)\}/g`.
+/// regex `/\{([A-Za-z][A-Za-z0-9_.-]*)\}/g`.
 pub fn template_params(path_template: &str) -> Vec<String> {
     let bytes = path_template.as_bytes();
     let mut names: Vec<String> = Vec::new();
@@ -30,7 +31,9 @@ pub fn template_params(path_template: &str) -> Vec<String> {
         if bytes[i] == b'{' && bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
             let start = i + 1;
             let mut end = start + 1;
-            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+            while end < bytes.len()
+                && (bytes[end].is_ascii_alphanumeric() || matches!(bytes[end], b'_' | b'.' | b'-'))
+            {
                 end += 1;
             }
             if bytes.get(end) == Some(&b'}') {
@@ -145,10 +148,14 @@ pub(crate) fn build_url_with(
     let fixed_query = fixed_query.strip_prefix('?').unwrap_or(&fixed_query);
     url.set_query((!fixed_query.is_empty()).then_some(fixed_query));
 
+    // A name the template pinned is not forwardable: the pins are what hold
+    // the response to JSON (`format=json`), so the caller cannot replace them.
+    let pinned: Vec<String> = url.query_pairs().map(|(k, _)| k.into_owned()).collect();
+
     for name in forward_params
         .iter()
         .map(|p| p.trim())
-        .filter(|p| !p.is_empty())
+        .filter(|p| !p.is_empty() && !pinned.iter().any(|k| k == p))
     {
         let Some(raw) = params.get(name) else {
             continue;

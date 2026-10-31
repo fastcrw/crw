@@ -374,19 +374,36 @@
       }
     },
     {
-      "name": "forwarded param overrides a fixed query key",
+      "name": "forwarded param cannot override a fixed query key",
       "baseUrl": "https://api.example.org",
       "pathTemplate": "/search?format=json&per_page=10",
       "baseUrlOverride": null,
       "forwardParams": [
-        "per_page"
+        "per_page",
+        "format"
       ],
       "params": {
-        "per_page": "50"
+        "per_page": "50",
+        "format": "xml"
       },
       "expect": {
         "ok": true,
-        "url": "https://api.example.org/search?format=json&per_page=50"
+        "url": "https://api.example.org/search?format=json&per_page=10"
+      }
+    },
+    {
+      "name": "dot and hyphen in a placeholder name",
+      "baseUrl": "https://api.example.org",
+      "pathTemplate": "/q/{query.cond}/{lat-min}",
+      "baseUrlOverride": null,
+      "forwardParams": [],
+      "params": {
+        "query.cond": "flu",
+        "lat-min": "-12.5"
+      },
+      "expect": {
+        "ok": true,
+        "url": "https://api.example.org/q/flu/-12.5"
       }
     },
     {
