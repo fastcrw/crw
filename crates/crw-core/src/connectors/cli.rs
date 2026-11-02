@@ -14,6 +14,7 @@ use crate::user_config::{UserConfig, write_user_config};
 use clap::{Args, Subcommand};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Password};
+use reqwest::header::{HeaderName, HeaderValue};
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Read};
 use std::sync::Arc;
@@ -168,16 +169,39 @@ fn placement_text(c: &Connector) -> String {
     }
 }
 
-/// The header names a key will be sent under, for a header-auth source. Never
-/// the values.
-fn header_names(c: &Connector, key: &str) -> Option<Vec<String>> {
+/// The header names a key will be sent under, for a header-auth source (never
+/// the values), or why it must not be stored: a key every call would refuse,
+/// by the same header checks the executor runs.
+fn header_names(c: &Connector, key: &str) -> Result<Option<Vec<String>>, String> {
     if c.auth.kind != "header" {
-        return None;
+        return Ok(None);
     }
-    Some(match header_set(key) {
-        Some(set) => set.into_iter().map(|(name, _)| name).collect(),
-        None => vec![c.auth.param.as_deref().unwrap_or("").trim().to_string()],
-    })
+    let pairs = match header_set(key) {
+        Some(set) => set,
+        None if key.trim_start().starts_with('{') => {
+            return Err(
+                "the key starts with \"{\" but is not a flat JSON object of non-empty strings; nothing stored"
+                    .into(),
+            );
+        }
+        None => vec![(
+            c.auth.param.as_deref().unwrap_or("").trim().to_string(),
+            key.to_string(),
+        )],
+    };
+    for (name, value) in &pairs {
+        if HeaderName::from_bytes(name.as_bytes()).is_err() {
+            return Err(format!(
+                "\"{name}\" is not a valid header name; nothing stored"
+            ));
+        }
+        if HeaderValue::from_str(value).is_err() {
+            return Err(format!(
+                "the value for \"{name}\" has characters a header cannot carry; nothing stored"
+            ));
+        }
+    }
+    Ok(Some(pairs.into_iter().map(|(name, _)| name).collect()))
 }
 
 fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
@@ -242,7 +266,7 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
     if key.is_empty() {
         return Err("no key given; nothing stored".into());
     }
-    if let Some(names) = header_names(connector, key) {
+    if let Some(names) = header_names(connector, key)? {
         eprintln!("Headers it will send: {}", names.join(", "));
     }
 
@@ -294,10 +318,42 @@ mod tests {
     fn connectors_cli_header_names_never_show_values() {
         let c = header_connector();
         assert_eq!(
-            header_names(&c, r#"{"X-Auth-Email":"me@example.com","X-Auth-Key":"k1"}"#).unwrap(),
+            header_names(&c, r#"{"X-Auth-Email":"me@example.com","X-Auth-Key":"k1"}"#)
+                .unwrap()
+                .unwrap(),
             vec!["X-Auth-Email", "X-Auth-Key"]
         );
-        assert_eq!(header_names(&c, "plain").unwrap(), vec!["X-Auth-Key"]);
+        assert_eq!(
+            header_names(&c, "plain").unwrap().unwrap(),
+            vec!["X-Auth-Key"]
+        );
         assert!(placement_text(&c).contains("JSON object of header names to values"));
+    }
+
+    #[test]
+    fn connectors_cli_refuses_header_keys_every_call_would_refuse() {
+        let c = header_connector();
+        for (key, why) in [
+            (r#"{"X-Auth-Key":"k1",}"#, "not a flat JSON object"),
+            (r#"{"X-Auth-Key":1}"#, "not a flat JSON object"),
+            ("{oops", "not a flat JSON object"),
+            ("{}", "not a flat JSON object"),
+            (r#"{"X Bad":"v"}"#, "not a valid header name"),
+            (r#"{"X-Auth-Key":"line\u000abreak"}"#, "cannot carry"),
+            ("line\nbreak", "cannot carry"),
+        ] {
+            let err = header_names(&c, key).unwrap_err();
+            assert!(
+                err.contains(why) && err.ends_with("nothing stored"),
+                "{key}: {err}"
+            );
+            assert!(!err.contains("k1") && !err.contains("break"), "{err}");
+        }
+        let mut bad_param = header_connector();
+        bad_param.auth.param = Some("X Api Key".into());
+        assert!(header_names(&bad_param, "k").is_err());
+        let mut query = header_connector();
+        query.auth.kind = "query".into();
+        assert_eq!(header_names(&query, "{oops").unwrap(), None);
     }
 }

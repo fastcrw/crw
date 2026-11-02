@@ -127,7 +127,7 @@ or set `CRW_CLIENT__TELEMETRY=false`.
 
 ## Errors
 
-Errors come back as a tool error (`isError: true`) whose text starts with a code in brackets, followed by a sentence the agent can pass on.
+Errors come back as a tool error (`isError: true`) whose text starts with a code in brackets, followed by a sentence the agent can pass on. The codes are the same wherever the source runs: a source that runs on fastCRW and fails upstream gives `upstream_error`, `upstream_timeout`, `upstream_rate_limited` or `invalid_response`, as one on your machine does.
 
 | Code | Meaning | Fix |
 |---|---|---|
@@ -144,7 +144,7 @@ Errors come back as a tool error (`isError: true`) whose text starts with a code
 | `upstream_timeout` | The source did not answer within 20 seconds | Try again |
 | `upstream_rate_limited` | The source is limiting requests from your machine | Wait and try again |
 | `invalid_response` | The source answered with something other than JSON, or over 8 MiB | Try again; narrow the options |
-| `result_too_large` | The result is over 256 KiB | Narrow the options |
+| `result_too_large` | The result is over 256 KiB. For a source that runs on fastCRW, the call is refused before it is charged | Narrow the options |
 | `client_execution_required` | Hosted MCP only: the source runs on your machine | `npx -y crw-mcp install --api-key <your fastCRW API key>` |
 | `unauthorized` | Missing or invalid fastCRW API key | Check `CRW_API_KEY` |
 | `insufficient_credits` | Out of credits for a source that runs on fastCRW | Top up or upgrade |

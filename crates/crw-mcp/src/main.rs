@@ -1566,4 +1566,55 @@ mod tests {
         let cli = Cli::parse_from(["crw-mcp"]);
         assert!(!cli.hide_credits);
     }
+
+    #[test]
+    fn cli_parse_connectors_takes_api_flags_before_and_after() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_crw_env();
+        for argv in [
+            &[
+                "crw-mcp",
+                "--api-key",
+                "k1",
+                "--api-url",
+                "https://a.example",
+                "connectors",
+                "set-key",
+                "fred",
+            ][..],
+            &[
+                "crw-mcp",
+                "connectors",
+                "set-key",
+                "fred",
+                "--api-key",
+                "k1",
+                "--api-url",
+                "https://a.example",
+            ],
+            &[
+                "crw-mcp",
+                "connectors",
+                "--api-key",
+                "k1",
+                "--api-url",
+                "https://a.example",
+                "list",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(argv).unwrap_or_else(|e| panic!("{argv:?}: {e}"));
+            assert!(
+                matches!(cli.command, Some(Command::Connectors(_))),
+                "{argv:?}"
+            );
+            assert_eq!(cli.api_key.as_deref(), Some("k1"), "{argv:?}");
+            assert_eq!(
+                cli.api_url.as_deref(),
+                Some("https://a.example"),
+                "{argv:?}"
+            );
+        }
+        assert!(Cli::parse_from(["crw-mcp"]).command.is_none());
+        assert!(Cli::try_parse_from(["crw-mcp", "connectors"]).is_err());
+    }
 }
