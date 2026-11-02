@@ -594,6 +594,40 @@ async fn connectors_exec_header_and_basic_auth() {
 }
 
 #[tokio::test]
+async fn connectors_exec_header_set_sends_every_pair() {
+    // The FCA Register 403s unless X-Auth-Email rides beside X-Auth-Key.
+    let server = MockServer::start().await;
+    let mut conn = connector(&server, "fca");
+    conn["auth"] = json!({"type": "header", "param": "X-Auth-Key"});
+    let set = r#"{"X-Auth-Email":"me@example.com","X-Auth-Key":"set-key-1"}"#;
+    let ctx = local(
+        &server,
+        conn,
+        vec![(
+            "fca",
+            keys::ConnectorEntry {
+                api_key: Some(set.into()),
+                origins: vec![server.uri()],
+                auth: Some("header:X-Auth-Key".into()),
+            },
+        )],
+    )
+    .await;
+    Mock::given(path("/up/works/F"))
+        .and(header("x-auth-key", "set-key-1"))
+        .and(header("x-auth-email", "me@example.com"))
+        .respond_with(json_ok(
+            json!({"email": "me@example.com", "key": "set-key-1"}),
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let out = get(&ctx, "fca", json!({"id": "F"})).await.unwrap();
+    assert_eq!(out["data"]["email"], "REDACTED");
+    assert_eq!(out["data"]["key"], "REDACTED");
+}
+
+#[tokio::test]
 async fn connectors_exec_unapproved_origin_and_missing_key_send_nothing() {
     let server = MockServer::start().await;
     let mut conn = connector(&server, "openalex");
