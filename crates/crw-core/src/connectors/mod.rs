@@ -42,6 +42,10 @@ const FIND_TIMEOUT: Duration = Duration::from_secs(30);
 const USAGE_TIMEOUT: Duration = Duration::from_secs(5);
 const FIND_DEFAULT_LIMIT: u64 = 10;
 const FIND_MAX_LIMIT: u64 = 50;
+/// Asks the API to refuse a forwarded result over this many bytes of `data`
+/// with 413 `result_too_large`, uncharged, instead of billing a result the MCP
+/// layer would have to drop. An API that ignores it answers in full.
+const MAX_DATA_BYTES_HEADER: &str = "X-Crw-Max-Data-Bytes";
 /// How old a cached manifest may be before a 409 refetches it.
 const RECHECK_AFTER: Duration = Duration::from_secs(60);
 
@@ -187,7 +191,9 @@ impl DataToolContext {
         if let Some((outcome, latency)) = run.usage {
             self.report_usage(&connector.provider, capability, outcome, latency);
         }
-        run.result
+        // Only free local runs are capped here. A forwarded call is capped by
+        // the API, before it charges (see [`MAX_DATA_BYTES_HEADER`]).
+        run.result.and_then(crate::mcp::check_data_payload)
     }
 
     /// Fire-and-forget usage count for a call that ran here. Carries only the
@@ -230,6 +236,10 @@ impl DataToolContext {
         }
         let sent = self
             .authed(self.server.get(target))
+            .header(
+                MAX_DATA_BYTES_HEADER,
+                crate::mcp::MAX_DATA_PAYLOAD_BYTES.to_string(),
+            )
             .timeout(SERVER_TIMEOUT)
             .send()
             .await;
@@ -285,7 +295,10 @@ fn server_envelope(body: &Value) -> Value {
     })
 }
 
-/// One bracketed line from an API error body.
+/// One bracketed line from an API error body. The code is the body's
+/// `errorCode` when it has one (an upstream 404 is `upstream_error`, not
+/// `unknown_data_source`), else a bracketed code the message already starts
+/// with, else one derived from the HTTP status.
 fn server_error_text(status: u16, body: &Value) -> String {
     let message = body
         .get("error")
@@ -295,19 +308,33 @@ fn server_error_text(status: u16, body: &Value) -> String {
         })
         .map(|m| m.chars().take(500).collect::<String>())
         .unwrap_or_else(|| format!("The fastCRW API answered HTTP {status}."));
-    if message.starts_with('[') {
-        return message;
-    }
+    let is_code = |c: &str| {
+        !c.is_empty() && c.len() <= 64 && c.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+    };
+    let (prefix, message) = match message
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once(']'))
+        .filter(|(code, _)| is_code(code))
+    {
+        Some((code, rest)) => (Some(code.to_string()), rest.trim_start().to_string()),
+        None => (None, message),
+    };
     let code = body
         .get("errorCode")
         .and_then(Value::as_str)
-        .unwrap_or(match status {
-            400 => "invalid_options",
-            401 | 403 => "unauthorized",
-            402 => "insufficient_credits",
-            404 => "unknown_data_source",
-            429 => "rate_limited",
-            _ => "server_error",
+        .filter(|c| is_code(c))
+        .map(String::from)
+        .or(prefix)
+        .unwrap_or_else(|| {
+            match status {
+                400 => "invalid_options",
+                401 | 403 => "unauthorized",
+                402 => "insufficient_credits",
+                404 => "unknown_data_source",
+                429 => "rate_limited",
+                _ => "server_error",
+            }
+            .to_string()
         });
     format!("[{code}] {message}")
 }
@@ -336,9 +363,7 @@ pub async fn call_data_tool(
 ) -> Result<Value, String> {
     match name {
         "crw_find_data" => find_data(&args, ctx).await,
-        "crw_get_data" => get_data(&args, ctx)
-            .await
-            .and_then(crate::mcp::check_data_payload),
+        "crw_get_data" => get_data(&args, ctx).await,
         _ => Err(format!("unknown tool: {name}")),
     }
 }

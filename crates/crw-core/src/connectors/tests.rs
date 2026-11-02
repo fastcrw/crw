@@ -160,6 +160,7 @@ async fn connectors_route_absent_provider_is_forwarded_and_mapped() {
         .and(path("/v1/data/npm/works"))
         .and(query_param("name", "react"))
         .and(header("user-agent", API_UA))
+        .and(header("x-crw-max-data-bytes", "262144"))
         .and(header(
             "authorization",
             format!("Bearer {CRW_KEY}").as_str(),
@@ -195,6 +196,90 @@ async fn connectors_route_absent_provider_is_forwarded_and_mapped() {
         0,
         "server-run calls send no ping"
     );
+}
+
+#[tokio::test]
+async fn connectors_route_forwarded_size_cap_is_the_servers() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![]).await;
+    // A current API refuses an oversized result before it charges.
+    Mock::given(path("/v1/data/big/works"))
+        .respond_with(ResponseTemplate::new(413).set_body_json(json!({
+            "success": false, "errorCode": "result_too_large",
+            "error": "[result_too_large] The result is 300 KiB, over the 256 KiB limit. Narrow the options and call again."
+        })))
+        .mount(&server)
+        .await;
+    // An older API ignores the header; what it billed is delivered, not dropped.
+    let blob = "x".repeat(crate::mcp::MAX_DATA_PAYLOAD_BYTES);
+    Mock::given(path("/v1/data/old/works"))
+        .respond_with(json_ok(json!({
+            "success": true, "provider": "old", "capability": "works", "credits_used": 1,
+            "provenance": {}, "data": {"blob": blob}
+        })))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+
+    let err = get(&ctx, "big", json!({})).await.unwrap_err();
+    assert!(
+        err.starts_with("[result_too_large] The result is 300 KiB"),
+        "{err}"
+    );
+    let out = get(&ctx, "old", json!({})).await.unwrap();
+    assert_eq!(out["creditsUsed"], 1);
+    assert_eq!(out["data"]["blob"].as_str().map(str::len), Some(blob.len()));
+}
+
+#[tokio::test]
+async fn connectors_route_server_error_code_wins_over_the_status() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![]).await;
+    let cases = [
+        // An upstream 404 on a server-run source is not an unknown source.
+        (
+            "up404",
+            404,
+            json!({"errorCode": "upstream_error", "error": "npm returned HTTP 404 for this request."}),
+            "[upstream_error] npm returned HTTP 404 for this request.",
+        ),
+        (
+            "up429",
+            429,
+            json!({"errorCode": "upstream_rate_limited", "error": "[rate_limited] npm is limiting requests."}),
+            "[upstream_rate_limited] npm is limiting requests.",
+        ),
+        // No errorCode: a bracketed code in the text stays, else the status.
+        (
+            "kept",
+            401,
+            json!({"error": "[unauthorized] Invalid API key"}),
+            "[unauthorized] Invalid API key",
+        ),
+        (
+            "status",
+            404,
+            json!({"error": "Unknown integration."}),
+            "[unknown_data_source] Unknown integration.",
+        ),
+        (
+            "notcode",
+            500,
+            json!({"errorCode": "Bad Code!", "error": "[see docs] boom"}),
+            "[server_error] [see docs] boom",
+        ),
+    ];
+    for (provider, status, body, _) in &cases {
+        Mock::given(path(format!("/v1/data/{provider}/works")))
+            .respond_with(ResponseTemplate::new(*status).set_body_json(body))
+            .mount(&server)
+            .await;
+    }
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    for (provider, _, _, want) in &cases {
+        let err = get(&ctx, provider, json!({})).await.unwrap_err();
+        assert_eq!(&err, want, "{provider}");
+    }
 }
 
 #[tokio::test]
