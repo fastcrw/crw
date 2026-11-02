@@ -64,11 +64,6 @@ pub fn load(slug: &str) -> Option<ConnectorEntry> {
     })
 }
 
-/// Whether a usable key is stored for `slug`.
-pub fn key_configured(slug: &str) -> bool {
-    load(slug).is_some_and(|e| e.key().is_some())
-}
-
 /// Env wins as a whole entry when its `__API_KEY` is set; otherwise the file.
 pub(crate) fn load_from(
     slug: &str,

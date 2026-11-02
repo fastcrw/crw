@@ -220,6 +220,17 @@ pub(crate) fn parse(body: &str, guard: Guard) -> Result<Manifest, String> {
     })
 }
 
+/// A `Retry-After` given in seconds (the HTTP-date form is ignored).
+pub(crate) fn retry_after_secs(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
 pub(crate) fn unavailable(detail: &str) -> String {
     format!(
         "[data_sources_unavailable] Data sources are unavailable right now ({detail}). Try again shortly."
@@ -314,11 +325,7 @@ async fn fetch(
             ));
         }
         429 => {
-            let wait = resp
-                .headers()
-                .get(reqwest::header::RETRY_AFTER)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.trim().parse::<u64>().ok())
+            let wait = retry_after_secs(resp.headers())
                 .map_or_else(|| "shortly".to_string(), |s| format!("in {s} seconds"));
             return Err(format!(
                 "[rate_limited] Too many requests to the fastCRW API. Try again {wait}."

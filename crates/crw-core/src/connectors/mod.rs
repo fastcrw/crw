@@ -188,12 +188,17 @@ impl DataToolContext {
             entry,
         )
         .await;
-        if let Some((outcome, latency)) = run.usage {
-            self.report_usage(&connector.provider, capability, outcome, latency);
-        }
         // Only free local runs are capped here. A forwarded call is capped by
         // the API, before it charges (see [`MAX_DATA_BYTES_HEADER`]).
-        run.result.and_then(crate::mcp::check_data_payload)
+        let result = run.result.and_then(crate::mcp::check_data_payload);
+        if let Some((outcome, latency)) = run.usage {
+            let outcome = match (&result, outcome) {
+                (Err(_), Outcome::Success) => Outcome::ResultTooLarge,
+                _ => outcome,
+            };
+            self.report_usage(&connector.provider, capability, outcome, latency);
+        }
+        result
     }
 
     /// Fire-and-forget usage count for a call that ran here. Carries only the
@@ -253,6 +258,7 @@ impl DataToolContext {
             }
         };
         let status = resp.status().as_u16();
+        let retry_after = manifest::retry_after_secs(resp.headers());
         let body: Value = resp
             .text()
             .await
@@ -265,7 +271,7 @@ impl DataToolContext {
             return Forwarded::ClientRequired;
         }
         if !(200..300).contains(&status) || body.get("success") != Some(&Value::Bool(true)) {
-            return Forwarded::Done(Err(server_error_text(status, &body)));
+            return Forwarded::Done(Err(server_error_text(status, &body, retry_after)));
         }
         Forwarded::Done(Ok(server_envelope(&body)))
     }
@@ -298,8 +304,9 @@ fn server_envelope(body: &Value) -> Value {
 /// One bracketed line from an API error body. The code is the body's
 /// `errorCode` when it has one (an upstream 404 is `upstream_error`, not
 /// `unknown_data_source`), else a bracketed code the message already starts
-/// with, else one derived from the HTTP status.
-fn server_error_text(status: u16, body: &Value) -> String {
+/// with, else one derived from the HTTP status. A 429's `Retry-After` is
+/// carried into the text.
+fn server_error_text(status: u16, body: &Value, retry_after: Option<u64>) -> String {
     let message = body
         .get("error")
         .and_then(|e| {
@@ -336,7 +343,10 @@ fn server_error_text(status: u16, body: &Value) -> String {
             }
             .to_string()
         });
-    format!("[{code}] {message}")
+    match retry_after {
+        Some(secs) if status == 429 => format!("[{code}] {message} Try again in {secs} seconds."),
+        _ => format!("[{code}] {message}"),
+    }
 }
 
 fn slug_arg<'a>(args: &'a Value, field: &str) -> Result<&'a str, String> {
@@ -440,6 +450,7 @@ async fn find_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String>
             "[server_unreachable] The fastCRW API could not be reached. Try again.".to_string()
         })?;
     let status = sent.status().as_u16();
+    let retry_after = manifest::retry_after_secs(sent.headers());
     let reply: Value = sent
         .text()
         .await
@@ -447,7 +458,7 @@ async fn find_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String>
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or(Value::Null);
     if !(200..300).contains(&status) {
-        return Err(server_error_text(status, &reply));
+        return Err(server_error_text(status, &reply, retry_after));
     }
     let Some(tools) = reply["items"].as_array() else {
         return Err(
