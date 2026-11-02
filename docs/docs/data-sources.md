@@ -24,7 +24,7 @@ In cloud mode, `crw-mcp` and `crw mcp` add two tools to the usual nine:
   "provenance": {
     "source": "FRED (St. Louis Fed)",
     "upstreamUrl": "https://api.stlouisfed.org/fred/category?category_id=125&file_type=json&api_key=REDACTED",
-    "licence": "FRED is free to use. ...",
+    "licence": "FRED provides data and data services to the public for non-commercial, educational, and personal uses ...",
     "licenceUrl": "https://fred.stlouisfed.org/legal/",
     "attributionText": "Source: Federal Reserve Bank of St. Louis (FRED)",
     "retrievedAt": "2026-10-29T12:00:00.000Z"
@@ -56,8 +56,8 @@ npx -y crw-mcp connectors list
 
 ```text
 PROVIDER     NAME                  KEY                LICENCE
-fred         FRED (St. Louis Fed)  required, missing  FRED is free to use. ...
-openlibrary  Open Library          not needed         Open Library catalogue data ...
+fred         FRED (St. Louis Fed)  required, missing  FRED provides data and data services to the public for ...
+openlibrary  Open Library          not needed         Open Library's APIs exist to support the open book ...
 ```
 
 The `KEY` column reads `not needed`, `stored`, `required, missing`, or `stored, approve again` (see `connector_origin_not_approved` below). FRED needs a free key from <https://fred.stlouisfed.org/docs/api/api_key.html>:

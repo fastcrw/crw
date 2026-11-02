@@ -71,7 +71,9 @@ async fn wait_turn(last: &mut Option<Instant>, min_interval: Duration) {
 
 /// A header key written as a flat JSON object of non-empty strings, sent as one
 /// header per pair: the FCA Register wants `X-Auth-Email` beside `X-Auth-Key`.
-/// Same rule as the cloud's `parseHeaderSet`; anything else is one header value.
+/// Names and values are trimmed, so the header sent and the string redacted
+/// are the same. Same rule as the cloud's `parseHeaderSet`; anything else is
+/// one header value.
 pub(crate) fn header_set(key: &str) -> Option<Vec<(String, String)>> {
     let text = key.trim();
     if !text.starts_with('{') {
@@ -85,6 +87,7 @@ pub(crate) fn header_set(key: &str) -> Option<Vec<(String, String)>> {
         let (k, Value::String(v)) = (k.trim().to_string(), v) else {
             return None;
         };
+        let v = v.trim().to_string();
         if k.is_empty() || v.is_empty() {
             return None;
         }

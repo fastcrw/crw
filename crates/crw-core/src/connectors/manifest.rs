@@ -6,7 +6,7 @@
 use super::client::Guard;
 use serde::Deserialize;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -230,7 +230,16 @@ pub(crate) fn unavailable(detail: &str) -> String {
 /// one fetch instead of each starting their own.
 #[derive(Default)]
 pub(crate) struct ManifestCache {
-    slot: Mutex<Option<(Arc<Manifest>, Instant)>>,
+    /// The copy, when it was fetched by the monotonic clock, and by the wall
+    /// clock: `Instant` stops while the machine sleeps, so a laptop that
+    /// slept through the hour would otherwise keep a stale copy.
+    slot: Mutex<Option<(Arc<Manifest>, Instant, SystemTime)>>,
+}
+
+/// Whether a copy fetched at `at` / `wall` is younger than `limit` by both
+/// clocks. A wall clock that went backwards counts as expired.
+fn fresh(at: Instant, wall: SystemTime, now_wall: SystemTime, limit: Duration) -> bool {
+    at.elapsed() < limit && now_wall.duration_since(wall).is_ok_and(|age| age < limit)
 }
 
 impl ManifestCache {
@@ -247,20 +256,29 @@ impl ManifestCache {
         guard: Guard,
     ) -> Result<Arc<Manifest>, String> {
         let mut slot = self.slot.lock().await;
-        if let Some((manifest, at)) = slot.as_ref()
-            && at.elapsed() < max_age.min(MAX_AGE)
+        if let Some((manifest, at, wall)) = slot.as_ref()
+            && fresh(*at, *wall, SystemTime::now(), max_age.min(MAX_AGE))
         {
             return Ok(manifest.clone());
         }
         let manifest = Arc::new(fetch(http, api_url, api_key, guard).await?);
-        *slot = Some((manifest.clone(), Instant::now()));
+        *slot = Some((manifest.clone(), Instant::now(), SystemTime::now()));
         Ok(manifest)
     }
 
     #[cfg(test)]
     pub(crate) async fn age_by(&self, by: Duration) {
-        if let Some((_, at)) = self.slot.lock().await.as_mut() {
+        if let Some((_, at, wall)) = self.slot.lock().await.as_mut() {
             *at -= by;
+            *wall -= by;
+        }
+    }
+
+    /// As if the machine slept for `by`: only the wall clock moves.
+    #[cfg(test)]
+    pub(crate) async fn sleep_by(&self, by: Duration) {
+        if let Some((_, _, wall)) = self.slot.lock().await.as_mut() {
+            *wall -= by;
         }
     }
 }
@@ -350,6 +368,53 @@ mod tests {
                                  "description": null, "example": null, "enumValues": null}]
             }]
         })
+    }
+
+    #[test]
+    fn connectors_manifest_cloud_rendered_fixture_is_accepted_whole() {
+        // Generated in crw-saas by scripts/gen-connectors-manifest.ts (the real buildManifest).
+        let body = include_str!("../../tests/fixtures/connectors-manifest.json");
+        let raw: serde_json::Value = serde_json::from_str(body).unwrap();
+        let m = parse(body, Guard::default()).unwrap();
+        let want: Vec<(&str, usize)> = raw["connectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                (
+                    c["provider"].as_str().unwrap(),
+                    c["capabilities"].as_array().unwrap().len(),
+                )
+            })
+            .collect();
+        let got: Vec<(&str, usize)> = m
+            .connectors
+            .iter()
+            .map(|c| (c.provider.as_str(), c.capabilities.len()))
+            .collect();
+        assert_eq!(got, want, "a connector the cloud renders was dropped");
+        for c in &m.connectors {
+            assert_eq!(c.reject_reason(Guard::default()), None, "{}", c.provider);
+        }
+        let kinds: Vec<&str> = m.connectors.iter().map(|c| c.auth.kind.as_str()).collect();
+        for kind in ["query", "header", "basic", "none"] {
+            assert!(kinds.contains(&kind), "fixture lost its {kind} row");
+        }
+    }
+
+    #[test]
+    fn connectors_manifest_copy_expires_by_either_clock() {
+        let hour = MAX_AGE;
+        let now = SystemTime::now();
+        let at = Instant::now();
+        assert!(fresh(at, now, now, hour));
+        // Slept through the hour: the monotonic clock barely moved.
+        assert!(!fresh(at, now - hour, now, hour));
+        assert!(!fresh(at, now - hour - Duration::from_secs(1), now, hour));
+        // The wall clock was set back.
+        assert!(!fresh(at, now + Duration::from_secs(5), now, hour));
+        // Awake past the limit.
+        assert!(!fresh(at - hour, now, now, hour));
     }
 
     #[test]

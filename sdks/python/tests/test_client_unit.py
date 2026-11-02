@@ -872,9 +872,11 @@ class TestDataSources:
         try:
             with (
                 patch.object(client, "_http_request", side_effect=fail),
-                pytest.raises(CrwApiError, match=r"^\[upstream_failed\] boom$"),
+                pytest.raises(CrwApiError, match=r"^\[upstream_failed\] boom$") as err,
             ):
                 client.get_data("boom", "x")
+            assert err.value.error_code == "upstream_failed"
+            assert err.value.status_code is None
         finally:
             client.close()
 
