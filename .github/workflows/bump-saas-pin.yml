@@ -8,8 +8,9 @@ name: Bump crw-saas engine pin
 # came from a fork that had none. A fork PR can be pushed from a branch named
 # "main", so head_branch alone is not a trust signal — the job guards on
 # head_repository == this repo AND event == push. It never checks out or runs
-# any opencore code; it only rewrites one line in crw-saas and pushes. The
-# opencore SHA/subject are treated as untrusted (passed via env, never
+# any opencore code; it rewrites one line in crw-saas, refreshes the two data
+# files crw-saas copies from opencore (fetched raw at the pinned SHA) and
+# pushes. The opencore SHA/subject are treated as untrusted (passed via env, never
 # interpolated into a run: script, SHA re-validated as 40-hex).
 
 on:
@@ -98,6 +99,34 @@ jobs:
           # Read from env via a file to avoid any shell interpretation of contents.
           subject=$(printf '%s' "$OPENCORE_SUBJECT" | head -1)
           short=$(printf '%s' "$OPENCORE_SHA" | cut -c1-12)
+
+          # crw-saas keeps byte-for-byte copies of these opencore files, and its
+          # parity test compares them against the pin, so they move in the same
+          # commit. Fetched as raw data at the validated SHA through the API
+          # (nothing is checked out or run); a file absent at that SHA is skipped,
+          # any other fetch failure stops the bump.
+          copy_at_pin() {
+            local src=$1 dst=$2 out err
+            out=$(mktemp)
+            err=$(mktemp)
+            if gh api -H "Accept: application/vnd.github.raw" \
+              "repos/${GITHUB_REPOSITORY}/contents/${src}?ref=${OPENCORE_SHA}" >"$out" 2>"$err"; then
+              if ! jq empty "$out"; then
+                echo "::error::$src at $OPENCORE_SHA is not valid JSON"
+                exit 1
+              fi
+              mkdir -p "$(dirname "$dst")"
+              mv "$out" "$dst"
+              git add "$dst"
+            elif grep -q "HTTP 404" "$err"; then
+              echo "skip: $src does not exist at $OPENCORE_SHA"
+            else
+              echo "::error::could not fetch $src at $OPENCORE_SHA: $(cat "$err")"
+              exit 1
+            fi
+          }
+          copy_at_pin crates/crw-mcp-proto/src/data_tools.json src/lib/mcp/data-tools.json
+          copy_at_pin crates/crw-core/tests/fixtures/connectors-url-vectors.json scripts/fixtures/connectors-url-vectors.json
 
           git config user.name us
           git config user.email rahmetsaritekin@gmail.com

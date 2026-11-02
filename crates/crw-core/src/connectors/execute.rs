@@ -355,7 +355,15 @@ pub(crate) async fn run(
                 tokio::time::sleep(wait).await;
             }
             Ok((data, final_url)) => break (Ok((data, final_url)), Outcome::Success),
-            Err(f) => break (Err(f.message(name, &redactor)), f.outcome()),
+            Err(f) => {
+                let set_key = key
+                    .is_some()
+                    .then(|| keys::set_key_hint(&connector.provider));
+                break (
+                    Err(f.message(name, &redactor, set_key.as_deref())),
+                    f.outcome(),
+                );
+            }
         }
     };
     let latency = started.elapsed();
@@ -406,7 +414,8 @@ impl Failure {
         }
     }
 
-    fn message(&self, name: &str, redactor: &Redactor) -> String {
+    /// `set_key` is the remedy line when the user's own key was sent.
+    fn message(&self, name: &str, redactor: &Redactor, set_key: Option<&str>) -> String {
         match self {
             Failure::Fetch(FetchError::Blocked(why)) => format!(
                 "[blocked] The request to {name} was refused before it left this machine ({}).",
@@ -430,6 +439,10 @@ impl Failure {
                     "[upstream_error] {name} is currently unavailable (HTTP {status}). Try again."
                 )
             }
+            Failure::Status(status @ (401 | 403)) if set_key.is_some() => format!(
+                "[upstream_error] {name} refused the stored key (HTTP {status}). Check it or store it again. {}",
+                set_key.unwrap_or_default()
+            ),
             Failure::Status(status) => {
                 format!("[upstream_error] {name} returned HTTP {status} for this request.")
             }

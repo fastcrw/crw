@@ -86,12 +86,9 @@ pub fn get_rc_file(shell: Shell) -> Option<PathBuf> {
     }
 }
 
-/// Get the home directory.
+/// Get the home directory (the same rule the config file path uses).
 pub fn home_dir() -> Option<PathBuf> {
-    env::var("HOME")
-        .or_else(|_| env::var("USERPROFILE"))
-        .ok()
-        .map(PathBuf::from)
+    crw_core::config::home_dir()
 }
 
 /// Write content to a file with secure permissions (0600 on Unix).

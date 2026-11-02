@@ -2108,21 +2108,25 @@ pub struct AuthConfig {
     pub api_keys: Vec<String>,
 }
 
-/// Path of the per-user config file written by `crw setup`. Returns `None` if
-/// the home directory cannot be resolved (e.g. headless container with no
-/// `$HOME`). Honors `$CRW_USER_CONFIG_DIR` for tests so we don't have to
-/// monkey-patch `$HOME`.
+/// The user's home directory: `$HOME`, else `$USERPROFILE` (Windows). Empty
+/// values count as unset.
+pub fn home_dir() -> Option<std::path::PathBuf> {
+    ["HOME", "USERPROFILE"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .find(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// Path of the per-user config file written by `crw setup`, and the one
+/// reader and writer both use. Returns `None` if the home directory cannot be
+/// resolved (e.g. headless container with no `$HOME`). Honors
+/// `$CRW_USER_CONFIG_DIR` for tests so we don't have to monkey-patch `$HOME`.
 pub fn user_config_path() -> Option<std::path::PathBuf> {
     if let Ok(dir) = std::env::var("CRW_USER_CONFIG_DIR") {
         return Some(std::path::PathBuf::from(dir).join("config.toml"));
     }
-    let home = std::env::var_os("HOME")?;
-    Some(
-        std::path::PathBuf::from(home)
-            .join(".config")
-            .join("crw")
-            .join("config.toml"),
-    )
+    Some(home_dir()?.join(".config").join("crw").join("config.toml"))
 }
 
 fn non_empty_trimmed_env(name: &str) -> Option<String> {
@@ -3094,6 +3098,48 @@ mod tests {
             std::env::remove_var("CRW_USER_CONFIG_DIR");
         }
         assert_eq!(p, tmp.join("config.toml"));
+    }
+
+    #[test]
+    fn user_config_path_falls_back_to_userprofile() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let saved: Vec<_> = ["HOME", "USERPROFILE", "CRW_USER_CONFIG_DIR"]
+            .into_iter()
+            .map(|k| (k, std::env::var_os(k)))
+            .collect();
+        let profile = std::env::temp_dir().join("crw-userprofile-test");
+        unsafe {
+            std::env::remove_var("HOME");
+            std::env::remove_var("CRW_USER_CONFIG_DIR");
+            std::env::set_var("USERPROFILE", &profile);
+        }
+        let want = profile.join(".config").join("crw").join("config.toml");
+        let read = user_config_path();
+        let write = crate::user_config::user_config_path();
+        unsafe {
+            std::env::set_var("HOME", "");
+        }
+        let empty_home = user_config_path();
+        unsafe {
+            std::env::remove_var("USERPROFILE");
+        }
+        let neither = (user_config_path(), crate::user_config::user_config_path());
+        for (k, v) in saved {
+            unsafe {
+                match v {
+                    Some(v) => std::env::set_var(k, v),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+        assert_eq!(read.as_ref(), Some(&want));
+        assert_eq!(write.as_ref(), Ok(&want));
+        assert_eq!(
+            empty_home.as_ref(),
+            Some(&want),
+            "an empty HOME counts as unset"
+        );
+        assert!(neither.0.is_none() && neither.1.is_err());
     }
 
     #[test]
