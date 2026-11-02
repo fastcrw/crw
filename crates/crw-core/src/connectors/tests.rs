@@ -480,6 +480,21 @@ async fn connectors_route_expired_manifest_with_failing_refresh_refuses() {
 }
 
 #[tokio::test]
+async fn connectors_route_copy_from_before_a_long_sleep_is_refetched() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![connector(&server, "openalex")]).await;
+    Mock::given(path("/up/works/W1"))
+        .respond_with(json_ok(json!({"id": "W1"})))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
+    ctx.manifest.sleep_by(manifest::MAX_AGE).await;
+    get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
+    assert_eq!(hits(&server, "/v1/data/manifest").await, 2);
+}
+
+#[tokio::test]
 async fn connectors_route_rejects_bad_slugs_and_options() {
     let ctx = DataToolContext::for_tests("http://127.0.0.1:9", false, vec![]);
     for args in [
@@ -794,12 +809,41 @@ async fn connectors_exec_refused_stored_key_says_so() {
     );
 }
 
+#[tokio::test]
+async fn connectors_exec_header_set_values_are_trimmed_for_send_and_redaction() {
+    let server = MockServer::start().await;
+    let mut conn = connector(&server, "fca");
+    conn["auth"] = json!({"type": "header", "param": "X-Auth-Key"});
+    let ctx = local(
+        &server,
+        conn,
+        vec![(
+            "fca",
+            keys::ConnectorEntry {
+                api_key: Some(r#"{" X-Auth-Key ":"  padded-key-9 "}"#.into()),
+                origins: vec![server.uri()],
+                auth: Some("header:X-Auth-Key".into()),
+            },
+        )],
+    )
+    .await;
+    Mock::given(path("/up/works/P"))
+        .and(header("x-auth-key", "padded-key-9"))
+        .respond_with(json_ok(json!({"echo": "padded-key-9"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let out = get(&ctx, "fca", json!({"id": "P"})).await.unwrap();
+    assert_eq!(out["data"]["echo"], "REDACTED");
+}
+
 #[test]
 fn connectors_header_set_falls_through_to_a_single_header() {
     // Same vectors as the cloud's parseHeaderSet tests.
     for key in [
         r#"{"X":{"nested":1}}"#,
         r#"{"X":""}"#,
+        r#"{"X":"   "}"#,
         r#"{"X-Auth-Key":"k","X-Auth-Email":""}"#,
         r#"{"":"v"}"#,
         "{oops",

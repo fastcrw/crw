@@ -1079,7 +1079,10 @@ class CrwClient:
 
         content = result["content"][0]
         if result.get("isError"):
-            raise CrwApiError(content.get("text", "Unknown error"))
+            # A tool error has no HTTP status; its bracketed code is the error_code.
+            text = content.get("text", "Unknown error")
+            code = re.match(r"\[([a-z_]+)\]", text)
+            raise CrwApiError(text, None, code.group(1) if code else None)
 
         return json.loads(content["text"])
 

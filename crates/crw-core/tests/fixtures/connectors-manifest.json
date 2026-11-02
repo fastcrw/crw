@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "connectors": [
+    {
+      "provider": "querykey",
+      "name": "QUERYKEY",
+      "baseUrl": "https://api.querykey.example.org",
+      "userAgent": "crw (+https://fastcrw.com)",
+      "auth": {
+        "type": "query",
+        "param": "api_key"
+      },
+      "keyRequired": true,
+      "keyHelpUrl": "https://querykey.example.org/settings/api",
+      "minIntervalMs": 100,
+      "licence": "CC0 1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attributionText": null,
+      "capabilities": [
+        {
+          "capability": "works",
+          "pathTemplate": "/works",
+          "baseUrlOverride": null,
+          "forwardParams": [
+            "search",
+            "per_page"
+          ]
+        }
+      ]
+    },
+    {
+      "provider": "headerkey",
+      "name": "HEADERKEY",
+      "baseUrl": "https://api.headerkey.example.org",
+      "userAgent": "crw (+https://fastcrw.com)",
+      "auth": {
+        "type": "header",
+        "param": "X-Api-Key"
+      },
+      "keyRequired": true,
+      "keyHelpUrl": null,
+      "minIntervalMs": null,
+      "licence": "Non-commercial use only",
+      "licenceUrl": null,
+      "attributionText": "Data from HEADERKEY",
+      "capabilities": [
+        {
+          "capability": "item",
+          "pathTemplate": "/items/{id}",
+          "baseUrlOverride": null,
+          "forwardParams": []
+        }
+      ]
+    },
+    {
+      "provider": "headerset",
+      "name": "HEADERSET",
+      "baseUrl": "https://api.headerset.example.org",
+      "userAgent": "crw (+https://fastcrw.com)",
+      "auth": {
+        "type": "header",
+        "param": "X-Auth-Key"
+      },
+      "keyRequired": true,
+      "keyHelpUrl": null,
+      "minIntervalMs": 1000,
+      "licence": "CC0 1.0",
+      "licenceUrl": null,
+      "attributionText": null,
+      "capabilities": [
+        {
+          "capability": "firm",
+          "pathTemplate": "/firms/{frn}",
+          "baseUrlOverride": null,
+          "forwardParams": [
+            "page"
+          ]
+        }
+      ]
+    },
+    {
+      "provider": "basickey",
+      "name": "BASICKEY",
+      "baseUrl": "https://api.basickey.example.org",
+      "userAgent": "crw (+https://fastcrw.com)",
+      "auth": {
+        "type": "basic",
+        "param": null
+      },
+      "keyRequired": true,
+      "keyHelpUrl": null,
+      "minIntervalMs": null,
+      "licence": "CC0 1.0",
+      "licenceUrl": null,
+      "attributionText": null,
+      "capabilities": [
+        {
+          "capability": "company",
+          "pathTemplate": "/company/{number}",
+          "baseUrlOverride": null,
+          "forwardParams": []
+        }
+      ]
+    },
+    {
+      "provider": "nokey",
+      "name": "NOKEY",
+      "baseUrl": "https://api.nokey.example.org",
+      "userAgent": "crw (+https://fastcrw.com)",
+      "auth": {
+        "type": "none",
+        "param": null
+      },
+      "keyRequired": false,
+      "keyHelpUrl": null,
+      "minIntervalMs": null,
+      "licence": "CC0 1.0",
+      "licenceUrl": null,
+      "attributionText": null,
+      "capabilities": [
+        {
+          "capability": "search",
+          "pathTemplate": "/search",
+          "baseUrlOverride": null,
+          "forwardParams": [
+            "q"
+          ]
+        },
+        {
+          "capability": "file",
+          "pathTemplate": "/files/{name}",
+          "baseUrlOverride": "https://files.nokey.example.org",
+          "forwardParams": []
+        }
+      ]
+    }
+  ]
+}

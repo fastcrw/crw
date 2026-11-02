@@ -628,7 +628,11 @@ test("getData surfaces an isError from crw-mcp as CrwApiError", async () => {
   try {
     await assert.rejects(
       () => c.getData("boom", "x"),
-      (err: unknown) => err instanceof CrwApiError && err.message === "[upstream_failed] boom",
+      (err: unknown) =>
+        err instanceof CrwApiError &&
+        err.message === "[upstream_failed] boom" &&
+        err.errorCode === "upstream_failed" &&
+        err.statusCode === undefined,
     );
   } finally {
     await c.close();

@@ -151,7 +151,11 @@ export class LocalTransport {
     const result = await this.jsonrpc("tools/call", { name, arguments: args });
     const content = (result.content as Array<{ text?: string }> | undefined)?.[0];
     if (!content) throw new CrwError(`Empty response from ${name}`);
-    if (result.isError) throw new CrwApiError(content.text ?? "Unknown error");
+    if (result.isError) {
+      // A tool error has no HTTP status; its bracketed code is the errorCode.
+      const text = content.text ?? "Unknown error";
+      throw new CrwApiError(text, undefined, /^\[([a-z_]+)\]/.exec(text)?.[1]);
+    }
     return JSON.parse(content.text ?? "{}") as Json;
   }
 
