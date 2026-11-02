@@ -1035,7 +1035,6 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
                 bound_search_results(&mut value, max);
             }
         }
-        "crw_get_data" => bound_data_payload(&mut value),
         _ => {}
     }
     value
@@ -1046,20 +1045,22 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
 /// block and `structuredContent`).
 pub const MAX_DATA_PAYLOAD_BYTES: usize = 256 * 1024;
 
-/// Replace an oversized `data` with a line the agent can act on. Applies to the
-/// locally run and the forwarded result alike, since both reach here.
-fn bound_data_payload(value: &mut Value) {
-    let Some(data) = value.get_mut("data") else {
-        return;
-    };
-    let size = serde_json::to_string(data).map_or(0, |s| s.len());
+/// Refuse a `crw_get_data` result whose `data` is over the cap, as a tool
+/// error the agent can act on. The data tools call this for the locally run
+/// and the forwarded result alike.
+pub fn check_data_payload(value: Value) -> Result<Value, String> {
+    let size = value
+        .get("data")
+        .and_then(|d| serde_json::to_string(d).ok())
+        .map_or(0, |s| s.len());
     if size > MAX_DATA_PAYLOAD_BYTES {
-        *data = Value::String(format!(
+        return Err(format!(
             "[result_too_large] The result is {} KiB, over the {} KiB limit. Narrow the options (a filter, fewer fields, a smaller page) and call again.",
             size / 1024,
             MAX_DATA_PAYLOAD_BYTES / 1024
         ));
     }
+    Ok(value)
 }
 
 /// Remove MCP-only control args (`maxLength`) before a proxy forwards the call
@@ -2430,18 +2431,16 @@ mod tests {
     }
 
     #[test]
-    fn get_data_payload_over_the_cap_is_replaced_with_a_line() {
+    fn get_data_payload_over_the_cap_is_a_tool_error() {
         let small = json!({"provider": "p", "data": {"a": 1}});
-        assert_eq!(
-            apply_bounds("crw_get_data", &json!({}), small.clone()),
-            small
-        );
+        assert_eq!(check_data_payload(small.clone()).unwrap(), small);
 
         let big = json!({"provider": "p", "data": {"blob": "x".repeat(MAX_DATA_PAYLOAD_BYTES)}});
-        let out = apply_bounds("crw_get_data", &json!({}), big);
-        let line = out["data"].as_str().expect("data replaced by a line");
-        assert!(line.starts_with("[result_too_large]"), "{line}");
-        assert_eq!(out["provider"], "p");
+        let err = check_data_payload(big).unwrap_err();
+        assert!(err.starts_with("[result_too_large]"), "{err}");
+        let resp = tool_result_response(json!(1), "crw_get_data", Err(err));
+        let result = resp.result.expect("a tool result, not a protocol error");
+        assert_eq!(result["isError"], true);
     }
 
     #[test]

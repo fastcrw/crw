@@ -28,6 +28,8 @@ impersonated = []
 # workspace binary enables this transitively via `crw-renderer/camoufox`.
 camoufox = []
 cloak = []
+# The `connectors` subcommand (list, set-key) that `crw` and `crw-mcp` share.
+cli = ["dep:clap", "dep:dialoguer", "dep:console"]
 
 [dependencies]
 crw-mcp-proto = { workspace = true }
@@ -46,6 +48,9 @@ tokio = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }
+clap = { workspace = true, optional = true }
+dialoguer = { version = "0.12", optional = true }
+console = { version = "0.16", optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

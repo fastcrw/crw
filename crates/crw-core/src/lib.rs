@@ -31,6 +31,11 @@ pub mod reserved_sem;
 pub mod scrape_class;
 pub mod types;
 pub mod url_safety;
+pub mod user_config;
+
+/// Serialises tests that change process env (`CRW_USER_CONFIG_DIR`, `CRW_*`).
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub use config::AppConfig;
 pub use deadline::Deadline;

@@ -21,7 +21,7 @@ default = ["embedded"]
 embedded = ["dep:crw-server", "dep:crw-renderer", "crw-renderer/auto-browser"]
 
 [dependencies]
-crw-core = { workspace = true }
+crw-core = { workspace = true, features = ["cli"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }

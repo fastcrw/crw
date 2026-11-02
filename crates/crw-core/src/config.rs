@@ -101,9 +101,10 @@ pub struct ClientConfig {
     /// API key for the hosted CRW API.
     #[serde(default)]
     pub api_key: Option<String>,
-    /// Anonymous per-call counts for data sources that run on this machine
-    /// (provider, capability, outcome, latency; never the URL, options or any
-    /// key). `None` means on; `false` (or `CRW_CLIENT__TELEMETRY=false`) turns
+    /// One count per call for data sources that run on this machine
+    /// (provider, capability, outcome, latency), sent with the fastCRW API key
+    /// like any API call; never the source URL, options, data or the source
+    /// key. `None` means on; `false` (or `CRW_CLIENT__TELEMETRY=false`) turns
     /// it off.
     #[serde(default)]
     pub telemetry: Option<bool>,
@@ -2320,7 +2321,7 @@ mod tests {
         assert!(!env_truthy(None));
     }
 
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    use crate::TEST_ENV_LOCK as ENV_LOCK;
 
     fn clear_renderer_env() {
         for k in [
@@ -2590,7 +2591,7 @@ mod tests {
 
     #[test]
     fn env_var_renderer_mode_chrome() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         unsafe { std::env::set_var("CRW_RENDERER__MODE", "chrome") };
         let cfg = AppConfig::load().unwrap();
@@ -2600,7 +2601,7 @@ mod tests {
 
     #[test]
     fn env_var_force_js_alias_works() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         unsafe { std::env::set_var("CRW_RENDERER__FORCE_JS", "true") };
         let cfg = AppConfig::load().unwrap();
@@ -2610,7 +2611,7 @@ mod tests {
 
     #[test]
     fn env_var_render_js_default_direct() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         unsafe { std::env::set_var("CRW_RENDERER__RENDER_JS_DEFAULT", "true") };
         let cfg = AppConfig::load().unwrap();
@@ -2639,7 +2640,7 @@ mod tests {
 
     #[test]
     fn env_var_mcp_hide_credits() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         unsafe { std::env::set_var("CRW_MCP__HIDE_CREDITS", "true") };
         let cfg = AppConfig::load().unwrap();
         unsafe { std::env::remove_var("CRW_MCP__HIDE_CREDITS") };
@@ -3016,7 +3017,7 @@ mod tests {
 
     #[test]
     fn env_var_overrides_toml_defaults() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         unsafe {
             std::env::set_var("CRW_SERVER__PORT", "4444");
@@ -3035,7 +3036,7 @@ mod tests {
 
     #[test]
     fn crawler_proxy_empty_env_normalizes_to_none() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         // Isolate from any developer ~/.config/crw/config.toml and stray CRW_CONFIG.
         let tmp = std::env::temp_dir().join(format!("crw-proxy-test-{}", std::process::id()));
@@ -3083,7 +3084,7 @@ mod tests {
 
     #[test]
     fn user_config_path_honors_override_env() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = std::env::temp_dir().join(format!("crw-cfg-test-{}", std::process::id()));
         unsafe {
             std::env::set_var("CRW_USER_CONFIG_DIR", &tmp);
@@ -3097,7 +3098,7 @@ mod tests {
 
     #[test]
     fn user_config_file_is_picked_up_by_load() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         let tmp = std::env::temp_dir().join(format!("crw-load-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
@@ -3145,7 +3146,7 @@ model = "deepseek-chat"
 
     #[test]
     fn public_client_env_aliases_override_user_config() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp =
             std::env::temp_dir().join(format!("crw-client-alias-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
@@ -3181,7 +3182,7 @@ api_key = "file-key"
 
     #[test]
     fn env_var_beats_user_config() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_renderer_env();
         let tmp = std::env::temp_dir().join(format!("crw-prec-test-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();

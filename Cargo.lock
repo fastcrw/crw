@@ -1067,8 +1067,11 @@ name = "crw-core"
 version = "0.40.0"
 dependencies = [
  "base64 0.23.1",
+ "clap",
  "config",
+ "console",
  "crw-mcp-proto",
+ "dialoguer",
  "futures",
  "prometheus",
  "rand 0.10.3",

@@ -2,8 +2,7 @@
 //! `crw_get_data`.
 //!
 //! Most sources run on the fastCRW API. Some run here instead, on the user's
-//! machine and with the user's own key, because their terms allow an end user
-//! to call them but not us to serve them. The API publishes those as a
+//! machine and with the user's own key. The API publishes those as a
 //! manifest; this module runs them and forwards everything else. The agent
 //! sees one tool and one result shape either way.
 //!
@@ -11,9 +10,14 @@
 //! - provider in the (unexpired) manifest: run here;
 //! - not in it: forward to `GET {api}/v1/data/<p>/<c>`;
 //! - the API answers 409 `client_execution_required` (the provider moved since
-//!   our fetch): refetch the manifest once and run here if it is there now;
+//!   our fetch): refetch the manifest (unless the copy is under a minute old)
+//!   and run here if it is there now; if it is still missing, this crw
+//!   rejected it, so the answer is `[connector_misconfigured]` with an upgrade
+//!   hint;
 //! - no usable manifest: forward nothing, answer `[data_sources_unavailable]`.
 
+#[cfg(feature = "cli")]
+pub mod cli;
 mod client;
 mod execute;
 pub mod keys;
@@ -38,6 +42,47 @@ const FIND_TIMEOUT: Duration = Duration::from_secs(30);
 const USAGE_TIMEOUT: Duration = Duration::from_secs(5);
 const FIND_DEFAULT_LIMIT: u64 = 10;
 const FIND_MAX_LIMIT: u64 = 50;
+/// How old a cached manifest may be before a 409 refetches it.
+const RECHECK_AFTER: Duration = Duration::from_secs(60);
+
+/// Whether this process is the standalone `crw-mcp` binary rather than `crw`,
+/// so a remedy names a command the user has.
+pub(crate) fn running_as_crw_mcp() -> bool {
+    static IS_MCP: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| {
+                p.file_stem()
+                    .map(|s| s.to_string_lossy().starts_with("crw-mcp"))
+            })
+            .unwrap_or(false)
+    });
+    *IS_MCP
+}
+
+/// The `connectors` command of the running binary.
+pub fn connectors_command() -> &'static str {
+    commands_for(running_as_crw_mcp()).0
+}
+
+/// How to upgrade the running binary.
+pub(crate) fn upgrade_hint() -> &'static str {
+    commands_for(running_as_crw_mcp()).1
+}
+
+fn commands_for(crw_mcp: bool) -> (&'static str, &'static str) {
+    if crw_mcp {
+        (
+            "npx -y crw-mcp connectors",
+            "npx -y crw-mcp@latest, brew upgrade crw-mcp, or cargo install crw-mcp",
+        )
+    } else {
+        (
+            "crw connectors",
+            "brew upgrade crw, or cargo install crw-cli",
+        )
+    }
+}
 
 type KeySource = Box<dyn Fn(&str) -> Option<keys::ConnectorEntry> + Send + Sync>;
 
@@ -100,16 +145,17 @@ impl DataToolContext {
     /// The current manifest: cached up to an hour, refetched after that, and
     /// never an expired copy.
     pub async fn manifest(&self) -> Result<Arc<Manifest>, String> {
-        self.load_manifest(false).await
+        self.load_manifest(manifest::MAX_AGE).await
     }
 
-    async fn load_manifest(&self, force: bool) -> Result<Arc<Manifest>, String> {
+    /// The cached manifest if it is younger than `max_age`, else a fresh one.
+    async fn load_manifest(&self, max_age: Duration) -> Result<Arc<Manifest>, String> {
         self.manifest
             .get(
                 &self.server,
                 &self.api_url,
                 self.api_key.as_deref(),
-                force,
+                max_age,
                 self.http.guard(),
             )
             .await
@@ -206,7 +252,7 @@ impl DataToolContext {
         if status == 409
             && body.get("errorCode").and_then(Value::as_str) == Some("client_execution_required")
         {
-            return Forwarded::ClientRequired(server_error_text(status, &body));
+            return Forwarded::ClientRequired;
         }
         if !(200..300).contains(&status) || body.get("success") != Some(&Value::Bool(true)) {
             return Forwarded::Done(Err(server_error_text(status, &body)));
@@ -217,7 +263,7 @@ impl DataToolContext {
 
 enum Forwarded {
     Done(Result<Value, String>),
-    ClientRequired(String),
+    ClientRequired,
 }
 
 /// The API's snake_case data envelope as the camelCase MCP result.
@@ -290,7 +336,9 @@ pub async fn call_data_tool(
 ) -> Result<Value, String> {
     match name {
         "crw_find_data" => find_data(&args, ctx).await,
-        "crw_get_data" => get_data(&args, ctx).await,
+        "crw_get_data" => get_data(&args, ctx)
+            .await
+            .and_then(crate::mcp::check_data_payload),
         _ => Err(format!("unknown tool: {name}")),
     }
 }
@@ -309,11 +357,16 @@ async fn get_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String> 
     }
     match ctx.forward(provider, capability, &options).await {
         Forwarded::Done(result) => result,
-        Forwarded::ClientRequired(error) => {
-            let fresh = ctx.load_manifest(true).await?;
+        Forwarded::ClientRequired => {
+            let fresh = ctx.load_manifest(RECHECK_AFTER).await?;
             match fresh.connector(provider) {
                 Some(connector) => ctx.run_local(connector, capability, &options).await,
-                None => Err(error),
+                // The server runs it here, but this crw dropped it from the
+                // manifest; the server's install advice would be wrong.
+                None => Err(format!(
+                    "[connector_misconfigured] {provider} cannot run on this version of crw. Upgrade crw ({}) and try again.",
+                    upgrade_hint()
+                )),
             }
         }
     }
@@ -424,3 +477,15 @@ fn find_item(tool: &Value, manifest: Option<&Manifest>, ctx: &DataToolContext) -
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod command_tests {
+    #[test]
+    fn connectors_remedies_name_the_running_binary() {
+        assert_eq!(super::commands_for(false).0, "crw connectors");
+        assert_eq!(super::commands_for(true).0, "npx -y crw-mcp connectors");
+        assert!(super::commands_for(true).1.contains("crw-mcp@latest"));
+        assert!(!super::commands_for(false).1.contains("crw-mcp"));
+        assert_eq!(super::connectors_command(), "crw connectors");
+    }
+}

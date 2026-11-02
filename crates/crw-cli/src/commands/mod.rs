@@ -4,7 +4,6 @@
 
 pub mod bench;
 pub mod browse;
-pub mod connectors;
 pub mod crawl;
 mod diag;
 pub mod doctor;
