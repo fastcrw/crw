@@ -116,7 +116,7 @@ CRW_CONNECTORS__FRED__AUTH=query:api_key
 
 ## Usage counts
 
-After each call that runs on your machine, crw sends the fastCRW API one count: the provider, the capability, the outcome (`success`, `upstream_error`, `rate_limited`, `timeout`, `invalid_response` or `blocked`) and the time it took. It is sent with your fastCRW API key, like any other API call. It never sends the source's URL, your options, your source key or the data. To turn it off:
+After each call that runs on your machine, crw sends the fastCRW API one count: the provider, the capability, the outcome (`success`, `upstream_error`, `rate_limited`, `timeout`, `invalid_response`, `blocked` or `result_too_large`) and the time it took. It is sent with your fastCRW API key, like any other API call. It never sends the source's URL, your options, your source key or the data. To turn it off:
 
 ```toml
 [client]

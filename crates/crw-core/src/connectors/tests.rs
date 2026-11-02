@@ -1116,6 +1116,68 @@ async fn connectors_telemetry_reports_failures_and_respects_opt_out() {
     );
 }
 
+#[tokio::test]
+async fn connectors_telemetry_counts_a_capped_result_as_too_large() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![connector(&server, "openalex")]).await;
+    Mock::given(path("/up/works/BIG"))
+        .respond_with(json_ok(
+            json!({"blob": "x".repeat(crate::mcp::MAX_DATA_PAYLOAD_BYTES)}),
+        ))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), true, vec![]);
+    let err = get(&ctx, "openalex", json!({"id": "BIG"}))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("[result_too_large]"), "{err}");
+    let bodies = usage_bodies(&server).await;
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0]["outcome"], "result_too_large");
+}
+
+#[tokio::test]
+async fn connectors_forwarded_429_carries_retry_after() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![]).await;
+    let limited = |wait: Option<&str>| {
+        let r = ResponseTemplate::new(429).set_body_json(json!({
+            "success": false, "errorCode": "rate_limited", "error": "Too many requests."
+        }));
+        match wait {
+            Some(w) => r.insert_header("retry-after", w),
+            None => r,
+        }
+    };
+    Mock::given(path("/v1/data/npm/works"))
+        .respond_with(limited(Some("9")))
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/pypi/works"))
+        .respond_with(limited(None))
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/find"))
+        .respond_with(limited(Some("4")))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    assert_eq!(
+        get(&ctx, "npm", json!({})).await.unwrap_err(),
+        "[rate_limited] Too many requests. Try again in 9 seconds."
+    );
+    assert_eq!(
+        get(&ctx, "pypi", json!({})).await.unwrap_err(),
+        "[rate_limited] Too many requests."
+    );
+    assert_eq!(
+        call_data_tool("crw_find_data", json!({}), &ctx)
+            .await
+            .unwrap_err(),
+        "[rate_limited] Too many requests. Try again in 4 seconds."
+    );
+}
+
 // --- find ---
 
 #[tokio::test]

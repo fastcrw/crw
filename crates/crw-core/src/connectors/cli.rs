@@ -66,10 +66,7 @@ async fn fetch_manifest(
     let client = crate::AppConfig::load()
         .map(|c| c.client)
         .unwrap_or_default();
-    let api_url = api_url
-        .or(client.api_url)
-        .unwrap_or_else(|| DEFAULT_CLOUD_API_URL.to_string());
-    let api_key = api_key.or(client.api_key);
+    let (api_url, api_key) = endpoint(api_url, api_key, client);
     let has_key = api_key.is_some();
     if std::io::stderr().is_terminal() {
         eprintln!("Loading data sources from {api_url} ...");
@@ -85,6 +82,26 @@ async fn fetch_manifest(
         };
         format!("{e}{hint}")
     })
+}
+
+/// The API to ask and the key to send it. The config file's key goes only to
+/// the config file's (or the default) URL: a URL passed on the command line
+/// gets only a key passed the same way, so a stored key never reaches a host
+/// the user just typed.
+fn endpoint(
+    api_url: Option<String>,
+    api_key: Option<String>,
+    client: crate::config::ClientConfig,
+) -> (String, Option<String>) {
+    match api_url {
+        Some(url) => (url, api_key),
+        None => (
+            client
+                .api_url
+                .unwrap_or_else(|| DEFAULT_CLOUD_API_URL.to_string()),
+            api_key.or(client.api_key),
+        ),
+    }
 }
 
 /// What a source needs and whether this machine has it, in words, so the
@@ -312,6 +329,40 @@ mod tests {
             "capabilities": []
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn connectors_cli_config_key_never_follows_a_flag_url() {
+        let client = || crate::config::ClientConfig {
+            api_url: Some("https://api.fastcrw.com".into()),
+            api_key: Some("config-key".into()),
+            ..Default::default()
+        };
+        let flag = Some("https://other.example".to_string());
+        assert_eq!(
+            endpoint(flag.clone(), None, client()),
+            ("https://other.example".into(), None)
+        );
+        assert_eq!(
+            endpoint(flag, Some("flag-key".into()), client()),
+            ("https://other.example".into(), Some("flag-key".into()))
+        );
+        assert_eq!(
+            endpoint(None, None, client()),
+            ("https://api.fastcrw.com".into(), Some("config-key".into()))
+        );
+        assert_eq!(
+            endpoint(None, Some("flag-key".into()), client()),
+            ("https://api.fastcrw.com".into(), Some("flag-key".into()))
+        );
+        let no_url = crate::config::ClientConfig {
+            api_key: Some("config-key".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            endpoint(None, None, no_url),
+            (DEFAULT_CLOUD_API_URL.into(), Some("config-key".into()))
+        );
     }
 
     #[test]

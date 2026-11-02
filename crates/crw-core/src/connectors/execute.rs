@@ -27,6 +27,8 @@ pub(crate) enum Outcome {
     Timeout,
     InvalidResponse,
     Blocked,
+    /// Ran fine, but over the 256 KiB result cap, so it was refused here.
+    ResultTooLarge,
 }
 
 impl Outcome {
@@ -38,6 +40,7 @@ impl Outcome {
             Outcome::Timeout => "timeout",
             Outcome::InvalidResponse => "invalid_response",
             Outcome::Blocked => "blocked",
+            Outcome::ResultTooLarge => "result_too_large",
         }
     }
 }
