@@ -161,7 +161,7 @@ enum Commands {
     Browse(commands::browse::BrowseArgs),
 
     /// Data sources that run on this machine: list them, store your own keys
-    Connectors(commands::connectors::ConnectorsArgs),
+    Connectors(crw_core::connectors::cli::ConnectorsArgs),
 
     /// Interactive setup wizard (Cloud or Local)
     Setup(commands::setup::SetupArgs),
@@ -234,7 +234,12 @@ async fn main() {
             }
             Ok(())
         }
-        Some(Commands::Connectors(args)) => commands::connectors::run(args).await,
+        Some(Commands::Connectors(args)) => crw_core::connectors::cli::run(args, None, None)
+            .await
+            .map_err(|e| CmdError {
+                code: 1,
+                msg: Some(format!("error: {e}")),
+            }),
         Some(Commands::Setup(args)) => {
             commands::setup::run(args).await;
             Ok(())

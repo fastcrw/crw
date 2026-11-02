@@ -108,8 +108,11 @@ pub(crate) fn load_from(
         .ok()
 }
 
-fn set_key_hint(slug: &str) -> String {
-    format!("Ask the user to run this in their own terminal: crw connectors set-key {slug}")
+pub(crate) fn set_key_hint(slug: &str) -> String {
+    format!(
+        "Ask the user to run this in their own terminal: {} set-key {slug}",
+        super::connectors_command()
+    )
 }
 
 /// The key to attach to a request for `url`, if any, or why the call must not

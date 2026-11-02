@@ -1,16 +1,17 @@
-//! `crw connectors`: data sources that run on this machine with the user's own
-//! key. `list` shows them and whether a key is stored; `set-key` stores one,
-//! after the user approves the origins and the placement it will be sent with.
+//! `crw connectors` (and `crw-mcp connectors`): data sources that run on this
+//! machine with the user's own key. `list` shows them and whether a key is
+//! stored; `set-key` stores one, after the user approves the origins and the
+//! placement it will be sent with. Both binaries run this one module.
 //!
 //! The key is read from a no-echo prompt or from stdin, never from argv, so it
 //! does not land in shell history or `ps` output.
 
-use super::setup::config_file::{UserConfig, write_user_config};
-use crate::teardown::CmdError;
+use super::DataToolContext;
+use super::execute::header_set;
+use super::keys::{self, ConnectorEntry};
+use super::manifest::{Connector, Manifest};
+use crate::user_config::{UserConfig, write_user_config};
 use clap::{Args, Subcommand};
-use crw_core::connectors::DataToolContext;
-use crw_core::connectors::keys::{self, ConnectorEntry};
-use crw_core::connectors::manifest::{Connector, Manifest};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Password};
 use std::collections::BTreeMap;
@@ -31,7 +32,7 @@ enum ConnectorsCommand {
     List,
     /// Store your own API key for one data source (read from a hidden prompt or stdin)
     SetKey {
-        /// Provider id, as shown by `crw connectors list`
+        /// Provider id, as shown by `connectors list`
         slug: String,
         /// Approve the listed origins without asking (required when the key comes from stdin)
         #[arg(long, short)]
@@ -39,8 +40,15 @@ enum ConnectorsCommand {
     },
 }
 
-pub async fn run(args: ConnectorsArgs) -> Result<(), CmdError> {
-    let manifest = fetch_manifest().await?;
+/// Run the command. `api_url` / `api_key` come from the binary's own flags;
+/// when absent, `client.*` from the config file (or `CRW_API_KEY`) is used.
+/// The error is the line to print.
+pub async fn run(
+    args: ConnectorsArgs,
+    api_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let manifest = fetch_manifest(api_url, api_key).await?;
     match args.command {
         ConnectorsCommand::List => {
             list(&manifest);
@@ -50,32 +58,31 @@ pub async fn run(args: ConnectorsArgs) -> Result<(), CmdError> {
     }
 }
 
-fn fail(msg: impl Into<String>) -> CmdError {
-    CmdError {
-        code: 1,
-        msg: Some(format!("error: {}", msg.into())),
-    }
-}
-
-async fn fetch_manifest() -> Result<Arc<Manifest>, CmdError> {
-    let client = crw_core::AppConfig::load()
+async fn fetch_manifest(
+    api_url: Option<String>,
+    api_key: Option<String>,
+) -> Result<Arc<Manifest>, String> {
+    let client = crate::AppConfig::load()
         .map(|c| c.client)
         .unwrap_or_default();
-    let api_url = client
-        .api_url
+    let api_url = api_url
+        .or(client.api_url)
         .unwrap_or_else(|| DEFAULT_CLOUD_API_URL.to_string());
-    let has_key = client.api_key.is_some();
+    let api_key = api_key.or(client.api_key);
+    let has_key = api_key.is_some();
     if std::io::stderr().is_terminal() {
         eprintln!("Loading data sources from {api_url} ...");
     }
-    let ctx = DataToolContext::new(api_url, client.api_key, false);
+    let ctx = DataToolContext::new(api_url, api_key, false);
     ctx.manifest().await.map_err(|e| {
-        let hint = if has_key {
-            ""
-        } else {
-            "\nhint: no fastCRW API key is configured; run `crw setup` first"
+        let hint = match (has_key, super::running_as_crw_mcp()) {
+            (true, _) => "",
+            (false, true) => {
+                "\nhint: no fastCRW API key is configured; pass --api-key <your fastCRW API key> or set CRW_API_KEY"
+            }
+            (false, false) => "\nhint: no fastCRW API key is configured; run `crw setup` first",
         };
-        fail(format!("{e}{hint}"))
+        format!("{e}{hint}")
     })
 }
 
@@ -142,7 +149,10 @@ fn list(manifest: &Manifest) {
         .iter()
         .any(|r| r[2] != "not needed" && r[2] != "stored")
     {
-        eprintln!("\nStore a key: crw connectors set-key <provider>");
+        eprintln!(
+            "\nStore a key: {} set-key <provider>",
+            super::connectors_command()
+        );
     }
 }
 
@@ -151,16 +161,31 @@ fn placement_text(c: &Connector) -> String {
     let param = c.auth.param.as_deref().unwrap_or("").trim();
     match c.auth.kind.as_str() {
         "query" => format!("as the query parameter \"{param}\""),
-        "header" => format!("in the \"{param}\" header"),
+        "header" => format!(
+            "in the \"{param}\" header. If the source needs several headers, enter the key as a JSON object of header names to values, such as {{\"{param}\": \"...\", \"X-Other\": \"...\"}}; each pair is sent as its own header"
+        ),
         _ => "as the HTTP Basic username".to_string(),
     }
 }
 
-fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), CmdError> {
+/// The header names a key will be sent under, for a header-auth source. Never
+/// the values.
+fn header_names(c: &Connector, key: &str) -> Option<Vec<String>> {
+    if c.auth.kind != "header" {
+        return None;
+    }
+    Some(match header_set(key) {
+        Some(set) => set.into_iter().map(|(name, _)| name).collect(),
+        None => vec![c.auth.param.as_deref().unwrap_or("").trim().to_string()],
+    })
+}
+
+fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
     let Some(connector) = manifest.connector(slug) else {
-        return Err(fail(format!(
-            "no data source named \"{slug}\" runs on this machine. See `crw connectors list`."
-        )));
+        return Err(format!(
+            "no data source named \"{slug}\" runs on this machine. See `{} list`.",
+            super::connectors_command()
+        ));
     };
     if connector.auth.kind == "none" {
         eprintln!("{} needs no key. Nothing stored.", connector.name);
@@ -180,36 +205,45 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), CmdError> {
     let interactive = std::io::stdin().is_terminal();
     if !yes {
         if !interactive {
-            return Err(fail(
-                "the key comes from stdin, so approve the origins above with --yes",
-            ));
+            return Err("the key comes from stdin, so approve the origins above with --yes".into());
         }
         let approved = Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt("Approve these origins for your key?")
             .default(false)
             .interact()
-            .map_err(|_| fail("cancelled; nothing stored"))?;
+            .map_err(|_| "cancelled; nothing stored".to_string())?;
         if !approved {
             eprintln!("Not approved. Nothing stored.");
             return Ok(());
         }
     }
 
+    let prompt = if connector.auth.kind == "header" {
+        format!(
+            "API key for {} (or a JSON object of headers)",
+            connector.name
+        )
+    } else {
+        format!("API key for {}", connector.name)
+    };
     let key = if interactive {
         Password::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("API key for {}", connector.name))
+            .with_prompt(prompt)
             .interact()
-            .map_err(|_| fail("cancelled; nothing stored"))?
+            .map_err(|_| "cancelled; nothing stored".to_string())?
     } else {
         let mut buf = String::new();
         std::io::stdin()
             .read_to_string(&mut buf)
-            .map_err(|e| fail(format!("could not read the key from stdin: {e}")))?;
+            .map_err(|e| format!("could not read the key from stdin: {e}"))?;
         buf
     };
     let key = key.trim();
     if key.is_empty() {
-        return Err(fail("no key given; nothing stored"));
+        return Err("no key given; nothing stored".into());
+    }
+    if let Some(names) = header_names(connector, key) {
+        eprintln!("Headers it will send: {}", names.join(", "));
     }
 
     let entry = ConnectorEntry {
@@ -220,8 +254,7 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), CmdError> {
     let path = write_user_config(UserConfig {
         connectors: Some(BTreeMap::from([(slug.to_string(), entry)])),
         ..Default::default()
-    })
-    .map_err(fail)?;
+    })?;
     eprintln!(
         "Stored the key for {} in {}. Agents can use it right away.",
         connector.name,
@@ -238,4 +271,33 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), CmdError> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header_connector() -> Connector {
+        serde_json::from_value(serde_json::json!({
+            "provider": "fca",
+            "name": "FCA Register",
+            "baseUrl": "https://register.fca.org.uk",
+            "userAgent": "crw",
+            "auth": {"type": "header", "param": "X-Auth-Key"},
+            "keyRequired": true,
+            "capabilities": []
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn connectors_cli_header_names_never_show_values() {
+        let c = header_connector();
+        assert_eq!(
+            header_names(&c, r#"{"X-Auth-Email":"me@example.com","X-Auth-Key":"k1"}"#).unwrap(),
+            vec!["X-Auth-Email", "X-Auth-Key"]
+        );
+        assert_eq!(header_names(&c, "plain").unwrap(), vec!["X-Auth-Key"]);
+        assert!(placement_text(&c).contains("JSON object of header names to values"));
+    }
 }

@@ -221,19 +221,20 @@ async fn connectors_route_409_refetches_manifest_then_runs_here() {
         .mount(&server)
         .await;
 
-    let out = get(
-        &DataToolContext::for_tests(&server.uri(), false, vec![]),
-        "openalex",
-        json!({"id": "W1"}),
-    )
-    .await
-    .unwrap();
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    ctx.manifest().await.unwrap();
+    // A copy under a minute old is not refetched on a 409; this one is older.
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    let out = get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
     assert_eq!(out["creditsUsed"], 0);
     assert_eq!(hits(&server, "/v1/data/manifest").await, 2);
 }
 
 #[tokio::test]
-async fn connectors_route_409_without_manifest_entry_returns_the_server_error() {
+async fn connectors_route_409_without_manifest_entry_asks_for_an_upgrade() {
+    // The server runs it here, but this crw dropped it from the manifest: its
+    // "install the local MCP" advice would be wrong, and a fresh copy is not
+    // refetched on every call.
     let server = MockServer::start().await;
     mount_manifest(&server, vec![]).await;
     Mock::given(path("/v1/data/openalex/works"))
@@ -243,14 +244,20 @@ async fn connectors_route_409_without_manifest_entry_returns_the_server_error() 
         })))
         .mount(&server)
         .await;
-    let err = get(
-        &DataToolContext::for_tests(&server.uri(), false, vec![]),
-        "openalex",
-        json!({"id": "W1"}),
-    )
-    .await
-    .unwrap_err();
-    assert!(err.starts_with("[client_execution_required]"), "{err}");
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    for _ in 0..2 {
+        let err = get(&ctx, "openalex", json!({"id": "W1"}))
+            .await
+            .unwrap_err();
+        assert!(
+            err.starts_with(
+                "[connector_misconfigured] openalex cannot run on this version of crw. Upgrade crw ("
+            ),
+            "{err}"
+        );
+        assert!(!err.contains("crw-mcp install"), "{err}");
+    }
+    assert_eq!(hits(&server, "/v1/data/manifest").await, 1);
 }
 
 #[tokio::test]
@@ -293,6 +300,41 @@ async fn connectors_route_manifest_unavailable_forwards_nothing() {
     .unwrap_err();
     assert!(err.starts_with("[data_sources_unavailable]"), "{err}");
     assert_eq!(hits(&server, "/v1/data/npm/works").await, 0);
+}
+
+#[tokio::test]
+async fn connectors_route_manifest_auth_and_rate_limit_errors_keep_their_codes() {
+    let cases = [
+        (ResponseTemplate::new(401), "[unauthorized]", "CRW_API_KEY"),
+        (ResponseTemplate::new(403), "[unauthorized]", "CRW_API_KEY"),
+        (
+            ResponseTemplate::new(429).insert_header("retry-after", "7"),
+            "[rate_limited]",
+            "in 7 seconds",
+        ),
+        (ResponseTemplate::new(429), "[rate_limited]", "shortly"),
+        (
+            ResponseTemplate::new(500),
+            "[data_sources_unavailable]",
+            "500",
+        ),
+    ];
+    for (resp, code, detail) in cases {
+        let server = MockServer::start().await;
+        Mock::given(path("/v1/data/manifest"))
+            .respond_with(resp)
+            .mount(&server)
+            .await;
+        let err = get(
+            &DataToolContext::for_tests(&server.uri(), false, vec![]),
+            "npm",
+            json!({}),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.starts_with(code) && err.contains(detail), "{err}");
+        assert_eq!(hits(&server, "/v1/data/npm/works").await, 0);
+    }
 }
 
 #[tokio::test]
@@ -625,6 +667,75 @@ async fn connectors_exec_header_set_sends_every_pair() {
     let out = get(&ctx, "fca", json!({"id": "F"})).await.unwrap();
     assert_eq!(out["data"]["email"], "REDACTED");
     assert_eq!(out["data"]["key"], "REDACTED");
+}
+
+#[test]
+fn connectors_header_set_falls_through_to_a_single_header() {
+    // Same vectors as the cloud's parseHeaderSet tests.
+    for key in [
+        r#"{"X":{"nested":1}}"#,
+        r#"{"X":""}"#,
+        r#"{"X-Auth-Key":"k","X-Auth-Email":""}"#,
+        r#"{"":"v"}"#,
+        "{oops",
+        "{}",
+        "plain-key",
+    ] {
+        assert!(execute::header_set(key).is_none(), "{key}");
+    }
+    assert_eq!(
+        execute::header_set(r#" {"A":"1","B":"2"} "#).unwrap(),
+        vec![("A".into(), "1".into()), ("B".into(), "2".into())]
+    );
+}
+
+#[tokio::test]
+async fn connectors_exec_header_key_refusals_send_nothing() {
+    let server = MockServer::start().await;
+    let mut set = connector(&server, "fca");
+    set["auth"] = json!({"type": "header", "param": "X-Auth-Key"});
+    let mut bad_param = connector(&server, "badparam");
+    bad_param["auth"] = json!({"type": "header", "param": "X Api Key"});
+    mount_manifest(&server, vec![set, bad_param]).await;
+    let entry = |key: &str, auth: &str| keys::ConnectorEntry {
+        api_key: Some(key.into()),
+        origins: vec![server.uri()],
+        auth: Some(auth.into()),
+    };
+    let ctx = DataToolContext::for_tests(
+        &server.uri(),
+        false,
+        vec![
+            ("fca", entry(r#"{"X Bad":"v"}"#, "header:X-Auth-Key")),
+            ("badparam", entry("k1", "header:X Api Key")),
+        ],
+    );
+    let err = get(&ctx, "fca", json!({"id": "F"})).await.unwrap_err();
+    assert!(
+        err.starts_with("[connector_key_invalid]")
+            && err.contains("crw connectors set-key fca")
+            && !err.contains("X Bad"),
+        "{err}"
+    );
+    let err = get(&ctx, "badparam", json!({"id": "F"})).await.unwrap_err();
+    assert!(err.starts_with("[connector_misconfigured]"), "{err}");
+    assert_eq!(hits(&server, "/up/works/F").await, 0);
+}
+
+#[tokio::test]
+async fn connectors_exec_oversized_result_is_a_tool_error() {
+    let server = MockServer::start().await;
+    let ctx = local(&server, connector(&server, "openalex"), vec![]).await;
+    Mock::given(path("/up/works/BIG"))
+        .respond_with(json_ok(
+            json!({"blob": "x".repeat(crate::mcp::MAX_DATA_PAYLOAD_BYTES)}),
+        ))
+        .mount(&server)
+        .await;
+    let err = get(&ctx, "openalex", json!({"id": "BIG"}))
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("[result_too_large]"), "{err}");
 }
 
 #[tokio::test]

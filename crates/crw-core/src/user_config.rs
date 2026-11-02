@@ -9,7 +9,7 @@
 //! symlink targets refused, write goes through `O_NOFOLLOW` so a swap-in
 //! between our check and our open cannot redirect the write elsewhere.
 
-use crw_core::connectors::keys::ConnectorEntry;
+use crate::connectors::keys::ConnectorEntry;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -403,13 +403,12 @@ fn set_secret_file_perms(_path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard, OnceLock};
+    use std::sync::MutexGuard;
 
-    // Tests mutate CRW_USER_CONFIG_DIR (process-global env), so they must run
-    // serially even though `cargo test` is multi-threaded by default.
+    // Tests mutate CRW_USER_CONFIG_DIR (process-global env), so they share the
+    // crate's env lock with the `config` tests that read it.
     fn env_lock() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        crate::TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|p| p.into_inner())
     }
@@ -591,7 +590,7 @@ ws_url = "ws://127.0.0.1:9222"
         unmodelled_survive();
 
         // The reader in crw-core sees the same entry after the rewrite.
-        let read = crw_core::connectors::keys::load("open-alex").unwrap();
+        let read = crate::connectors::keys::load("open-alex").unwrap();
         assert_eq!(read.api_key.as_deref(), Some("user-key"));
 
         // A local-mode switch drops the cloud routing credentials but keeps the

@@ -72,7 +72,7 @@ async fn wait_turn(last: &mut Option<Instant>, min_interval: Duration) {
 /// A header key written as a flat JSON object of non-empty strings, sent as one
 /// header per pair: the FCA Register wants `X-Auth-Email` beside `X-Auth-Key`.
 /// Same rule as the cloud's `parseHeaderSet`; anything else is one header value.
-fn header_set(key: &str) -> Option<Vec<(String, String)>> {
+pub(crate) fn header_set(key: &str) -> Option<Vec<(String, String)>> {
     let text = key.trim();
     if !text.starts_with('{') {
         return None;
@@ -91,6 +91,14 @@ fn header_set(key: &str) -> Option<Vec<(String, String)>> {
         out.push((k, v));
     }
     (!out.is_empty()).then_some(out)
+}
+
+fn key_invalid(connector: &Connector) -> String {
+    format!(
+        "[connector_key_invalid] The stored key for {} contains characters a header cannot carry. {}",
+        connector.name,
+        keys::set_key_hint(&connector.provider)
+    )
 }
 
 /// Replaces a key in every form it can come back in: raw, `encodeURIComponent`,
@@ -294,19 +302,21 @@ pub(crate) async fn run(
                             HeaderName::from_bytes(n.as_bytes()),
                             HeaderValue::from_str(&v),
                         ) else {
-                            return LocalRun::refused(format!(
-                                "[connector_key_invalid] The stored key for {name} contains characters a header cannot carry. Ask the user to run this in their own terminal: crw connectors set-key {}",
-                                connector.provider
-                            ));
+                            return LocalRun::refused(key_invalid(connector));
                         };
                         v.set_sensitive(true);
                         headers.insert(n, v);
                     }
                     None
                 }
-                None => HeaderName::from_bytes(param.as_bytes())
-                    .ok()
-                    .map(|n| (n, HeaderValue::from_str(key))),
+                None => {
+                    let Ok(n) = HeaderName::from_bytes(param.as_bytes()) else {
+                        return LocalRun::refused(format!(
+                            "[connector_misconfigured] {name} is misconfigured right now. Try again later."
+                        ));
+                    };
+                    Some((n, HeaderValue::from_str(key)))
+                }
             },
             "basic" => {
                 let token = base64::engine::general_purpose::STANDARD.encode(format!("{key}:"));
@@ -319,10 +329,7 @@ pub(crate) async fn run(
         };
         if let Some((name_h, value)) = header {
             let Ok(mut value) = value else {
-                return LocalRun::refused(format!(
-                    "[connector_key_invalid] The stored key for {name} contains characters a header cannot carry. Ask the user to run this in their own terminal: crw connectors set-key {}",
-                    connector.provider
-                ));
+                return LocalRun::refused(key_invalid(connector));
             };
             value.set_sensitive(true);
             headers.insert(name_h, value);

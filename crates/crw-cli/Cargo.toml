@@ -40,7 +40,7 @@ impersonated = ["crw-renderer/impersonated", "crw-server?/impersonated"]
 
 [dependencies]
 # Core crates
-crw-core = { workspace = true }
+crw-core = { workspace = true, features = ["cli"] }
 crw-renderer = { workspace = true, features = ["auto-browser", "cdp"] }
 crw-extract = { workspace = true }
 crw-crawl = { workspace = true }

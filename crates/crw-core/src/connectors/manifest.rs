@@ -185,10 +185,10 @@ pub(crate) fn parse(body: &str, guard: Guard) -> Result<Manifest, String> {
         .map_err(|_| unavailable("the data source list is not valid JSON"))?;
     let version = raw.get("schemaVersion").and_then(serde_json::Value::as_u64);
     if version != Some(SCHEMA_VERSION) {
-        return Err(
-            "[crw_too_old] This crw is too old for the current data source list. Upgrade it (npx -y crw-mcp@latest, brew upgrade crw, or cargo install crw-cli) and restart the MCP server."
-                .into(),
-        );
+        return Err(format!(
+            "[crw_too_old] This crw is too old for the current data source list. Upgrade it ({}) and restart the MCP server.",
+            super::upgrade_hint()
+        ));
     }
     let entries = match raw.get("connectors") {
         None | Some(serde_json::Value::Null) => Vec::new(),
@@ -234,25 +234,24 @@ pub(crate) struct ManifestCache {
 }
 
 impl ManifestCache {
-    /// The manifest if one fetched within [`MAX_AGE`] exists, else a fresh
-    /// fetch. `force` skips the cached copy. A failed fetch never falls back
-    /// to an expired copy.
+    /// The cached manifest if it was fetched within `max_age` (capped at
+    /// [`MAX_AGE`]), else a fresh fetch. A failed fetch keeps the cached copy
+    /// for later calls but never returns it here, and an expired copy is never
+    /// used.
     pub(crate) async fn get(
         &self,
         http: &reqwest::Client,
         api_url: &str,
         api_key: Option<&str>,
-        force: bool,
+        max_age: Duration,
         guard: Guard,
     ) -> Result<Arc<Manifest>, String> {
         let mut slot = self.slot.lock().await;
-        if !force
-            && let Some((manifest, at)) = slot.as_ref()
-            && at.elapsed() < MAX_AGE
+        if let Some((manifest, at)) = slot.as_ref()
+            && at.elapsed() < max_age.min(MAX_AGE)
         {
             return Ok(manifest.clone());
         }
-        *slot = None;
         let manifest = Arc::new(fetch(http, api_url, api_key, guard).await?);
         *slot = Some((manifest.clone(), Instant::now()));
         Ok(manifest)
@@ -288,12 +287,30 @@ async fn fetch(
         );
         unavailable("the fastCRW API could not be reached")
     })?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(unavailable(&format!(
-            "the fastCRW API answered HTTP {}",
-            status.as_u16()
-        )));
+    let status = resp.status().as_u16();
+    match status {
+        200..=299 => {}
+        401 | 403 => {
+            return Err(format!(
+                "[unauthorized] The fastCRW API did not accept the API key (HTTP {status}). Check CRW_API_KEY."
+            ));
+        }
+        429 => {
+            let wait = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .map_or_else(|| "shortly".to_string(), |s| format!("in {s} seconds"));
+            return Err(format!(
+                "[rate_limited] Too many requests to the fastCRW API. Try again {wait}."
+            ));
+        }
+        _ => {
+            return Err(unavailable(&format!(
+                "the fastCRW API answered HTTP {status}"
+            )));
+        }
     }
     let body = resp
         .text()

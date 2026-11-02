@@ -34,9 +34,8 @@
 #   crw-saas, so it cannot read `src/lib/plans-client.ts` to derive the number.
 #
 # Guard 7: data-source wording
-#   Fails on internal registry terms (resell, resale, terms_review, termsNote,
-#   termsVerdict) anywhere in docs/docs/*.md, and on "markup" in the
-#   data-sources page.
+#   Fails on internal registry field names (the pattern in the guard below)
+#   anywhere in docs/docs/*.md, and on "markup" in the data-sources page.
 #
 # Portable: bash + standard POSIX tools plus python3. Works on ubuntu-latest
 # and macOS without extra dependencies.
@@ -369,9 +368,8 @@ fi
 
 # ---------------------------------------------------------------------------
 # Guard 7: data-source wording
-#   Internal registry terms and the economics behind which sources run where
-#   never reach the docs. "markup" is only checked on the data-sources page,
-#   since elsewhere it means HTML markup.
+#   Internal registry field names never reach the docs. "markup" is only
+#   checked on the data-sources page, since elsewhere it means HTML markup.
 # ---------------------------------------------------------------------------
 
 echo "==> Guard 7: data-source wording"

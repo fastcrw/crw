@@ -33,6 +33,9 @@
 //!
 //! # Proxy mode — connect to a remote server
 //! crw-mcp --api-url https://api.fastcrw.com --api-key crw_live_xxx
+//!
+//! # Store your own key for a data source that runs on this machine
+//! crw-mcp connectors set-key <provider>
 //! ```
 
 mod teardown;
@@ -59,11 +62,11 @@ struct Cli {
     /// Remote CRW server URL. Enables proxy mode.
     /// Without this flag, runs in embedded mode (self-contained).
     /// A truthy `CRW_LOCAL` overrides this and forces embedded mode.
-    #[arg(long, env = "CRW_API_URL")]
+    #[arg(long, env = "CRW_API_URL", global = true)]
     api_url: Option<String>,
 
     /// API key for remote server authentication.
-    #[arg(long, env = "CRW_API_KEY")]
+    #[arg(long, env = "CRW_API_KEY", global = true)]
     api_key: Option<String>,
 
     /// Config file path, overriding config.local.toml. Read in both modes:
@@ -79,6 +82,15 @@ struct Cli {
     /// client-side, since a remote's REST body is not shaped by local config.
     #[arg(long, env = "CRW_MCP__HIDE_CREDITS")]
     hide_credits: bool,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Data sources that run on this machine: list them, store your own keys
+    Connectors(crw_core::connectors::cli::ConnectorsArgs),
 }
 
 // --- Backend ---
@@ -541,6 +553,14 @@ async fn run() -> Result<(), CmdError> {
     //   3. None — falls through to embedded mode
     let (resolved_api_url, resolved_api_key, config_hide_credits) =
         resolve_client_credentials(cli.api_url, cli.api_key);
+    if let Some(Command::Connectors(args)) = cli.command {
+        return crw_core::connectors::cli::run(args, resolved_api_url, resolved_api_key)
+            .await
+            .map_err(|e| CmdError {
+                code: 1,
+                msg: Some(format!("error: {e}")),
+            });
+    }
     // Flag/env or the config file turns it on. Both are needed: proxy mode
     // never builds an `AppConfig`, and the flag never reaches `AppConfig::load`.
     let hide_credits = flag_hide_credits || config_hide_credits;

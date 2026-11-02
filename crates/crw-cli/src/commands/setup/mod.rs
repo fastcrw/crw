@@ -6,7 +6,7 @@
 mod agents;
 mod browser;
 mod cloud;
-pub(crate) mod config_file;
+pub(crate) use crw_core::user_config as config_file;
 mod docker;
 pub(crate) mod llm;
 mod local;

@@ -160,6 +160,32 @@ jobs:
         working-directory: mcp/crw-mcp
         run: npm test
 
+  # Python SDK unit tests. Same step as examples-test.yml, which only runs on a
+  # schedule and on tags, so PRs that touch the SDK are gated here too.
+  sdk-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          prune-cache: true
+
+      - name: Test (no network required)
+        run: |
+          set -euo pipefail
+          uv venv .venv --python "${{ matrix.python-version }}"
+          uv pip install --python .venv/bin/python -e ".[test]"
+          .venv/bin/python -m pytest tests/ -m "not integration" -q
+
   # Firecrawl v2 conformance gate (conformance/, issue #62). Drives the
   # deterministic corpus against a live `crw serve` and diffs each response's
   # SHAPE against the committed golden Firecrawl fixtures. `compare.py` only
