@@ -69,6 +69,30 @@ async fn wait_turn(last: &mut Option<Instant>, min_interval: Duration) {
     *last = Some(Instant::now());
 }
 
+/// A header key written as a flat JSON object of non-empty strings, sent as one
+/// header per pair: the FCA Register wants `X-Auth-Email` beside `X-Auth-Key`.
+/// Same rule as the cloud's `parseHeaderSet`; anything else is one header value.
+fn header_set(key: &str) -> Option<Vec<(String, String)>> {
+    let text = key.trim();
+    if !text.starts_with('{') {
+        return None;
+    }
+    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(text) else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(map.len());
+    for (k, v) in map {
+        let (k, Value::String(v)) = (k.trim().to_string(), v) else {
+            return None;
+        };
+        if k.is_empty() || v.is_empty() {
+            return None;
+        }
+        out.push((k, v));
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 /// Replaces a key in every form it can come back in: raw, `encodeURIComponent`,
 /// form-urlencoded and HTTP Basic `base64(key:)`. Matching ignores ASCII case,
 /// so `%2f` and `%2F` both count; over-redacting a look-alike costs nothing.
@@ -83,7 +107,13 @@ pub(crate) struct Redactor {
 impl Redactor {
     pub(crate) fn new(key: Option<&str>) -> Self {
         let mut forms: Vec<String> = Vec::new();
-        if let Some(key) = key.filter(|k| !k.is_empty()) {
+        let key = key.filter(|k| !k.is_empty());
+        // A header set is sent value by value, so each value is a secret too.
+        let set: Vec<String> = key
+            .and_then(header_set)
+            .map(|s| s.into_iter().map(|(_, v)| v).collect())
+            .unwrap_or_default();
+        for key in key.into_iter().chain(set.iter().map(String::as_str)) {
             for form in [
                 key.to_string(),
                 encode_uri_component(key),
@@ -257,9 +287,27 @@ pub(crate) async fn run(
                 search_params_set(&mut url, param, key);
                 None
             }
-            "header" => HeaderName::from_bytes(param.as_bytes())
-                .ok()
-                .map(|n| (n, HeaderValue::from_str(key))),
+            "header" => match header_set(key) {
+                Some(set) => {
+                    for (n, v) in set {
+                        let (Ok(n), Ok(mut v)) = (
+                            HeaderName::from_bytes(n.as_bytes()),
+                            HeaderValue::from_str(&v),
+                        ) else {
+                            return LocalRun::refused(format!(
+                                "[connector_key_invalid] The stored key for {name} contains characters a header cannot carry. Ask the user to run this in their own terminal: crw connectors set-key {}",
+                                connector.provider
+                            ));
+                        };
+                        v.set_sensitive(true);
+                        headers.insert(n, v);
+                    }
+                    None
+                }
+                None => HeaderName::from_bytes(param.as_bytes())
+                    .ok()
+                    .map(|n| (n, HeaderValue::from_str(key))),
+            },
             "basic" => {
                 let token = base64::engine::general_purpose::STANDARD.encode(format!("{key}:"));
                 Some((
