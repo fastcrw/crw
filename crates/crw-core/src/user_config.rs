@@ -14,9 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-const USER_CONFIG_FILENAME: &str = "config.toml";
-const USER_CONFIG_SUBDIR: &str = ".config/crw";
-
 /// Subset of `crw-core::AppConfig` that `crw setup` knows how to populate.
 ///
 /// We deliberately don't re-export the upstream struct — its tree is huge
@@ -98,16 +95,10 @@ pub struct LlmSection {
     pub rest: toml::Table,
 }
 
-/// Resolve the path of the per-user config file. Honors
-/// `$CRW_USER_CONFIG_DIR` so tests don't have to monkey-patch `$HOME`.
+/// Resolve the path of the per-user config file: the same path
+/// [`crate::config::user_config_path`] reads, so reader and writer agree.
 pub fn user_config_path() -> Result<PathBuf, String> {
-    if let Ok(dir) = std::env::var("CRW_USER_CONFIG_DIR") {
-        return Ok(PathBuf::from(dir).join(USER_CONFIG_FILENAME));
-    }
-    let home = std::env::var_os("HOME").ok_or("Could not determine home directory")?;
-    Ok(PathBuf::from(home)
-        .join(USER_CONFIG_SUBDIR)
-        .join(USER_CONFIG_FILENAME))
+    crate::config::user_config_path().ok_or_else(|| "Could not determine home directory".into())
 }
 
 /// Read the existing config file if present. Missing file → empty config.

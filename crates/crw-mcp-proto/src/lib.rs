@@ -1046,8 +1046,8 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
 pub const MAX_DATA_PAYLOAD_BYTES: usize = 256 * 1024;
 
 /// Refuse a `crw_get_data` result whose `data` is over the cap, as a tool
-/// error the agent can act on. The data tools call this for the locally run
-/// and the forwarded result alike.
+/// error the agent can act on. Used for results run on this machine only; a
+/// forwarded call is capped by the API, which refunds what it refuses.
 pub fn check_data_payload(value: Value) -> Result<Value, String> {
     let size = value
         .get("data")

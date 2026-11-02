@@ -91,7 +91,7 @@ Some sources that take the key in a header want more than one header. The FCA Re
 {"X-Auth-Email": "you@example.com", "X-Auth-Key": "your-key"}
 ```
 
-`set-key` prints the header names it will send (never the values) before it stores the key. Every value in the object is treated as secret and removed from results like the key itself. Anything that is not a flat object of non-empty strings is sent as one value in the source's own header.
+`set-key` prints the header names it will send (never the values) before it stores the key. Every value in the object is treated as secret and removed from results like the key itself. A key that starts with `{` but is not a flat object of non-empty strings is refused and nothing is stored, as is a header name or value an HTTP header cannot carry; any other key is sent as one value in the source's own header.
 
 ### Docker, CI and `$CRW_CONFIG`
 
@@ -140,11 +140,11 @@ Errors come back as a tool error (`isError: true`) whose text starts with a code
 | `connector_key_invalid` | The stored key has characters an HTTP header cannot carry | Store the key again |
 | `connector_misconfigured` | The source definition is unusable right now, or this crw cannot run the source | Try again later; upgrade crw when the message says so |
 | `blocked` | A safety rule stopped the request before it left your machine (redirect to another origin, private address, too many redirects) | Nothing to fix locally; report it if it persists |
-| `upstream_error` | The source answered with an error status or could not be reached | Check the options; try again |
+| `upstream_error` | The source answered with an error status or could not be reached | Check the options; try again. If the source refused your stored key, store it again |
 | `upstream_timeout` | The source did not answer within 20 seconds | Try again |
 | `upstream_rate_limited` | The source is limiting requests from your machine | Wait and try again |
 | `invalid_response` | The source answered with something other than JSON, or over 8 MiB | Try again; narrow the options |
-| `result_too_large` | The result is over 256 KiB. For a source that runs on fastCRW, the call is refused before it is charged | Narrow the options |
+| `result_too_large` | The result is over 256 KiB. For a source that runs on fastCRW, the call is refunded, so it costs nothing | Narrow the options |
 | `client_execution_required` | Hosted MCP only: the source runs on your machine | `npx -y crw-mcp install --api-key <your fastCRW API key>` |
 | `unauthorized` | Missing or invalid fastCRW API key | Check `CRW_API_KEY` |
 | `insufficient_credits` | Out of credits for a source that runs on fastCRW | Top up or upgrade |

@@ -754,6 +754,46 @@ async fn connectors_exec_header_set_sends_every_pair() {
     assert_eq!(out["data"]["key"], "REDACTED");
 }
 
+#[tokio::test]
+async fn connectors_exec_refused_stored_key_says_so() {
+    let server = MockServer::start().await;
+    let mut keyed = connector(&server, "hdr");
+    keyed["auth"] = json!({"type": "header", "param": "X-Api-Key"});
+    let mut open = connector(&server, "open");
+    open["capabilities"][0]["pathTemplate"] = json!("/up/open/{id}");
+    mount_manifest(&server, vec![keyed, open]).await;
+    let ctx = DataToolContext::for_tests(
+        &server.uri(),
+        false,
+        vec![("hdr", approved(&server, "header:X-Api-Key"))],
+    );
+    Mock::given(path("/up/works/K"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    Mock::given(path("/up/open/K"))
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&server)
+        .await;
+    let err = get(&ctx, "hdr", json!({"id": "K"})).await.unwrap_err();
+    assert_eq!(
+        err,
+        "[upstream_error] OpenAlex refused the stored key (HTTP 401). Check it or store it again. Ask the user to run this in their own terminal: crw connectors set-key hdr"
+    );
+    // No key was sent, so a 403 is not about one.
+    let err = call_data_tool(
+        "crw_get_data",
+        json!({"provider": "open", "capability": "works", "options": {"id": "K"}}),
+        &ctx,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        err,
+        "[upstream_error] OpenAlex returned HTTP 403 for this request."
+    );
+}
+
 #[test]
 fn connectors_header_set_falls_through_to_a_single_header() {
     // Same vectors as the cloud's parseHeaderSet tests.
