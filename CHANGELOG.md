@@ -2,6 +2,22 @@
 
 All notable changes to CRW are documented here.
 
+## [0.40.0](https://github.com/fastcrw/crw/compare/v0.39.1...v0.40.0) (2026-11-03)
+
+
+### Features
+
+* **map:** scope results to the seed path with filterByPath ([e6ef1b9](https://github.com/fastcrw/crw/commit/e6ef1b938902b7e0f5d4b7c08392004f9bb55190))
+* **mcp:** cut truncated content on block boundaries and add startIndex ([884eb6f](https://github.com/fastcrw/crw/commit/884eb6f40e65392c061d84ed2f7643543fc82d92))
+
+
+### Bug Fixes
+
+* **extract:** drop schema-rejected nulls instead of retrying ([2fc6e76](https://github.com/fastcrw/crw/commit/2fc6e767a694bdf8e2523877f98710614c03420c))
+* **extract:** trim metadata attribute values ([4c10bd7](https://github.com/fastcrw/crw/commit/4c10bd7e611d784fb60b2e4d6bc5eea59df9ed3d))
+* **map:** judge sitemap richness before the path scope ([db8b90b](https://github.com/fastcrw/crw/commit/db8b90ba36280d44a14a85de254760b4ad7cbae3))
+* **mcp:** describe tools instead of steering the model ([ac5344a](https://github.com/fastcrw/crw/commit/ac5344a1adc16924d69cb0c9cc8bf8a440efe8cf))
+
 ## [0.39.1](https://github.com/fastcrw/crw/compare/v0.39.0...v0.39.1) (2026-10-28)
 
 
