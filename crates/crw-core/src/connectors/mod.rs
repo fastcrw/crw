@@ -457,6 +457,11 @@ async fn find_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String>
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or(Value::Null);
+    // A bare 404 is an API with no data sources (a self-hosted server), the
+    // same answer crw_get_data gives for it.
+    if status == 404 && reply.get("errorCode").is_none() {
+        return Err(manifest::unavailable("the fastCRW API answered HTTP 404"));
+    }
     if !(200..300).contains(&status) {
         return Err(server_error_text(status, &reply, retry_after));
     }

@@ -56,11 +56,11 @@ npx -y crw-mcp connectors list
 
 ```text
 PROVIDER     NAME                  KEY                LICENCE
-fred         FRED (St. Louis Fed)  required, missing  FRED provides data and data services to the public for ...
-openlibrary  Open Library          not needed         Open Library's APIs exist to support the open book ...
+fred         FRED (St. Louis Fed)  required, missing  FRED provides data and data services to the public for no...
+openlibrary  Open Library          not needed         Open Library’s APIs exist to support the open book ecosys...
 ```
 
-The `KEY` column reads `not needed`, `stored`, `required, missing`, or `stored, approve again` (see `connector_origin_not_approved` below). FRED needs a free key from <https://fred.stlouisfed.org/docs/api/api_key.html>:
+The `LICENCE` column shows the start of each source's licence; `provenance.licence` in a result carries all of it. The `KEY` column reads `not needed`, `stored`, `required, missing`, or `stored, approve again` (see `connector_origin_not_approved` below). FRED needs a free key from <https://fred.stlouisfed.org/docs/api/api_key.html>:
 
 ```bash
 npx -y crw-mcp connectors set-key fred
