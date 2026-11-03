@@ -986,6 +986,7 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
     let mut all_urls: HashSet<String> = HashSet::new();
     all_urls.insert(base_url.to_string());
     let mut sitemaps: Vec<String> = Vec::new();
+    let mut sitemap_site_pages: usize = 0;
 
     // robots.txt is fetched OUTSIDE the `use_sitemap` block: the BFS phase needs
     // its Disallow rules even when sitemap discovery is switched off. (It used to
@@ -1152,6 +1153,7 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
             None => crate::sitemap::SitemapWalk::default(),
         };
         sitemaps = walk.sitemaps;
+        sitemap_site_pages = walk.site_pages;
         for u in walk.pages {
             if all_urls.len() >= max_urls {
                 break;
@@ -1181,9 +1183,14 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
     // timeout killed the future and threw away every URL it had found — a 504 with
     // zero results. A rich sitemap still shortens the budget (we have plenty
     // already); everything else runs to the overall deadline and returns partials.
-    let bfs_deadline_at = if all_urls.len() >= SITEMAP_SUFFICIENT_THRESHOLD {
+    // "Rich" is judged on what the sitemap held, not on what survived the path
+    // scope: a scoped map of a small section on a big site has a sitemap, so BFS
+    // only fills gaps. Judged on the scoped count it ran to the deadline instead,
+    // rendering the few section pages for ~90s to find nothing new.
+    let sitemap_size = all_urls.len().max(sitemap_site_pages);
+    let bfs_deadline_at = if sitemap_size >= SITEMAP_SUFFICIENT_THRESHOLD {
         tracing::info!(
-            sitemap_urls = all_urls.len(),
+            sitemap_urls = sitemap_size,
             "sitemap sufficient, BFS will run with short budget"
         );
         (std::time::Instant::now() + std::time::Duration::from_secs(BFS_SHORT_BUDGET_SECS))
