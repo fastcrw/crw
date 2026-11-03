@@ -198,7 +198,7 @@ async fn connectors_route_absent_provider_is_forwarded_and_mapped() {
             "data": {"name": "react"}
         })
     );
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    ctx.drain(Duration::from_secs(5)).await;
     assert_eq!(
         hits(&server, "/v1/data/usage").await,
         0,
@@ -1008,8 +1008,9 @@ async fn connectors_exec_unapproved_origin_and_missing_key_send_nothing() {
         origins: vec!["https://api.openalex.org".into()],
         auth: Some("query:api_key".into()),
     };
-    let ctx = DataToolContext::for_tests(&server.uri(), true, vec![("openalex", elsewhere)]);
-    let err = get(&ctx, "openalex", json!({"id": "W1"}))
+    let elsewhere_ctx =
+        DataToolContext::for_tests(&server.uri(), true, vec![("openalex", elsewhere)]);
+    let err = get(&elsewhere_ctx, "openalex", json!({"id": "W1"}))
         .await
         .unwrap_err();
     assert!(err.starts_with("[connector_origin_not_approved]"), "{err}");
@@ -1024,7 +1025,8 @@ async fn connectors_exec_unapproved_origin_and_missing_key_send_nothing() {
         "{err}"
     );
 
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    ctx.drain(Duration::from_secs(5)).await;
+    elsewhere_ctx.drain(Duration::from_secs(5)).await;
     assert_eq!(hits(&server, "/up/works/W1").await, 0);
     assert_eq!(
         hits(&server, "/v1/data/usage").await,
@@ -1115,22 +1117,18 @@ async fn connectors_exec_timeout_error_carries_no_key() {
 
 // --- telemetry ---
 
-async fn usage_bodies(server: &MockServer) -> Vec<Value> {
-    for _ in 0..40 {
-        let bodies: Vec<Value> = server
-            .received_requests()
-            .await
-            .unwrap()
-            .iter()
-            .filter(|r| r.url.path() == "/v1/data/usage")
-            .map(|r| serde_json::from_slice(&r.body).unwrap())
-            .collect();
-        if !bodies.is_empty() {
-            return bodies;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    Vec::new()
+/// Every usage ping `ctx` sent, read after [`DataToolContext::drain`] so a
+/// ping still in flight is counted.
+async fn usage_bodies(server: &MockServer, ctx: &DataToolContext) -> Vec<Value> {
+    ctx.drain(Duration::from_secs(5)).await;
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/v1/data/usage")
+        .map(|r| serde_json::from_slice(&r.body).unwrap())
+        .collect()
 }
 
 #[tokio::test]
@@ -1202,7 +1200,7 @@ async fn connectors_telemetry_latency_excludes_crws_own_pacing() {
     // The second call waits out the spacing before it is sent.
     get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
     ctx.drain(Duration::from_secs(2)).await;
-    let bodies = usage_bodies(&server).await;
+    let bodies = usage_bodies(&server, &ctx).await;
     assert_eq!(bodies.len(), 2);
     for body in &bodies {
         let ms = body["latencyMs"].as_u64().unwrap();
@@ -1238,8 +1236,7 @@ async fn connectors_telemetry_one_ping_per_client_call_without_url_or_key() {
         .await
         .unwrap();
 
-    let bodies = usage_bodies(&server).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let bodies = usage_bodies(&server, &ctx).await;
     assert_eq!(bodies.len(), 1);
     assert_eq!(hits(&server, "/v1/data/usage").await, 1, "exactly one ping");
     let body = &bodies[0];
@@ -1267,13 +1264,13 @@ async fn connectors_telemetry_reports_failures_and_respects_opt_out() {
 
     let on = DataToolContext::for_tests(&server.uri(), true, vec![]);
     get(&on, "openalex", json!({"id": "E"})).await.unwrap_err();
-    let bodies = usage_bodies(&server).await;
+    let bodies = usage_bodies(&server, &on).await;
     assert_eq!(bodies.len(), 1);
     assert_eq!(bodies[0]["outcome"], "upstream_error");
 
     let off = DataToolContext::for_tests(&server.uri(), false, vec![]);
     get(&off, "openalex", json!({"id": "E"})).await.unwrap_err();
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    off.drain(Duration::from_secs(5)).await;
     assert_eq!(
         hits(&server, "/v1/data/usage").await,
         1,
@@ -1296,7 +1293,7 @@ async fn connectors_telemetry_counts_a_capped_result_as_too_large() {
         .await
         .unwrap_err();
     assert!(err.starts_with("[result_too_large]"), "{err}");
-    let bodies = usage_bodies(&server).await;
+    let bodies = usage_bodies(&server, &ctx).await;
     assert_eq!(bodies.len(), 1);
     assert_eq!(bodies[0]["outcome"], "result_too_large");
 }

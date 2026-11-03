@@ -523,12 +523,15 @@ test("findData maps catalogue items and passes paging", async () => {
         capability: "works",
         name: "Works",
         description: "Papers",
+        category: "Research",
         execution: "server",
         creditsCost: 1,
         keyRequired: false,
         options: { required: ["search"], optional: ["page"] },
         provenance: { source: "OpenAlex", licence: "CC0 1.0", licence_url: null, attribution_text: null },
       },
+      // An older server sends no category.
+      { provider: "npm", capability: "package", options: {}, provenance: {} },
     ],
     total: 7,
     nextOffset: 6,
@@ -548,11 +551,24 @@ test("findData maps catalogue items and passes paging", async () => {
         capability: "works",
         name: "Works",
         description: "Papers",
+        category: "Research",
         creditsCost: 1,
         requiredOptions: ["search"],
         optionalOptions: ["page"],
         keyRequired: false,
         licence: "CC0 1.0",
+      },
+      {
+        provider: "npm",
+        capability: "package",
+        name: null,
+        description: null,
+        category: null,
+        creditsCost: null,
+        requiredOptions: [],
+        optionalOptions: [],
+        keyRequired: false,
+        licence: "",
       },
     ],
     total: 7,
@@ -676,8 +692,8 @@ setInterval(() => {}, 1000);
     chmodSync(file, 0o755);
     return file;
   };
-  // Finishes its work 200 ms after EOF, like a pending usage ping.
-  process.env.CRW_BINARY = make("polite", `setTimeout(() => { fs.writeFileSync(${JSON.stringify(marker)}, "1"); process.exit(0); }, 200);`);
+  // Finishes its work 1.5 s after EOF, like a usage ping crw-mcp waits up to 2 s for.
+  process.env.CRW_BINARY = make("polite", `setTimeout(() => { fs.writeFileSync(${JSON.stringify(marker)}, "1"); process.exit(0); }, 1500);`);
   mockFetch(CLIENT_REQUIRED, false, 409);
   const polite = new CrwClient({ apiKey: "crw_live_test" });
   await assert.rejects(() => polite.getData("depsdev", "package")); // `{}` is not a tool result
@@ -690,7 +706,7 @@ setInterval(() => {}, 1000);
   await assert.rejects(() => stubborn.getData("depsdev", "package"));
   const started = Date.now();
   await stubborn.close();
-  assert.ok(Date.now() - started < 2000);
+  assert.ok(Date.now() - started < 4000);
 });
 
 test("getData maps other API errors without spawning crw-mcp", async () => {

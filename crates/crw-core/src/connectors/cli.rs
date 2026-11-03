@@ -110,10 +110,19 @@ fn key_status(c: &Connector) -> &'static str {
     if c.auth.kind == "none" {
         return "not needed";
     }
-    match keys::load(&c.provider) {
+    key_status_for(c, keys::load(&c.provider))
+}
+
+/// [`key_status`] for a given stored entry, with the same origin and
+/// placement checks a call makes before it sends the key.
+fn key_status_for(c: &Connector, entry: Option<ConnectorEntry>) -> &'static str {
+    match entry {
         Some(e) if e.api_key.as_deref().is_some_and(|k| !k.trim().is_empty()) => {
-            let origins_ok = c.origins().iter().all(|o| e.origins.contains(o));
-            if origins_ok && e.auth.as_deref() == Some(c.auth.placement().as_str()) {
+            let origins_ok = c
+                .origins()
+                .iter()
+                .all(|o| url::Url::parse(o).is_ok_and(|u| e.approves_origin(&u.origin())));
+            if origins_ok && e.approves_placement(&c.auth.placement()) {
                 "stored"
             } else {
                 "stored, approve again"
@@ -403,6 +412,39 @@ mod tests {
             endpoint(None, None, no_url),
             (DEFAULT_CLOUD_API_URL.into(), Some("config-key".into()))
         );
+    }
+
+    #[test]
+    fn connectors_cli_key_status_compares_origins_like_a_call() {
+        let c = header_connector();
+        let entry = |origins: &[&str], auth: &str| {
+            Some(ConnectorEntry {
+                api_key: Some("k".into()),
+                origins: origins.iter().map(|o| o.to_string()).collect(),
+                auth: Some(auth.into()),
+            })
+        };
+        // Spelled differently, same origin: a call would send the key.
+        for origin in [
+            "https://register.fca.org.uk",
+            "https://register.fca.org.uk/",
+            "https://REGISTER.fca.org.uk:443",
+        ] {
+            assert_eq!(
+                key_status_for(&c, entry(&[origin], " header:X-Auth-Key ")),
+                "stored",
+                "{origin}"
+            );
+        }
+        assert_eq!(
+            key_status_for(&c, entry(&["https://other.example"], "header:X-Auth-Key")),
+            "stored, approve again"
+        );
+        assert_eq!(
+            key_status_for(&c, entry(&["https://register.fca.org.uk"], "header:Other")),
+            "stored, approve again"
+        );
+        assert_eq!(key_status_for(&c, None), "required, missing");
     }
 
     #[test]

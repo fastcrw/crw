@@ -617,6 +617,8 @@ export interface DataSource {
   capability: string;
   name: string | null;
   description: string | null;
+  /** The catalogue category, e.g. `Research`; `null` from an older server. */
+  category: string | null;
   creditsCost: number | null;
   requiredOptions: string[];
   optionalOptions: string[];
