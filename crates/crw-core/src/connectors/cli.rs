@@ -139,7 +139,7 @@ fn list(manifest: &Manifest) {
                 c.provider.clone(),
                 c.name.clone(),
                 key_status(c).to_string(),
-                c.licence.clone().unwrap_or_default(),
+                licence_cell(c.licence.as_deref().unwrap_or("")),
             ]
         })
         .collect();
@@ -172,6 +172,13 @@ fn list(manifest: &Manifest) {
             super::connectors_command()
         );
     }
+}
+
+/// A licence is often a paragraph; the table shows its start.
+const LICENCE_WIDTH: usize = 60;
+
+fn licence_cell(licence: &str) -> String {
+    console::truncate_str(licence.trim(), LICENCE_WIDTH, "...").into_owned()
 }
 
 /// Where the key goes, in words.
@@ -329,6 +336,24 @@ mod tests {
             "capabilities": []
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn connectors_cli_licence_cell_shows_the_start() {
+        // The docs' `connectors list` sample shows exactly these cells.
+        assert_eq!(
+            licence_cell(
+                "FRED provides data and data services to the public for non-commercial, educational, and personal uses subject to a few prohibitions."
+            ),
+            "FRED provides data and data services to the public for no..."
+        );
+        assert_eq!(
+            licence_cell(
+                "Open Library\u{2019}s APIs exist to support the open book ecosystem and human-centered discovery."
+            ),
+            "Open Library\u{2019}s APIs exist to support the open book ecosys..."
+        );
+        assert_eq!(licence_cell("CC0 1.0"), "CC0 1.0");
     }
 
     #[test]

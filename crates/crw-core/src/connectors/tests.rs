@@ -388,6 +388,34 @@ async fn connectors_route_manifest_unavailable_forwards_nothing() {
 }
 
 #[tokio::test]
+async fn connectors_find_on_an_api_without_data_sources_is_unavailable() {
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/find"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    let err = call_data_tool("crw_find_data", json!({}), &ctx)
+        .await
+        .unwrap_err();
+    assert!(err.starts_with("[data_sources_unavailable]"), "{err}");
+
+    // A 404 that names its code keeps it.
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/find"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+            "errorCode": "unknown_data_source", "error": "No such category."
+        })))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    let err = call_data_tool("crw_find_data", json!({}), &ctx)
+        .await
+        .unwrap_err();
+    assert_eq!(err, "[unknown_data_source] No such category.");
+}
+
+#[tokio::test]
 async fn connectors_route_manifest_auth_and_rate_limit_errors_keep_their_codes() {
     let cases = [
         (ResponseTemplate::new(401), "[unauthorized]", "CRW_API_KEY"),
