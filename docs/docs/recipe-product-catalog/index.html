@@ -120,6 +120,20 @@ print(page["links"])              # list[str]: every absolute URL on the page, n
 print(page["metadata"]["title"])  # str
 # Run with: python3 scrape.py
 </code></pre>
+    <p>Signature: <code>scrape(url, formats=None, only_main_content=None, include_tags=None,
+      exclude_tags=None, *, render_js=None, renderer=None, wait_for=None, json_schema=None,
+      **kwargs) -&gt; dict</code>. Extra keyword arguments such as <code>css_selector</code>
+      are passed to the API as they are.</p>
+    <h3 id="sdk-list">Titles and URLs from a list page, in one call</h3>
+    <p><code>css_selector</code> keeps only the matching elements, so the markdown is just
+      their links as <code>[title](url)</code>, in page order. No exploratory scrape needed.</p>
+<pre><code class="language-python">import json, re
+from crw import CrwClient
+
+page = CrwClient().scrape("https://news.ycombinator.com", formats=["markdown"], css_selector=".titleline > a")
+pairs = re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", page["markdown"])  # [(title, url), ...]
+print(json.dumps([{"rank": i, "title": t, "url": u} for i, (t, u) in enumerate(pairs[:5], 1)], indent=2))
+</code></pre>
 <pre><code class="language-ts">// npm install crw-sdk
 import { CrwClient } from "crw-sdk";
 const crw = new CrwClient(); // reads CRW_API_KEY
