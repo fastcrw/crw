@@ -142,7 +142,7 @@ Errors come back as a tool error (`isError: true`) whose text starts with a code
 | `blocked` | A safety rule stopped a request, or a redirect hop, before crw sent it (redirect to another origin, private address, too many redirects) | Nothing to fix locally; report it if it persists |
 | `upstream_error` | The source answered with an error status or could not be reached | Check the options; try again. If the source refused your stored key, store it again |
 | `upstream_timeout` | The source did not answer within 20 seconds | Try again |
-| `upstream_rate_limited` | The source is limiting requests from your machine | Wait and try again |
+| `upstream_rate_limited` | The source is limiting requests (from your machine, or from fastCRW for a source that runs there) | Wait and try again |
 | `invalid_response` | The source answered with something other than JSON, or over 8 MiB | Try again; narrow the options |
 | `result_too_large` | The result is over 256 KiB. For a source that runs on fastCRW, the call is refunded, so it costs nothing | Narrow the options |
 | `client_execution_required` | Hosted MCP only: the source runs on your machine | `npx -y crw-mcp install --api-key <your fastCRW API key>` |
