@@ -84,7 +84,7 @@ Returns: `{ "status": "scraping|completed|failed", "data": [...] }`
 
 ### crw_search
 
-Search the web for current information, news, facts, or docs. Use whenever the answer may depend on up-to-date or external information. Returns ranked results (url/title/description/snippet); optionally scrape each result inline. Always available in proxy/cloud mode; in embedded mode only when a search backend is configured.
+Search the web and return ranked results (url/title/description/snippet); optionally scrape each result inline. Always available in proxy/cloud mode; in embedded mode only when a search backend is configured.
 
 Parameters:
 - `query` (required) — The search query
