@@ -406,6 +406,12 @@ console.log(body.data.links);</code></pre></div><div class="code-tab-panel" data
 <td>After the sitemap phase, run a short-budget BFS crawl to fill gaps. Set to <code>false</code> for sitemap-only mode (faster on sites with rich sitemaps, but may miss pages the sitemap omits)</td>
 </tr>
 <tr>
+<td><code>filterByPath</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td>When the URL has a path, return only URLs under it (<code>/docs/api</code> keeps <code>/docs/api/*</code>). A root URL is never scoped. Set <code>false</code> to map the whole site from a deep URL</td>
+</tr>
+<tr>
 <td><code>timeout</code></td>
 <td>number</td>
 <td><code>120</code></td>

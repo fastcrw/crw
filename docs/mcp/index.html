@@ -651,6 +651,12 @@ codex mcp add crw -- npx crw-mcp</code></pre>
 <td>Max chars for content fields; <code>0</code> = unlimited (default: ~15 000)</td>
 </tr>
 <tr>
+<td><code>startIndex</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Char offset to resume a truncated result: a truncated field ends with a marker naming the <code>startIndex</code> that continues it. Each call fetches the page again (or reuses a cached fetch), so a page that renders differently between calls can shift the offset</td>
+</tr>
+<tr>
 <td><code>maxAge</code></td>
 <td>integer</td>
 <td>no</td>
