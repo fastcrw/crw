@@ -530,6 +530,131 @@ async fn connectors_route_copy_from_before_a_long_sleep_is_refetched() {
     assert_eq!(hits(&server, "/v1/data/manifest").await, 2);
 }
 
+fn with_extra_capability(server: &MockServer) -> Value {
+    let mut conn = connector(server, "openalex");
+    conn["capabilities"].as_array_mut().unwrap().push(
+        json!({"capability": "extra", "pathTemplate": "/up/extra/{id}", "forwardParams": []}),
+    );
+    conn
+}
+
+async fn get_extra(ctx: &DataToolContext) -> Result<Value, String> {
+    call_data_tool(
+        "crw_get_data",
+        json!({"provider": "openalex", "capability": "extra", "options": {"id": "X"}}),
+        ctx,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn connectors_route_capability_added_after_the_copy_runs_here() {
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(manifest_body(vec![connector(&server, "openalex")]))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    mount_manifest(&server, vec![with_extra_capability(&server)]).await;
+    Mock::given(path("/up/extra/X"))
+        .respond_with(json_ok(json!({"extra": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    ctx.manifest().await.unwrap();
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    let out = get_extra(&ctx).await.unwrap();
+    assert_eq!(out["data"]["extra"], true);
+    assert_eq!(hits(&server, "/v1/data/manifest").await, 2);
+    assert_eq!(
+        hits(&server, "/v1/data/openalex/extra").await,
+        0,
+        "ran here"
+    );
+}
+
+#[tokio::test]
+async fn connectors_route_missing_capability_refetches_at_most_once_a_minute() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![connector(&server, "openalex")]).await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    for _ in 0..3 {
+        let err = get_extra(&ctx).await.unwrap_err();
+        assert!(err.starts_with("[unknown_data_source]"), "{err}");
+    }
+    assert_eq!(
+        hits(&server, "/v1/data/manifest").await,
+        1,
+        "the copy is under a minute old"
+    );
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    for _ in 0..3 {
+        let err = get_extra(&ctx).await.unwrap_err();
+        assert!(err.starts_with("[unknown_data_source]"), "{err}");
+    }
+    assert_eq!(
+        hits(&server, "/v1/data/manifest").await,
+        2,
+        "one refetch for the minute"
+    );
+    assert_eq!(
+        hits(&server, "/v1/data/openalex/extra").await,
+        0,
+        "never forwarded"
+    );
+}
+
+/// A raw API that answers the manifest (no connectors) and gives every other
+/// request `forward_reply` and then hangs up: "" closes with no answer at all.
+async fn raw_api(forward_reply: &'static str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 8192];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let reply = if buf[..n].starts_with(b"GET /v1/data/manifest") {
+                    let body = r#"{"schemaVersion":1,"connectors":[]}"#;
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                } else {
+                    forward_reply.to_string()
+                };
+                let _ = sock.write_all(reply.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            });
+        }
+    });
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn connectors_route_forward_send_failure_is_unreachable() {
+    let ctx = DataToolContext::for_tests(&raw_api("").await, false, vec![]);
+    let err = get(&ctx, "npm", json!({})).await.unwrap_err();
+    assert_eq!(
+        err,
+        "[server_unreachable] The fastCRW API could not be reached. Try again."
+    );
+}
+
+#[tokio::test]
+async fn connectors_route_forward_dropped_body_is_unreachable() {
+    // Headers promise 1000 bytes; the connection closes after a few.
+    let cut = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 1000\r\nconnection: close\r\n\r\n{\"success\":tr";
+    let ctx = DataToolContext::for_tests(&raw_api(cut).await, false, vec![]);
+    let err = get(&ctx, "npm", json!({})).await.unwrap_err();
+    assert_eq!(
+        err,
+        "[server_unreachable] The connection to the fastCRW API dropped before the answer arrived. Try again."
+    );
+}
+
 #[tokio::test]
 async fn connectors_route_rejects_bad_slugs_and_options() {
     let ctx = DataToolContext::for_tests("http://127.0.0.1:9", false, vec![]);
@@ -1422,6 +1547,12 @@ async fn connectors_find_error_is_a_bracketed_line() {
         .await
         .unwrap_err();
     assert_eq!(err, "[unauthorized] Invalid API key");
-    let req = &server.received_requests().await.unwrap()[0];
+    // By path, not position: a pooled mock server can also hold a late request
+    // from an earlier test.
+    let received = server.received_requests().await.unwrap();
+    let req = received
+        .iter()
+        .find(|r| r.url.path() == "/v1/data/find")
+        .expect("the find request");
     assert_eq!(req.url.query(), Some("limit=10&offset=0"));
 }

@@ -408,7 +408,17 @@ async fn get_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String> 
         return Err("[invalid_options] options must be an object".into());
     }
 
-    let manifest = ctx.manifest().await?;
+    let mut manifest = ctx.manifest().await?;
+    if manifest
+        .connector(provider)
+        .is_some_and(|c| c.capability(capability).is_none())
+    {
+        // A capability enabled after this copy was cached: look again, at most
+        // once a minute. If the refetch fails, the cached copy answers.
+        if let Ok(fresh) = ctx.load_manifest(RECHECK_AFTER).await {
+            manifest = fresh;
+        }
+    }
     if let Some(connector) = manifest.connector(provider) {
         return ctx.run_local(connector, capability, &options).await;
     }
