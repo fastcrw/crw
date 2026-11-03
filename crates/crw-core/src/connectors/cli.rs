@@ -136,8 +136,8 @@ fn list(manifest: &Manifest) {
         .iter()
         .map(|c| {
             [
-                c.provider.clone(),
-                c.name.clone(),
+                shown(&c.provider),
+                shown(&c.name),
                 key_status(c).to_string(),
                 licence_cell(c.licence.as_deref().unwrap_or("")),
             ]
@@ -178,12 +178,19 @@ fn list(manifest: &Manifest) {
 const LICENCE_WIDTH: usize = 60;
 
 fn licence_cell(licence: &str) -> String {
-    console::truncate_str(licence.trim(), LICENCE_WIDTH, "...").into_owned()
+    console::truncate_str(shown(licence).trim(), LICENCE_WIDTH, "...").into_owned()
+}
+
+/// Manifest text as it may reach a terminal: control characters (escape
+/// sequences, carriage returns) removed, so a definition cannot rewrite what
+/// the approval screen shows.
+fn shown(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control()).collect()
 }
 
 /// Where the key goes, in words.
 fn placement_text(c: &Connector) -> String {
-    let param = c.auth.param.as_deref().unwrap_or("").trim();
+    let param = shown(c.auth.param.as_deref().unwrap_or("").trim());
     match c.auth.kind.as_str() {
         "query" => format!("as the query parameter \"{param}\""),
         "header" => format!(
@@ -235,19 +242,20 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
             super::connectors_command()
         ));
     };
+    let name = shown(&connector.name);
     if connector.auth.kind == "none" {
-        eprintln!("{} needs no key. Nothing stored.", connector.name);
+        eprintln!("{name} needs no key. Nothing stored.");
         return Ok(());
     }
 
     let origins = connector.origins();
-    eprintln!("{}: the key will be sent only to", connector.name);
+    eprintln!("{name}: the key will be sent only to");
     for origin in &origins {
         eprintln!("  {origin}");
     }
     eprintln!("{}.", placement_text(connector));
     if let Some(help) = &connector.key_help_url {
-        eprintln!("Get a key: {help}");
+        eprintln!("Get a key: {}", shown(help));
     }
 
     let interactive = std::io::stdin().is_terminal();
@@ -267,12 +275,9 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
     }
 
     let prompt = if connector.auth.kind == "header" {
-        format!(
-            "API key for {} (or a JSON object of headers)",
-            connector.name
-        )
+        format!("API key for {name} (or a JSON object of headers)")
     } else {
-        format!("API key for {}", connector.name)
+        format!("API key for {name}")
     };
     let key = if interactive {
         Password::with_theme(&ColorfulTheme::default())
@@ -304,8 +309,7 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
         ..Default::default()
     })?;
     eprintln!(
-        "Stored the key for {} in {}. Agents can use it right away.",
-        connector.name,
+        "Stored the key for {name} in {}. Agents can use it right away.",
         path.display()
     );
     if std::env::var_os(format!(
@@ -336,6 +340,17 @@ mod tests {
             "capabilities": []
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn connectors_cli_strips_control_characters_from_manifest_text() {
+        assert_eq!(shown("FCA\u{1b}[2K\rRegister\u{7}"), "FCA[2KRegister");
+        assert_eq!(licence_cell("CC0\u{1b}]0;x\u{7} 1.0"), "CC0]0;x 1.0");
+        let mut c = header_connector();
+        c.auth.param = Some("X-Key\u{1b}[1A".into());
+        let text = placement_text(&c);
+        assert!(!text.chars().any(char::is_control), "{text:?}");
+        assert!(text.contains("\"X-Key[1A\" header"), "{text}");
     }
 
     #[test]

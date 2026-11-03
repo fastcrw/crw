@@ -122,6 +122,7 @@ switches to subprocess mode automatically.
 | Batch scrape | `batch_scrape(urls, ...)` | `batchScrape(urls, opts?)` | HTTP only |
 | Feature-detect | `capabilities()` | `capabilities()` | HTTP only |
 | Change diff | `change_tracking_diff(...)` | `changeTrackingDiff(...)` | HTTP only |
+| Data sources | `find_data(query, ...)` / `get_data(provider, capability, options)` | `findData(opts?)` / `getData(provider, capability, options?)` | HTTP only |
 | Shutdown | `close()` | `close()` | — |
 
 ¹ Local mode requires `[search].search_backend_url` configured on the engine; the
@@ -405,7 +406,9 @@ import { CrwError, CrwApiError, CrwBinaryNotFoundError, CrwTimeoutError } from "
 | `CrwTimeoutError` | `CrwError` | Crawl / extract / batch job exceeded the `timeout` limit |
 
 `CrwApiError` carries an optional `status_code` (Python) / `statusCode` (TS)
-integer with the HTTP status code of the failing response.
+integer with the HTTP status code of the failing response, and an optional
+`error_code` (Python) / `errorCode` (TS) with the body's `errorCode`, or the
+bracketed code of an MCP tool error.
 
 ---
 
@@ -489,6 +492,7 @@ try {
 | `batch_scrape` / `batchScrape` | yes | no |
 | `capabilities` | yes | no |
 | `change_tracking_diff` / `changeTrackingDiff` | yes | no |
+| `find_data` / `findData`, `get_data` / `getData` | yes | no |
 
 HTTP-only methods raise `CrwError` (not a subclass) when called in local mode with
 a message that explains why and how to switch mode.

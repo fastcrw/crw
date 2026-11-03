@@ -35,7 +35,9 @@ impl Manifest {
     }
 }
 
+// Serialize only so the fixture test can check every field round-trips.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct Connector {
     pub provider: String,
@@ -61,6 +63,7 @@ pub struct Connector {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct AuthSpec {
     #[serde(rename = "type")]
     pub kind: String,
@@ -85,6 +88,7 @@ impl AuthSpec {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, derive(serde::Serialize))]
 #[serde(rename_all = "camelCase")]
 pub struct Capability {
     pub capability: String,
@@ -400,6 +404,15 @@ mod tests {
             .map(|c| (c.provider.as_str(), c.capabilities.len()))
             .collect();
         assert_eq!(got, want, "a connector the cloud renders was dropped");
+        // Every field the cloud sends is one this client reads, under the same
+        // name: a renamed field would parse to its default and differ here.
+        for (c, entry) in m
+            .connectors
+            .iter()
+            .zip(raw["connectors"].as_array().unwrap())
+        {
+            assert_eq!(&serde_json::to_value(c).unwrap(), entry, "{}", c.provider);
+        }
         for c in &m.connectors {
             assert_eq!(c.reject_reason(Guard::default()), None, "{}", c.provider);
         }

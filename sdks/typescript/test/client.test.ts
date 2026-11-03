@@ -711,6 +711,22 @@ test("getData rejects a provider or capability that is not a slug", async () => 
   assert.equal(calls.length, 0);
 });
 
+test("getData refuses object and array options like the other clients", async () => {
+  const calls = mockFetch({ success: true });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  for (const bad of [{ a: 1 }, ["x", "y"]]) {
+    // Typed callers cannot pass these; untyped JS can.
+    const options = { filter: bad } as unknown as Record<string, string>;
+    await assert.rejects(
+      () => c.getData("openalex", "works", options),
+      (err: unknown) =>
+        err instanceof CrwError &&
+        err.message === '[invalid_options] Option "filter" must be a string, number or boolean',
+    );
+  }
+  assert.equal(calls.length, 0);
+});
+
 test("data methods need the API in CRW_LOCAL mode", async () => {
   process.env.CRW_LOCAL = "1";
   const c = new CrwClient();

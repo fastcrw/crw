@@ -483,7 +483,12 @@ export class CrwClient {
     }
     const q = new URLSearchParams();
     for (const [key, value] of Object.entries(options)) {
-      if (value !== null && value !== undefined) q.set(key, String(value));
+      if (value === null || value === undefined) continue;
+      // Same rule as the Python SDK, both MCPs and the API: scalars only.
+      if (!["string", "number", "boolean"].includes(typeof value)) {
+        throw new CrwError(`[invalid_options] Option "${key}" must be a string, number or boolean`);
+      }
+      q.set(key, String(value));
     }
     const qs = q.toString();
     const path = `/v1/data/${provider}/${capability}${qs ? `?${qs}` : ""}`;
