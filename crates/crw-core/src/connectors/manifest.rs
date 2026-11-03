@@ -268,21 +268,25 @@ fn fresh(at: Instant, wall: SystemTime, now_wall: SystemTime, limit: Duration) -
 impl ManifestCache {
     /// The cached manifest if it was fetched within `max_age` (capped at
     /// [`MAX_AGE`]), else a fresh fetch. A failed fetch keeps the cached copy
-    /// for later calls but never returns it here; for `max_age` after that
-    /// failure an unexpired copy answers without a new fetch. An expired copy
-    /// is never used.
+    /// for later calls but never returns it here. With `reuse_after_failure`,
+    /// for `max_age` after a failed fetch an unexpired copy answers without a
+    /// new one; a caller that must not act on an older copy than it asked for
+    /// passes `false` and gets the fetch or its error. An expired copy is
+    /// never used.
     pub(crate) async fn get(
         &self,
         http: &reqwest::Client,
         api_url: &str,
         api_key: Option<&str>,
         max_age: Duration,
+        reuse_after_failure: bool,
         guard: Guard,
     ) -> Result<Arc<Manifest>, String> {
         let mut slot = self.slot.lock().await;
         let now_wall = SystemTime::now();
         if let Some((manifest, at, wall)) = slot.copy.as_ref() {
-            let recent_failure = slot.failed_at.is_some_and(|t| t.elapsed() < max_age);
+            let recent_failure =
+                reuse_after_failure && slot.failed_at.is_some_and(|t| t.elapsed() < max_age);
             if fresh(*at, *wall, now_wall, max_age.min(MAX_AGE))
                 || (recent_failure && fresh(*at, *wall, now_wall, MAX_AGE))
             {

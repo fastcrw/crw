@@ -7,13 +7,16 @@
 //! sees one tool and one result shape either way.
 //!
 //! `crw_get_data` routing:
-//! - provider in the (unexpired) manifest: run here;
+//! - provider in the (unexpired) manifest: run here; if it lacks the
+//!   capability, refetch first (at most once a minute, a failed refetch
+//!   included; the cached copy answers when the refetch fails);
 //! - not in it: forward to `GET {api}/v1/data/<p>/<c>`;
 //! - the API answers 409 `client_execution_required` (the provider moved since
-//!   our fetch): refetch the manifest (unless the copy is under a minute old)
-//!   and run here if it is there now; if it is still missing, this crw
-//!   rejected it, so the answer is `[connector_misconfigured]` with an upgrade
-//!   hint;
+//!   our fetch): refetch the manifest (unless the copy is under a minute old;
+//!   a recent failed refetch does not count, and a failing refetch is the
+//!   answer) and run here if it is there now; if it is still missing, this
+//!   crw rejected it, so the answer is `[connector_misconfigured]` with an
+//!   upgrade hint;
 //! - no usable manifest: forward nothing, answer `[data_sources_unavailable]`.
 
 #[cfg(feature = "cli")]
@@ -153,17 +156,23 @@ impl DataToolContext {
     /// The current manifest: cached up to an hour, refetched after that, and
     /// never an expired copy.
     pub async fn manifest(&self) -> Result<Arc<Manifest>, String> {
-        self.load_manifest(manifest::MAX_AGE).await
+        self.load_manifest(manifest::MAX_AGE, false).await
     }
 
-    /// The cached manifest if it is younger than `max_age`, else a fresh one.
-    async fn load_manifest(&self, max_age: Duration) -> Result<Arc<Manifest>, String> {
+    /// The cached manifest if it is younger than `max_age`, else a fresh one;
+    /// `reuse_after_failure` as in [`ManifestCache::get`].
+    async fn load_manifest(
+        &self,
+        max_age: Duration,
+        reuse_after_failure: bool,
+    ) -> Result<Arc<Manifest>, String> {
         self.manifest
             .get(
                 &self.server,
                 &self.api_url,
                 self.api_key.as_deref(),
                 max_age,
+                reuse_after_failure,
                 self.http.guard(),
             )
             .await
@@ -415,7 +424,7 @@ async fn get_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String> 
     {
         // A capability enabled after this copy was cached: look again, at most
         // once a minute. If the refetch fails, the cached copy answers.
-        if let Ok(fresh) = ctx.load_manifest(RECHECK_AFTER).await {
+        if let Ok(fresh) = ctx.load_manifest(RECHECK_AFTER, true).await {
             manifest = fresh;
         }
     }
@@ -425,7 +434,10 @@ async fn get_data(args: &Value, ctx: &DataToolContext) -> Result<Value, String> 
     match ctx.forward(provider, capability, &options).await {
         Forwarded::Done(result) => result,
         Forwarded::ClientRequired => {
-            let fresh = ctx.load_manifest(RECHECK_AFTER).await?;
+            // A real fetch, never the copy a recent failed refetch left behind:
+            // that copy is what made us forward, and it would turn the
+            // server's answer into a wrong "upgrade crw".
+            let fresh = ctx.load_manifest(RECHECK_AFTER, false).await?;
             match fresh.connector(provider) {
                 Some(connector) => ctx.run_local(connector, capability, &options).await,
                 // The server runs it here, but this crw dropped it from the

@@ -669,6 +669,80 @@ async fn connectors_route_failed_recheck_is_throttled_too() {
 }
 
 #[tokio::test]
+async fn connectors_route_409_after_a_failed_recheck_fetches_for_real() {
+    // Copy 1 has openalex without "extra"; the recheck for "extra" fails; then
+    // "npm", missing from copy 1, answers 409 because it moved here since.
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(manifest_body(vec![connector(&server, "openalex")]))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    let mut npm = connector(&server, "npm");
+    npm["capabilities"][0]["pathTemplate"] = json!("/up/npm/{id}");
+    mount_manifest(&server, vec![connector(&server, "openalex"), npm]).await;
+    Mock::given(path("/v1/data/npm/works"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "success": false, "errorCode": "client_execution_required",
+            "error": "[client_execution_required] runs locally"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(path("/up/npm/R"))
+        .respond_with(json_ok(json!({"name": "react"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    ctx.manifest().await.unwrap();
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    get_extra(&ctx).await.unwrap_err(); // the failed refetch
+    assert_eq!(hits(&server, "/v1/data/manifest").await, 2);
+
+    let out = get(&ctx, "npm", json!({"id": "R"})).await.unwrap();
+    assert_eq!(out["data"]["name"], "react");
+    assert_eq!(
+        hits(&server, "/v1/data/manifest").await,
+        3,
+        "the 409 fetched for real"
+    );
+}
+
+#[tokio::test]
+async fn connectors_route_409_with_a_failing_refetch_returns_the_fetch_error() {
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(manifest_body(vec![connector(&server, "openalex")]))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/npm/works"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+            "success": false, "errorCode": "client_execution_required",
+            "error": "[client_execution_required] runs locally"
+        })))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    ctx.manifest().await.unwrap();
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    get_extra(&ctx).await.unwrap_err(); // a failed refetch is recorded
+    let err = get(&ctx, "npm", json!({})).await.unwrap_err();
+    assert!(err.starts_with("[data_sources_unavailable]"), "{err}");
+    assert!(!err.contains("connector_misconfigured"), "{err}");
+}
+
+#[tokio::test]
 async fn connectors_route_forward_send_failure_is_unreachable() {
     let ctx = DataToolContext::for_tests(&raw_api("").await, false, vec![]);
     let err = get(&ctx, "npm", json!({})).await.unwrap_err();
