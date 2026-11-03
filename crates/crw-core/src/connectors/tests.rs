@@ -634,6 +634,41 @@ async fn raw_api(forward_reply: &'static str) -> String {
 }
 
 #[tokio::test]
+async fn connectors_route_failed_recheck_is_throttled_too() {
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(manifest_body(vec![connector(&server, "openalex")]))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    // The API is down after that.
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    ctx.manifest().await.unwrap();
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    for _ in 0..3 {
+        // The cached copy answers; the failed refetch is not repeated.
+        let err = get_extra(&ctx).await.unwrap_err();
+        assert!(err.starts_with("[unknown_data_source]"), "{err}");
+    }
+    assert_eq!(
+        hits(&server, "/v1/data/manifest").await,
+        2,
+        "one failed refetch"
+    );
+    ctx.manifest.age_by(RECHECK_AFTER).await;
+    get_extra(&ctx).await.unwrap_err();
+    assert_eq!(
+        hits(&server, "/v1/data/manifest").await,
+        3,
+        "a minute later, one more"
+    );
+}
+
+#[tokio::test]
 async fn connectors_route_forward_send_failure_is_unreachable() {
     let ctx = DataToolContext::for_tests(&raw_api("").await, false, vec![]);
     let err = get(&ctx, "npm", json!({})).await.unwrap_err();

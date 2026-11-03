@@ -71,6 +71,8 @@ The managed cloud adds these `errorCode` values on top of the engine's own. Self
 | `insufficient_credits` | 402 | The credit balance cannot cover the request: FREE lifetime credits used up, or a paid plan's included and top-up credits used up. Carries the `X-FASTCRW-Credits-Available`, `X-FASTCRW-Included-Remaining`, `X-FASTCRW-Purchased-Remaining` and `X-FASTCRW-Upgrade-Url` headers, plus `X-FASTCRW-Stop-Reason` when an enabled auto-recharge could not run. No `Retry-After`. Not sent on the legacy `/v2` surface, which answers `429` instead. |
 | `llm_not_available` | 402 | A managed-LLM feature (search `answer` / `summarizeResults`, `/v1/extract`) was requested on the FREE plan. The `/v1/crawl` LLM formats gate sends the same code with HTTP `403`. |
 
+Data source calls (`/v1/data/*`, `crw_find_data`, `crw_get_data`, and the SDKs' `findData` / `getData`) send their own codes, such as `client_execution_required`, `unknown_data_source`, `upstream_error`, `upstream_timeout`, `upstream_rate_limited`, `invalid_response` and `result_too_large`. The SDKs pass them on as `errorCode` (`error_code` in Python). The full list, with what to do about each, is in the Errors section of [Data Sources](/data-sources).
+
 ## Common warnings
 
 | Warning | When it appears |

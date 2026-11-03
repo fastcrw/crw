@@ -709,6 +709,21 @@ setInterval(() => {}, 1000);
   assert.ok(Date.now() - started < 4000);
 });
 
+test("a 200 with success:false keeps the body's errorCode, JSON and multipart alike", async () => {
+  mockFetch({ success: false, error: "[upstream_error] down", errorCode: "upstream_error" });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  const fails = (err: unknown) =>
+    err instanceof CrwApiError && err.errorCode === "upstream_error" && err.statusCode === 200;
+  await assert.rejects(() => c.scrape("https://example.com"), fails);
+  await assert.rejects(() => c.parseFile(new Uint8Array([37, 80, 68, 70])), fails);
+  // A non-string errorCode is not passed on.
+  mockFetch({ success: false, error: "x", errorCode: 7 });
+  await assert.rejects(
+    () => c.scrape("https://example.com"),
+    (err: unknown) => err instanceof CrwApiError && err.errorCode === undefined,
+  );
+});
+
 test("getData maps other API errors without spawning crw-mcp", async () => {
   process.env.CRW_BINARY = join(tmpdir(), "crw-no-such-binary");
   mockFetch({ success: false, error: "Insufficient credits" }, false, 402);
