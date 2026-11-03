@@ -893,3 +893,61 @@ fn structural_rung_backs_out_when_it_would_delete_the_page() {
         md.len()
     );
 }
+
+// A list page narrowed with include_tags is all links by design. The markdown
+// must keep them as [text](url). The matched inline spans land on one markdown
+// line, so a single title holding a boilerplate word ("filter") marked the whole
+// candidate as boilerplate, the quality ladder swapped in the plaintext
+// candidate, and every link was dropped.
+#[test]
+fn include_tags_list_page_keeps_links_in_markdown() {
+    let rows: String = (1..=30)
+        .map(|i| {
+            let topic = if i == 7 { "filter" } else { "tool" };
+            format!(
+                "<tr><td><span class=\"titleline\"><a href=\"https://site{i}.example/post\">Story{i} explains how team{i} rebuilt project{i} with a new {topic}{i}</a><span class=\"sitebit comhead\"> (<a href=\"from?site=site{i}.example\"><span class=\"sitestr\">site{i}.example</span></a>)</span></span></td></tr>"
+            )
+        })
+        .collect();
+    let html = format!(
+        "<html><head><title>List</title></head><body><table>{rows}</table><footer>Footer text</footer></body></html>"
+    );
+    let include = [".titleline".to_string()];
+    let data = crw_extract::extract(ExtractOptions {
+        raw_html: &html,
+        content_type: None,
+        source_url: "https://list.example/",
+        status_code: 200,
+        rendered_with: None,
+        elapsed_ms: 100,
+        render_decision: None,
+        credit_cost: 0,
+        warnings: Vec::new(),
+        formats: &[OutputFormat::Markdown],
+        only_main_content: true,
+        include_tags: &include,
+        exclude_tags: &[],
+        css_selector: None,
+        xpath: None,
+        chunk_strategy: None,
+        query: None,
+        filter_mode: None,
+        top_k: None,
+        domain_selectors: None,
+        captured_responses: &[],
+        llm_fallback: None,
+        debug: false,
+        debug_sink: None,
+        normalize_tables: false,
+    })
+    .unwrap();
+    let md = data.markdown.unwrap_or_default();
+    for i in [1, 7, 30] {
+        let link = format!("](https://site{i}.example/post)");
+        assert!(md.contains(&link), "missing {link} in {md:?}");
+    }
+    assert!(
+        !md.contains("Footer text"),
+        "include_tags must still narrow: {md:?}"
+    );
+}

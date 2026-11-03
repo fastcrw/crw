@@ -526,7 +526,9 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
         (
             content_html,
             cleaned_ref,
-            selected_html.is_some(),
+            // include_tags is an explicit narrowing too: its output is short and
+            // link-heavy by design, so the quality ladder must not replace it.
+            selected_html.is_some() || !include_tags.is_empty(),
             include_tags_no_match,
         )
     };
