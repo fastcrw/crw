@@ -43,7 +43,7 @@ The agent calls both tools the same way whatever the source. Where a call runs i
 A source that runs on your machine is called under its own terms, so read them before relying on it; `provenance.licence` and `attributionText` say what applies to the data.
 
 :::note
-The hosted MCP endpoint (`https://fastcrw.com/mcp`, used by claude.ai on the web and ChatGPT) cannot run a source on your machine. It lists those sources with `requiresLocalInstall: true` and answers a call with `[client_execution_required]`. Install the local server to use them: `npx -y crw-mcp install --api-key <your fastCRW API key>` (Claude Code, Cursor, Codex, Claude Desktop). The data tools need cloud mode, so pass your key; without one the local server runs in embedded mode and has no data tools.
+The hosted MCP endpoint (`https://fastcrw.com/mcp`, used by claude.ai on the web and ChatGPT) cannot run a source on your machine. It lists those sources with `requiresLocalInstall: true` and answers a call with `[client_execution_required]`. Install the local server to use them: `npx -y crw-mcp install --api-key <your fastCRW API key>` (Claude Code, Cursor, Codex, Windsurf, Gemini CLI, OpenCode; for Claude Desktop, add the cloud-mode config from [MCP Client Setup](/mcp-clients)). The data tools need cloud mode, so pass your key; without one the local server runs in embedded mode and has no data tools.
 :::
 
 ## Store your own key

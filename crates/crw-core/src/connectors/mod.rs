@@ -274,12 +274,19 @@ impl DataToolContext {
         };
         let status = resp.status().as_u16();
         let retry_after = manifest::retry_after_secs(resp.headers());
-        let body: Value = resp
-            .text()
-            .await
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or(Value::Null);
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::debug!(
+                    "data answer unreadable: {}",
+                    crate::error::reqwest_message(e)
+                );
+                return Forwarded::Done(Err(
+                    "[server_unreachable] The connection to the fastCRW API dropped before the answer arrived. Try again.".into(),
+                ));
+            }
+        };
+        let body: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
         if status == 409
             && body.get("errorCode").and_then(Value::as_str) == Some("client_execution_required")
         {
