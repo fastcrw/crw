@@ -18,17 +18,17 @@ pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
 /// Server-level usage guidance returned in the `initialize` result's optional
 /// `instructions` field (MCP InitializeResult). Clients surface this to the model
-/// as "how to use this server", so it is the single sanctioned lever for steering
-/// an agent to reach for these tools on web-shaped tasks. Kept factual (states the
-/// tools' real capability + when they apply) — NOT a "always use instead of X"
-/// directive, which reviewers and hosts penalize. Sits outside `tools/list`, so it
-/// does not count against the tools/list token budget.
-pub const SERVER_INSTRUCTIONS: &str = "fastCRW gives you live web access. Prefer these tools whenever a task needs information from the internet rather than answering from memory: crw_search for web search and current or real-time facts, crw_scrape to read a specific URL as clean markdown, crw_map to discover a site's URLs, crw_crawl to gather many pages across a site, and crw_extract to pull structured data from pages. When the user asks about recent, live, or source-specific information, reach for these instead of guessing.";
+/// as "how to use this server". It states only what each tool does. Directory
+/// reviews (Claude connectors, ChatGPT apps) reject text that steers the model
+/// toward these tools ("prefer", "whenever", "instead of guessing"), so keep it
+/// descriptive. Sits outside `tools/list`, so it does not count against the
+/// tools/list token budget.
+pub const SERVER_INSTRUCTIONS: &str = "fastCRW reads public web pages and searches the web. crw_search returns ranked web results, crw_scrape reads one URL as clean markdown, crw_map lists the URLs a site publishes, crw_crawl reads a bounded set of pages under one URL (poll crw_check_crawl_status), and crw_extract returns structured JSON from pages against a prompt or schema. Every result carries its source URL.";
 
 /// Variant used when no search backend is configured. `tools/list` strips
 /// `crw_search` in that case, so the default instructions would name a tool the
 /// client can never call — the two surfaces must agree.
-pub const SERVER_INSTRUCTIONS_NO_SEARCH: &str = "fastCRW gives you live web access. Prefer these tools whenever a task needs information from the internet rather than answering from memory: crw_scrape to read a specific URL as clean markdown, crw_map to discover a site's URLs, crw_crawl to gather many pages across a site, and crw_extract to pull structured data from pages. When the user asks about recent, live, or source-specific information, reach for these instead of guessing.";
+pub const SERVER_INSTRUCTIONS_NO_SEARCH: &str = "fastCRW reads public web pages. crw_scrape reads one URL as clean markdown, crw_map lists the URLs a site publishes, crw_crawl reads a bounded set of pages under one URL (poll crw_check_crawl_status), and crw_extract returns structured JSON from pages against a prompt or schema. Every result carries its source URL.";
 
 /// The `instructions` string that matches the tool set actually advertised.
 pub fn server_instructions(search_available: bool) -> &'static str {
@@ -410,7 +410,7 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
     tools.push(json!({
         "name": "crw_search",
         "title": "Web search",
-        "description": "Search the web for current information, news, facts, or docs. Use whenever the answer may depend on up-to-date or external information. Returns ranked results (url/title/description/snippet); optionally scrape each result inline.",
+        "description": "Search the web and return ranked results (url/title/description/snippet); optionally scrape each result inline.",
         "annotations": {
             "readOnlyHint": true,
             "destructiveHint": false,
