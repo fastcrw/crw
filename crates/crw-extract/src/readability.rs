@@ -498,7 +498,9 @@ fn select_attr(doc: &Html, selector: &str, attr: &str) -> Option<String> {
     Selector::parse(selector)
         .ok()
         .and_then(|sel| doc.select(&sel).next())
-        .and_then(|el| el.value().attr(attr).map(|s| s.to_string()))
+        // Trimmed like a browser does for URL attributes: a template that wraps
+        // `href='\n  https://...\n  '` must not surface the padding (issue #664).
+        .and_then(|el| el.value().attr(attr).map(|s| s.trim().to_string()))
         .filter(|s| !s.is_empty())
 }
 
@@ -1201,6 +1203,19 @@ mod tests {
             r#"<html><head><link rel="canonical" href="/page/42"></head><body></body></html>"#;
         let meta = extract_metadata(html);
         assert_eq!(meta.canonical_url.as_deref(), Some("/page/42"));
+    }
+
+    /// Issue #664: a templated canonical href wrapped in newlines/indent.
+    #[test]
+    fn metadata_canonical_url_whitespace_is_trimmed() {
+        let html = "<html><head><link rel='canonical' href='\n          https://example.com/c/tvs\n        '>\
+                    <meta property=\"og:title\" content=\"  Padded  \"></head><body></body></html>";
+        let meta = extract_metadata(html);
+        assert_eq!(
+            meta.canonical_url.as_deref(),
+            Some("https://example.com/c/tvs")
+        );
+        assert_eq!(meta.og_title.as_deref(), Some("Padded"));
     }
 
     #[test]
