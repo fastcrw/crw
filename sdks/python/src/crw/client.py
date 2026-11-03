@@ -874,7 +874,7 @@ class CrwClient:
         Returns ``{"items": [...], "total": int, "nextOffset": int}``; pass
         ``offset=result["nextOffset"]`` for the next page (absent on the last).
         Each item has ``provider``, ``capability``, ``name``, ``description``,
-        ``creditsCost``, ``requiredOptions``, ``optionalOptions``,
+        ``category``, ``creditsCost``, ``requiredOptions``, ``optionalOptions``,
         ``keyRequired`` and ``licence``.
         """
         if not self._api_url:

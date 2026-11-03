@@ -439,7 +439,7 @@ impl Failure {
     fn message(&self, name: &str, redactor: &Redactor, set_key: Option<&str>) -> String {
         match self {
             Failure::Fetch(FetchError::Blocked(why)) => format!(
-                "[blocked] The request to {name} was refused before it left this machine ({}).",
+                "[blocked] crw refused a request to {name} before sending it ({}).",
                 redactor.apply(why)
             ),
             Failure::Fetch(FetchError::Timeout) => {

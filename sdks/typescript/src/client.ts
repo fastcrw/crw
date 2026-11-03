@@ -523,7 +523,8 @@ export class CrwClient {
 
   /**
    * Shut down any local subprocess (CRW_LOCAL engine or data-source proxy).
-   * Each gets up to a second to exit on its own; await it to know they are gone.
+   * Each gets up to three seconds to exit on its own (a data proxy may still be
+   * sending usage counts); await it to know they are gone.
    */
   async close(): Promise<void> {
     const local = this.local;
