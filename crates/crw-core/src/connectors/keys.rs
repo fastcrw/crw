@@ -42,6 +42,19 @@ impl std::fmt::Debug for ConnectorEntry {
 }
 
 impl ConnectorEntry {
+    /// Whether the user approved `origin` for this key. Compared as parsed
+    /// origins, so `https://a.example/` and `https://A.example:443` match.
+    pub(crate) fn approves_origin(&self, origin: &url::Origin) -> bool {
+        self.origins
+            .iter()
+            .any(|o| Url::parse(o).is_ok_and(|o| &o.origin() == origin))
+    }
+
+    /// Whether the user approved this placement (`query:api_key`, ...).
+    pub(crate) fn approves_placement(&self, placement: &str) -> bool {
+        self.auth.as_deref().map(str::trim) == Some(placement)
+    }
+
     fn key(&self) -> Option<&str> {
         self.api_key
             .as_deref()
@@ -137,19 +150,15 @@ pub(crate) fn bind(
             set_key_hint(slug)
         ));
     };
-    let Some(approved_auth) = entry.auth.as_deref().map(str::trim) else {
+    if entry.auth.is_none() {
         return Err(not_approved(connector, "has no approved auth placement"));
-    };
+    }
     if entry.origins.is_empty() {
         return Err(not_approved(connector, "has no approved origins"));
     }
     let origin = url.origin();
-    let origin_ok = entry
-        .origins
-        .iter()
-        .any(|o| Url::parse(o).is_ok_and(|o| o.origin() == origin));
     let placement = connector.auth.placement();
-    if !origin_ok || approved_auth != placement {
+    if !entry.approves_origin(&origin) || !entry.approves_placement(&placement) {
         return Err(not_approved(
             connector,
             &format!(

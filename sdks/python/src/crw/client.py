@@ -906,6 +906,7 @@ class CrwClient:
                     "capability": tool.get("capability"),
                     "name": tool.get("name"),
                     "description": tool.get("description"),
+                    "category": tool.get("category"),
                     "creditsCost": tool.get("creditsCost"),
                     "requiredOptions": list(options.get("required") or []),
                     "optionalOptions": list(options.get("optional") or []),

@@ -137,7 +137,7 @@ Errors come back as a tool error (`isError: true`) whose text starts with a code
 | `unknown_data_source` | No such source or capability | Call `crw_find_data` |
 | `connector_key_missing` | The source needs your own key | `npx -y crw-mcp connectors set-key <provider>` (or `crw connectors set-key <provider>`) |
 | `connector_origin_not_approved` | The stored key was approved for another origin or placement, or lacks one | Run `set-key` again to review and approve |
-| `connector_key_invalid` | The stored key has characters an HTTP header cannot carry | Store the key again |
+| `connector_key_invalid` | The stored key has characters an HTTP header cannot carry, or starts with `{` but is not a flat JSON object of non-empty strings (a hand-edited file or environment key) | Store the key again with `set-key` |
 | `connector_misconfigured` | The source definition is unusable right now, or this crw cannot run the source | Try again later; upgrade crw when the message says so |
 | `blocked` | A safety rule stopped the request before it left your machine (redirect to another origin, private address, too many redirects) | Nothing to fix locally; report it if it persists |
 | `upstream_error` | The source answered with an error status or could not be reached | Check the options; try again. If the source refused your stored key, store it again |

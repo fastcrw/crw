@@ -457,6 +457,7 @@ export class CrwClient {
         capability: t.capability as string,
         name: (t.name as string | undefined) ?? null,
         description: (t.description as string | undefined) ?? null,
+        category: (t.category as string | undefined) ?? null,
         creditsCost: (t.creditsCost as number | undefined) ?? null,
         requiredOptions: list(options.required),
         optionalOptions: list(options.optional),

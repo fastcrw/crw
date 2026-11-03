@@ -162,9 +162,10 @@ export class LocalTransport {
   /**
    * EOF first so the child can finish what it started (a proxy-mode data call
    * sends a usage ping after answering), then kill it if it is still up after
-   * `graceMs`. Resolves once it is gone; not awaiting it is fine.
+   * `graceMs`. Resolves once it is gone; not awaiting it is fine. The default
+   * is above crw-mcp's own 2 s wait for pings in flight.
    */
-  close(graceMs = 1000): Promise<void> {
+  close(graceMs = 3000): Promise<void> {
     const proc = this.proc;
     this.proc = null;
     if (!proc || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
