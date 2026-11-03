@@ -743,6 +743,10 @@ pub struct DiscoverOptions<'a> {
     /// still *reported* if we discovered it, because robots governs fetching,
     /// not listing.
     pub respect_robots: bool,
+    /// Keep only URLs under the seed's path when the seed has one (Firecrawl's
+    /// `filterByPath`, default on). A root seed is never scoped. Issue #663: a
+    /// section URL used to fill the cap from the site-wide sitemap.
+    pub filter_by_path: bool,
 }
 
 /// Result of [`discover_urls`]. URLs in `urls` have already passed the
@@ -837,6 +841,7 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
         max_urls,
         overall_deadline,
         respect_robots,
+        filter_by_path,
     } = opts;
     // `0` is the documented "unbounded" sentinel (MCP/Firecrawl) → the ceiling.
     let max_urls = if max_urls == 0 {
@@ -935,6 +940,9 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
         ));
     }
     let origin = parsed.origin().ascii_serialization();
+    let path_scope = filter_by_path
+        .then(|| crate::sitemap::path_scope_of(&parsed))
+        .flatten();
 
     // robots/sitemap egress must match page egress: prefer the config rotator
     // (proxy_list), then the legacy single `proxy`. Fail closed on a bad proxy —
@@ -1136,6 +1144,7 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
                     per_host_max_concurrent as usize,
                     escalator.as_ref(),
                     sitemap_deadline,
+                    path_scope.as_deref(),
                 ),
             )
             .await
@@ -1303,6 +1312,10 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
                     // non-default-port target (e.g. https://example.com:8443) doesn't
                     // reject its own same-origin links.
                     if link_url.origin().ascii_serialization() != origin {
+                        continue;
+                    }
+                    // Out of scope: neither listed nor followed (Firecrawl's filterByPath).
+                    if !crate::sitemap::in_path_scope(link_url.as_str(), path_scope.as_deref()) {
                         continue;
                     }
                     let Some(normalized) = filter_parsed(

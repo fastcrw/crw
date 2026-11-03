@@ -62,6 +62,7 @@ fn opts<'a>(
         max_urls: 100,
         overall_deadline,
         respect_robots,
+        filter_by_path: true,
     }
 }
 
@@ -417,4 +418,83 @@ async fn disabled_robots_policy_keeps_sitemap_metadata_best_effort() {
     options.max_depth = 0;
     let result = discover_urls(options).await.unwrap();
     assert!(result.urls.iter().any(|url| url == &uri));
+}
+
+/// Issue #663: a section URL fills the result from the site-wide sitemap. The
+/// shape is a shop: one sitemap listing unrelated collections first, a section
+/// page that links to its sub-collections and to unrelated nav.
+async fn mount_shop(server: &MockServer) {
+    let base = server.uri();
+    Mock::given(method("GET"))
+        .and(path("/robots.txt"))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(server)
+        .await;
+    let mut locs = String::new();
+    for i in 0..30 {
+        locs.push_str(&format!("<url><loc>{base}/collections/aaa-{i}</loc></url>"));
+    }
+    locs.push_str(&format!(
+        "<url><loc>{base}/collections/tvs/cheap-tvs-32-and-below</loc></url>"
+    ));
+    Mock::given(method("GET"))
+        .and(path("/sitemap.xml"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(format!(
+            r#"<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{locs}</urlset>"#
+        )))
+        .mount(server)
+        .await;
+    let section = r#"<a href="/collections/tvs/cheap-tvs/oled">oled</a>
+        <a href="/collections/pets">pets</a><a href="/products/tv-1">tv</a>"#;
+    Mock::given(method("GET"))
+        .and(path("/collections/tvs/cheap-tvs/"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(section))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn filter_by_path_scopes_sitemap_and_page_links_to_the_seed_path() {
+    let server = MockServer::start().await;
+    mount_shop(&server).await;
+    let r = renderer().await;
+    let seed = format!("{}/collections/tvs/cheap-tvs/", server.uri());
+    let mut o = opts(&seed, &r, Instant::now() + Duration::from_secs(20), false);
+    o.max_urls = 5;
+    let result = discover_urls(o).await.expect("discovery succeeds");
+    let paths: Vec<String> = result
+        .urls
+        .iter()
+        .map(|u| url::Url::parse(u).unwrap().path().to_string())
+        .collect();
+    assert!(
+        paths
+            .iter()
+            .all(|p| p.starts_with("/collections/tvs/cheap-tvs")),
+        "only in-scope URLs: {paths:?}"
+    );
+    assert!(
+        paths.contains(&"/collections/tvs/cheap-tvs-32-and-below".to_string()),
+        "the in-scope sitemap entry is not crowded out by the cap: {paths:?}"
+    );
+    assert!(
+        paths.contains(&"/collections/tvs/cheap-tvs/oled".to_string()),
+        "the in-scope page link is listed: {paths:?}"
+    );
+}
+
+#[tokio::test]
+async fn filter_by_path_off_maps_the_whole_site() {
+    let server = MockServer::start().await;
+    mount_shop(&server).await;
+    let r = renderer().await;
+    let seed = format!("{}/collections/tvs/cheap-tvs/", server.uri());
+    let mut o = opts(&seed, &r, Instant::now() + Duration::from_secs(20), false);
+    o.filter_by_path = false;
+    let result = discover_urls(o).await.expect("discovery succeeds");
+    assert!(
+        result.urls.iter().any(|u| u.contains("/collections/aaa-")),
+        "site-wide sitemap entries come back: {:?}",
+        result.urls
+    );
 }

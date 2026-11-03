@@ -57,6 +57,7 @@ fn opts<'a>(
         max_urls: 100,
         overall_deadline,
         respect_robots,
+        filter_by_path: true,
     }
 }
 

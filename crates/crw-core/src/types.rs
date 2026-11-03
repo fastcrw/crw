@@ -4634,6 +4634,11 @@ pub struct MapRequest {
     /// Raise it to dump large/nested sitemaps (e.g. songsterr's ~4.3M URLs).
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Keep only URLs under the seed URL's path, e.g. `/docs/api` keeps
+    /// `/docs/api/*` (default true; a root URL is never scoped). `false` maps
+    /// the whole site.
+    #[serde(default = "default_true")]
+    pub filter_by_path: bool,
 }
 
 /// POST /v1/map response data — the discovered links plus filter stats.

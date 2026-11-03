@@ -67,6 +67,11 @@ pub struct MapArgs {
     /// Per-page timeout in milliseconds
     #[arg(long, default_value = "15000")]
     pub timeout: u64,
+
+    /// Map the whole site even when the URL has a path (by default only URLs
+    /// under that path are returned)
+    #[arg(long)]
+    pub no_filter_by_path: bool,
 }
 
 pub async fn run(mut args: MapArgs) -> Result<(), CmdError> {
@@ -158,6 +163,7 @@ pub async fn run(mut args: MapArgs) -> Result<(), CmdError> {
             CLI_MAP_TIMEOUT_SECS,
         )),
         respect_robots: true,
+        filter_by_path: !args.no_filter_by_path,
     };
 
     let result = match discover_urls(opts).await {
