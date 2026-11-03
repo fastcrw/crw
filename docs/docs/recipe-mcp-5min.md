@@ -22,7 +22,7 @@ Claude Code writes this into your project `.claude/mcp.json` automatically. You 
 
 > **What you get:** `crw_scrape`, `crw_crawl`, `crw_check_crawl_status`, `crw_map`, `crw_extract`, `crw_check_extract_status`, `crw_cancel_extract`, `crw_parse_file`. `crw_search` requires a search backend — use cloud mode to get it instantly.
 
-### Option B: Cloud mode (all 9 tools, including `crw_search`)
+### Option B: Cloud mode (all 11 tools, including `crw_search`)
 
 Get a free API key at [fastcrw.com](https://fastcrw.com): 500 credits to start, and up to 500 more from onboarding tasks, no monthly reset.
 
@@ -33,7 +33,7 @@ claude mcp add crw \
   -- npx -y crw-mcp
 ```
 
-This registers the same `crw-mcp` binary in proxy mode. Tool calls are forwarded to `api.fastcrw.com`. All 9 tools are advertised, including `crw_search`.
+This registers the same `crw-mcp` binary in proxy mode. Tool calls are forwarded to `api.fastcrw.com`. All 11 tools are advertised, including `crw_search` and the data source tools `crw_find_data` and `crw_get_data`.
 
 **Verify it works:**
 
@@ -189,7 +189,7 @@ Claude now has 5 live search results with titles, URLs, and descriptions. It pic
 
 ## Tool reference (MCP)
 
-All 9 tools registered by `crw-mcp`:
+All 11 tools registered by `crw-mcp` in cloud mode (embedded mode has the first 9):
 
 | Tool | Required params | Returns |
 |------|-----------------|---------|
@@ -202,6 +202,8 @@ All 9 tools registered by `crw-mcp`:
 | `crw_check_extract_status` | `id` | `{ status, results: [{url, status, data, error, llmUsage}] }` |
 | `crw_cancel_extract` | `id` | `{ success, id, status, results, creditsUsed, tokensUsed }` |
 | `crw_parse_file` | `contentBase64` | `{ success, data: { markdown } }` |
+| `crw_find_data` | none (`query`, `category`, `provider` optional) | `{ items: [{provider, capability, requiredOptions, optionalOptions, creditsCost}], total }` |
+| `crw_get_data` | `provider`, `capability` | `{ provider, capability, creditsUsed, provenance, data }` |
 
 **Key points:**
 

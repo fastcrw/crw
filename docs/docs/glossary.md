@@ -48,7 +48,7 @@ A credit is the billing unit for the hosted cloud at `fastcrw.com`, worth $0.001
 
 ## MCP (Model Context Protocol)
 
-Model Context Protocol is an open standard that lets AI assistants (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, and others) discover and call external tools through a uniform interface. fastCRW ships a built-in MCP server (`crw-mcp`) that exposes 9 tools: `crw_scrape`, `crw_crawl`, `crw_check_crawl_status`, `crw_map`, `crw_extract`, `crw_check_extract_status`, `crw_cancel_extract`, `crw_search`, and `crw_parse_file`. In embedded mode the MCP binary runs the scraping engine inline — no separate server needed. In proxy mode it forwards calls to a remote CRW server (the hosted cloud or your own self-hosted instance). See [MCP Server](/docs/mcp) for setup and [MCP Client Setup](/docs/mcp-clients) for host-specific config snippets.
+Model Context Protocol is an open standard that lets AI assistants (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, and others) discover and call external tools through a uniform interface. fastCRW ships a built-in MCP server (`crw-mcp`) that exposes 9 tools: `crw_scrape`, `crw_crawl`, `crw_check_crawl_status`, `crw_map`, `crw_extract`, `crw_check_extract_status`, `crw_cancel_extract`, `crw_search`, and `crw_parse_file`, plus `crw_find_data` and `crw_get_data` in proxy mode (11 tools). In embedded mode the MCP binary runs the scraping engine inline, so no separate server is needed. In proxy mode it forwards calls to a remote CRW server (the hosted cloud or your own self-hosted instance). See [MCP Server](/docs/mcp) for setup and [MCP Client Setup](/docs/mcp-clients) for host-specific config snippets.
 
 ---
 

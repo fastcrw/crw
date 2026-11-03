@@ -38,7 +38,7 @@ Embedded local mode (`crw-mcp`) exposes up to 9 tools:
 - `crw_parse_file` — parse a local PDF (base64) to markdown, no OCR (always present)
 - `crw_search` — only advertised when a search backend is configured; hidden otherwise
 
-fastcrw.com cloud mode exposes all 9 tools:
+fastcrw.com cloud mode exposes all 11 tools:
 
 - `crw_scrape`
 - `crw_crawl`
@@ -49,8 +49,7 @@ fastcrw.com cloud mode exposes all 9 tools:
 - `crw_cancel_extract`
 - `crw_parse_file`
 - `crw_search` — always available (managed search backend)
-
-Cloud mode also adds `crw_find_data` and `crw_get_data` for structured data sources; see [Data Sources](#data-sources).
+- `crw_find_data` and `crw_get_data` for structured data sources; see [Data Sources](/data-sources)
 
 Browser automation mode (`crw-browse`, separate server — v0.4.0+) exposes:
 
@@ -58,7 +57,7 @@ Browser automation mode (`crw-browse`, separate server — v0.4.0+) exposes:
 - `tree` — accessibility snapshot of the current page
 
 :::tip
-If you only remember one rule, remember this one: local embedded mode is the easiest setup (up to 9 tools, with `crw_search` appearing automatically when a search backend is configured), and fastcrw.com cloud mode is the easiest way to get all 9 tools including always-on web search.
+If you only remember one rule, remember this one: local embedded mode is the easiest setup (up to 9 tools, with `crw_search` appearing automatically when a search backend is configured), and fastcrw.com cloud mode is the easiest way to get all 11 tools including always-on web search and data sources.
 :::
 
 ## Claude Code
@@ -239,7 +238,7 @@ Edit `~/.codeium/windsurf/mcp_config.json`.
 ```
 
 :::note
-Windsurf has a total MCP tool limit. CRW stays lightweight: local embedded mode exposes up to 9 tools (`crw_search` is hidden unless a search backend is configured), and cloud mode always exposes all 9 tools.
+Windsurf has a total MCP tool limit. CRW stays lightweight: local embedded mode exposes up to 9 tools (`crw_search` is hidden unless a search backend is configured), and cloud mode always exposes all 11 tools.
 :::
 
 ## Cline

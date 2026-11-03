@@ -1,6 +1,6 @@
 # MCP Server for AI Agents
 
-CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant — Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI — 9 web scraping tools (8 on a self-host with no search backend configured, since `crw_search` is hidden in that case). Turn any AI coding agent into a web scraper with a single command.
+CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools (8 on a self-host with no search backend configured, since `crw_search` is hidden in that case). In proxy mode, including fastcrw.com cloud, it adds `crw_find_data` and `crw_get_data` (structured [data sources](/data-sources)) for 11 tools. Turn any AI coding agent into a web scraper with a single command.
 
 > Also available on the [MCP Registry](https://registry.modelcontextprotocol.io/?q=crw)
 
@@ -11,7 +11,7 @@ CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-c
 | Mode | When | Tools | Description |
 |------|------|-------|-------------|
 | **Embedded** (default) | `CRW_LOCAL` truthy, or no API URL resolved | scrape, crawl, check_crawl_status, map, extract, check_extract_status, cancel_extract, parse_file + **search** (when a search backend is configured) | Self-contained. No server needed. The scraping engine runs inside the MCP process. `crw_search` is advertised only when a search backend is configured (e.g. the Docker compose sidecar). |
-| **Proxy / Server** | `CRW_LOCAL` unset or falsy, and an API URL resolved | scrape, crawl, check_crawl_status, map, extract, check_extract_status, cancel_extract, parse_file, search | Forwards tool calls to a remote CRW server: the [fastcrw.com](https://fastcrw.com) cloud **or your own self-hosted server**. `crw_search` is always advertised in proxy mode; it works whenever the server has a search backend configured (the Docker stack enables it by default). |
+| **Proxy / Server** | `CRW_LOCAL` unset or falsy, and an API URL resolved | scrape, crawl, check_crawl_status, map, extract, check_extract_status, cancel_extract, parse_file, search, find_data, get_data | Forwards tool calls to a remote CRW server: the [fastcrw.com](https://fastcrw.com) cloud **or your own self-hosted server**. `crw_search` is always advertised in proxy mode; it works whenever the server has a search backend configured (the Docker stack enables it by default). `crw_find_data` and `crw_get_data` are listed too; a self-hosted server has no data sources, so they answer `[data_sources_unavailable]` there. |
 
 An API URL resolves from `--api-url`, `CRW_API_URL`, `CRW_CLIENT__API_URL`, or
 `client.api_url` in `~/.config/crw/config.toml`, which is where `crw setup`
@@ -182,6 +182,8 @@ This yields a ~4.2 MB binary (vs ~17 MB for the default embedded build) because 
 | `crw_cancel_extract` | Idempotently cancel extract and return canonical status | `DELETE /v1/extract/:id` | All modes |
 | `crw_search` | Search the web → titles, URLs, descriptions | `POST /v1/search` | Always in proxy mode; embedded only when a search backend is configured |
 | `crw_parse_file` | Parse a local PDF (base64) → markdown | `POST /firecrawl/v2/parse` (multipart) | All modes |
+| `crw_find_data` | Find structured data sources → provider, capability, options | `GET /v1/data/find` | Proxy mode only; a self-hosted server answers `[data_sources_unavailable]` |
+| `crw_get_data` | Call one data source capability → JSON with provenance | `GET /v1/data/<provider>/<capability>` | Proxy mode only; a self-hosted server answers `[data_sources_unavailable]`. See [Data Sources](/data-sources) |
 
 > **Output bounding:** Tool results are bounded by default to keep agent context small. Content fields (markdown/html/etc.) are truncated to ~15 000 chars — including page content inlined into `crw_search` results via `scrapeOptions` — and `crw_map` returns at most 100 URLs plus at most 100 sitemaps, bounded independently. Truncated responses include `truncated: true`, plus `totalDiscovered` when the link list was cut and `totalSitemaps` when the sitemap list was. Pass `maxLength: 0` (scrape / check_status / parse_file) or `limit: 0` (map) to opt out. `crw_search` does not *advertise* `maxLength`, so an agent will not discover it, but bounding is applied per-tool from the call's own arguments — a hand-written client may still pass `maxLength: 0` on a search to opt out, or a smaller value to tighten it.
 
