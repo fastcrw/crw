@@ -53,6 +53,7 @@ Parameters:
 - `waitFor` — Milliseconds to wait after page load before capturing
 - `renderer` — Renderer override (e.g. `"chrome"`)
 - `maxLength` — Truncate output to this many chars. `0` = unbounded. Default: ~15 000
+- `startIndex`: resume a truncated result at this char offset (the truncation marker names it)
 
 ### crw_crawl
 

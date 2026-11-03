@@ -197,7 +197,11 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                     "maxLength": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "Max chars per content field; 0 = unbounded (default ~15000)"
+                        "description": "Max chars per field; 0 = unbounded (default 15000)"
+                    },
+                    "startIndex": {
+                        "type": "integer",
+                        "description": "Char offset to resume from"
                     },
                     "renderer": {
                         "type": "string",
@@ -766,26 +770,92 @@ fn resolve_bound(args: &Value, key: &str, default: usize) -> Option<usize> {
     }
 }
 
-/// Truncate a string to at most `max_chars` characters on a char boundary,
-/// appending a visible marker. Returns `None` if no truncation was needed.
+/// Byte offset of the `n`-th char of `s`, or `None` when `s` has `n` chars or fewer.
+fn char_byte(s: &str, n: usize) -> Option<usize> {
+    s.char_indices().nth(n).map(|(b, _)| b)
+}
+
+/// Byte offset at which to cut `s` so it keeps at most `max_chars` chars, or
+/// `None` when it already fits. Prefers a paragraph break, then a line break,
+/// then a space, provided it keeps at least half the window: a hard cut used to
+/// split words and table rows mid-cell (issue #661).
+fn cut_at(s: &str, max_chars: usize) -> Option<usize> {
+    let hard = char_byte(s, max_chars)?;
+    let window = &s[..hard];
+    let half = max_chars / 2;
+    let soft = [
+        window.rfind("\n\n"),
+        window.rfind('\n'),
+        window.rfind(char::is_whitespace),
+    ];
+    Some(
+        soft.into_iter()
+            .flatten()
+            // `*b > 0`: an empty chunk would hand back a cursor that never moves.
+            .find(|b| *b > 0 && window[..*b].chars().count() >= half)
+            .unwrap_or(hard),
+    )
+}
+
+/// Window a content field: skip its first `start` chars, then bound the rest to
+/// `max` chars. The marker states which chars were kept, and with `resume` the
+/// `startIndex` that continues. Returns `None` when the field is untouched.
+fn window_text(s: &str, start: usize, max: Option<usize>, resume: bool) -> Option<String> {
+    let rest = if start == 0 {
+        s
+    } else {
+        match char_byte(s, start) {
+            Some(b) => &s[b..],
+            None => {
+                let total = s.chars().count();
+                return Some(format!(
+                    "…[crw-mcp startIndex {start} is past the end: {total} chars]"
+                ));
+            }
+        }
+    };
+    let Some(b) = max.and_then(|m| cut_at(rest, m)) else {
+        return (start > 0).then(|| rest.to_string());
+    };
+    let end = start + rest[..b].chars().count();
+    let total = start + rest.chars().count();
+    let hint = if resume {
+        format!("; startIndex={end} continues")
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "{}\n…[truncated by crw-mcp maxLength: chars {start}-{end} of {total}{hint}]",
+        &rest[..b]
+    ))
+}
+
+/// Truncate a string to at most `max_chars` characters, appending a visible
+/// marker. Returns `None` if no truncation was needed.
+#[cfg(test)]
 fn truncate_to_chars(s: &str, max_chars: usize) -> Option<String> {
-    // `nth(max_chars)` yields the (max_chars+1)-th char; its byte offset is where
-    // we cut to keep exactly `max_chars` chars. Absent → string is short enough.
-    s.char_indices()
-        .nth(max_chars)
-        .map(|(byte_idx, _)| format!("{}\n…[truncated by crw-mcp maxLength]", &s[..byte_idx]))
+    window_text(s, 0, Some(max_chars), false)
 }
 
 /// Truncate the known large text fields of one serialized `ScrapeData` object,
 /// tagging it with `truncated: true` if anything was cut. Non-recursive.
 fn truncate_scrape_obj(value: &mut Value, max: usize) {
+    window_scrape_obj(value, 0, Some(max), false);
+}
+
+/// [`truncate_scrape_obj`] plus `startIndex` for `crw_scrape`. The offset applies
+/// to the page-content fields only: `summary` is a short LLM answer, not a slice
+/// of the page, so it is bounded but never skipped into.
+fn window_scrape_obj(value: &mut Value, start: usize, max: Option<usize>, resume: bool) {
     let Some(obj) = value.as_object_mut() else {
         return;
     };
     let mut any = false;
     for field in SCRAPE_TEXT_FIELDS {
+        let page = *field != "summary";
         let cut = match obj.get(*field) {
-            Some(Value::String(s)) => truncate_to_chars(s, max),
+            Some(Value::String(s)) if page => window_text(s, start, max, resume),
+            Some(Value::String(s)) => window_text(s, 0, max, false),
             _ => None,
         };
         if let Some(t) = cut {
@@ -902,10 +972,18 @@ fn bound_search_results(value: &mut Value, max: usize) {
 pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
     match tool_name {
         "crw_scrape" | "crw_parse_file" => {
-            if let Some(max) = resolve_bound(args, "maxLength", DEFAULT_MAX_LENGTH)
-                && let Some(target) = scrape_target_mut(&mut value)
-            {
-                truncate_scrape_obj(target, max);
+            // `startIndex` resumes a truncated scrape (issue #661). It is honoured
+            // even with `maxLength: 0`. Not on `crw_parse_file`: resuming there
+            // would mean re-sending the whole base64 upload.
+            let resume = tool_name == "crw_scrape";
+            let start = if resume {
+                args.get("startIndex").and_then(Value::as_u64).unwrap_or(0) as usize
+            } else {
+                0
+            };
+            let max = resolve_bound(args, "maxLength", DEFAULT_MAX_LENGTH);
+            if let Some(target) = scrape_target_mut(&mut value) {
+                window_scrape_obj(target, start, max, resume);
             }
         }
         "crw_check_crawl_status" => {
@@ -954,6 +1032,7 @@ pub fn strip_mcp_only_args(tool_name: &str, mut args: Value) -> Value {
         match tool_name {
             "crw_scrape" | "crw_parse_file" | "crw_check_crawl_status" | "crw_search" => {
                 obj.remove("maxLength");
+                obj.remove("startIndex");
             }
             _ => {}
         }
@@ -1408,7 +1487,7 @@ mod tests {
         let out = apply_bounds("crw_scrape", &json!({}), value);
         let md = out["markdown"].as_str().unwrap();
         assert!(
-            md.chars().count() <= DEFAULT_MAX_LENGTH + 40,
+            md.chars().count() <= DEFAULT_MAX_LENGTH + 100,
             "truncated to ~cap + marker"
         );
         assert!(md.contains("[truncated"), "marker present");
@@ -2993,7 +3072,113 @@ mod tests {
         let s = "x".repeat(11);
         let out = truncate_to_chars(&s, 10).expect("should truncate");
         assert!(out.starts_with(&"x".repeat(10)));
-        assert!(out.contains("[truncated by crw-mcp maxLength]"));
+        assert!(out.contains("[truncated by crw-mcp maxLength: chars 0-10 of 11]"));
+    }
+
+    /// Issue #661: cut on a block boundary, never mid-word or mid-table-row.
+    #[test]
+    fn truncate_prefers_paragraph_then_line_then_space() {
+        let s = "intro para\n\n| Refresh Rate | 60Hz |\n| HDR | yes |";
+        let out = truncate_to_chars(s, 40).unwrap();
+        assert!(
+            out.starts_with("intro para\n\n| Refresh Rate | 60Hz |\n…"),
+            "{out}"
+        );
+        let out = truncate_to_chars("alpha beta gamma delta", 15).unwrap();
+        assert!(out.starts_with("alpha beta\n…"), "{out}");
+    }
+
+    #[test]
+    fn truncate_hard_cuts_when_the_only_boundary_loses_half_the_window() {
+        let s = format!("a\n\n{}", "x".repeat(50));
+        let out = truncate_to_chars(&s, 20).unwrap();
+        assert!(
+            out.starts_with(&format!("a\n\n{}\n…", "x".repeat(17))),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn scrape_start_index_resumes_where_the_marker_points() {
+        let md = "one two three four five six seven eight nine ten";
+        let args = json!({ "maxLength": 20 });
+        let first = apply_bounds("crw_scrape", &args, json!({ "markdown": md }));
+        let first = first["markdown"].as_str().unwrap();
+        assert!(first.starts_with("one two three four\n…"), "{first}");
+        assert!(
+            first.contains("chars 0-18 of 48; startIndex=18 continues]"),
+            "{first}"
+        );
+        let args = json!({ "maxLength": 20, "startIndex": 18 });
+        let next = apply_bounds("crw_scrape", &args, json!({ "markdown": md }));
+        let next = next["markdown"].as_str().unwrap();
+        assert!(next.starts_with(" five six seven\n…"), "{next}");
+        assert!(
+            next.contains("chars 18-33 of 48; startIndex=33 continues]"),
+            "{next}"
+        );
+    }
+
+    #[test]
+    fn scrape_start_index_applies_with_unbounded_max_length() {
+        let args = json!({ "maxLength": 0, "startIndex": 4 });
+        let out = apply_bounds(
+            "crw_scrape",
+            &args,
+            json!({ "markdown": "one two", "summary": "s" }),
+        );
+        assert_eq!(out["markdown"], json!("two"));
+        assert_eq!(out["summary"], json!("s"), "summary is never skipped into");
+        assert_eq!(out["truncated"], json!(true));
+    }
+
+    #[test]
+    fn scrape_start_index_always_advances_even_at_max_length_one() {
+        let mut start = 0;
+        let mut seen = String::new();
+        for _ in 0..3 {
+            let args = json!({ "maxLength": 1, "startIndex": start });
+            let out = apply_bounds("crw_scrape", &args, json!({ "markdown": "a b" }));
+            let md = out["markdown"].as_str().unwrap().to_string();
+            seen.push_str(md.split("\n…").next().unwrap());
+            match md.split("startIndex=").nth(1) {
+                Some(rest) => start = rest.split(' ').next().unwrap().parse().unwrap(),
+                None => break,
+            }
+        }
+        assert_eq!(seen, "a b");
+    }
+
+    #[test]
+    fn summary_marker_never_offers_a_start_index() {
+        let args = json!({ "maxLength": 5 });
+        let out = apply_bounds(
+            "crw_scrape",
+            &args,
+            json!({ "summary": "a long llm summary" }),
+        );
+        let s = out["summary"].as_str().unwrap();
+        assert!(s.contains("[truncated by crw-mcp maxLength"), "{s}");
+        assert!(!s.contains("startIndex"), "{s}");
+    }
+
+    #[test]
+    fn scrape_start_index_past_the_end_says_so() {
+        let args = json!({ "startIndex": 99 });
+        let out = apply_bounds("crw_scrape", &args, json!({ "markdown": "short" }));
+        assert_eq!(
+            out["markdown"],
+            json!("…[crw-mcp startIndex 99 is past the end: 5 chars]")
+        );
+    }
+
+    #[test]
+    fn start_index_is_ignored_outside_crw_scrape_and_is_stripped() {
+        let args = json!({ "maxLength": 0, "startIndex": 4 });
+        let out = apply_bounds("crw_parse_file", &args, json!({ "markdown": "one two" }));
+        assert_eq!(out["markdown"], json!("one two"));
+        let stripped = strip_mcp_only_args("crw_scrape", json!({ "url": "u", "startIndex": 9 }));
+        assert!(stripped.get("startIndex").is_none());
     }
 
     #[test]
