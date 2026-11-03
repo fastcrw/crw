@@ -128,6 +128,7 @@ curl -X POST https://api.fastcrw.com/v1/map \
 | `maxDepth` | number | `2` | Maximum discovery depth |
 | `useSitemap` | boolean | `true` | Read sitemap.xml hints when available |
 | `crawlFallback` | boolean | `true` | After the sitemap phase, run a short-budget BFS crawl to fill gaps. Set to `false` for sitemap-only mode (faster on sites with rich sitemaps, but may miss pages the sitemap omits) |
+| `filterByPath` | boolean | `true` | When the URL has a path, return only URLs under it (`/docs/api` keeps `/docs/api/*`). A root URL is never scoped. Set `false` to map the whole site from a deep URL |
 | `timeout` | number | `120` | Custom timeout in seconds |
 | `ignoreQueryParameters` | boolean | `null` | Coarse filter switch. `true` strips every non-preserved query param; `false` disables all URL filtering (raw URLs) |
 | `stripTrackingParams` | boolean | `null` | Strip known tracking query params (UTM, fbclid, etc.) from discovered URLs. `null` uses the server default |

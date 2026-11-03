@@ -99,6 +99,7 @@ async fn bfs_returns_at_its_deadline_when_a_page_overruns_its_budget() {
         max_urls: 100,
         overall_deadline: deadline,
         respect_robots: true,
+        filter_by_path: true,
     })
     .await
     .expect("partial results, not an error");

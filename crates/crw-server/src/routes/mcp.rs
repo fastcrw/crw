@@ -156,6 +156,7 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
                     std::time::Duration::from_secs(MCP_MAP_TIMEOUT_SECS),
                 ),
                 respect_robots: state.config.crawler.respect_robots_txt,
+                filter_by_path: req.filter_by_path,
             })
             .await
             .map_err(|e| format!("{e}"))?;

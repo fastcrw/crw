@@ -37,10 +37,17 @@ pub struct V2MapRequest {
     /// v2 `timeout` is milliseconds.
     #[serde(default)]
     pub timeout: Option<u64>,
+    /// Firecrawl `filterByPath`: keep only URLs under the seed's path (default true).
+    #[serde(default = "default_true")]
+    pub filter_by_path: bool,
 }
 
 fn default_sitemap() -> String {
     "include".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn apply_text_filters(
@@ -118,6 +125,7 @@ pub async fn map(
         // letting the backstop drop the future and lose every discovered URL.
         overall_deadline: crw_crawl::crawl::discovery_deadline(Duration::from_secs(timeout_secs)),
         respect_robots: state.config.crawler.respect_robots_txt,
+        filter_by_path: req.filter_by_path,
     });
 
     let result = match tokio::time::timeout(Duration::from_secs(timeout_secs), fut).await {

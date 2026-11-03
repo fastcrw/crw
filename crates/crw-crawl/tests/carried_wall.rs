@@ -189,6 +189,7 @@ fn discover_opts<'a>(
         max_urls: 100,
         overall_deadline: std::time::Instant::now() + std::time::Duration::from_secs(60),
         respect_robots: false,
+        filter_by_path: true,
     }
 }
 

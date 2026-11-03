@@ -409,6 +409,10 @@ pub struct SitemapWalk {
 /// and page URLs to prevent the engine from being abused as a sitemap-fetch
 /// proxy (a crafted index could otherwise point us at arbitrary public hosts).
 ///
+/// `path_scope` keeps only page URLs under that path (see [`path_scope_of`]).
+/// It is applied here, before the `max_urls` cap, so a scoped map fills the cap
+/// with in-scope URLs instead of filling it site-wide and filtering after.
+///
 /// Each BFS level is fetched in parallel via `buffer_unordered(max_concurrency)`
 /// — sequential fetching of a 10-child WordPress index would otherwise add
 /// roughly 9× latency to discovery, but unbounded `join_all` would also burst
@@ -425,6 +429,7 @@ pub async fn fetch_sitemap_tree(
     max_concurrency: usize,
     escalator: Option<&SitemapEscalator<'_>>,
     deadline: Option<std::time::Instant>,
+    path_scope: Option<&str>,
 ) -> SitemapWalk {
     use futures::stream::{self, StreamExt};
     use std::collections::HashSet;
@@ -539,7 +544,7 @@ pub async fn fetch_sitemap_tree(
             for it in page_lists.iter_mut() {
                 let Some(page) = it.next() else { continue };
                 progressed = true;
-                if same_site(&page, &target_key) {
+                if same_site(&page, &target_key) && in_path_scope(&page, path_scope) {
                     all_pages.insert(page);
                     if all_pages.len() >= max_urls {
                         break 'fill;
@@ -573,6 +578,22 @@ pub async fn fetch_sitemap_tree(
         pages: all_pages.into_iter().collect(),
         sitemaps: found_sitemaps,
     }
+}
+
+/// The path a `/map` is scoped to when `filterByPath` is on: the seed's path
+/// without its trailing slash, or `None` for a root seed (nothing to scope).
+/// `/blog/` and `/blog` scope the same, because `normalize_url` drops the slash
+/// from discovered URLs.
+pub fn path_scope_of(seed: &url::Url) -> Option<String> {
+    let path = seed.path().trim_end_matches('/');
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+/// Whether `url` sits under `scope`, compared on the parsed (percent-encoded)
+/// path like Firecrawl's `pathname.startsWith`. Case-sensitive, and a plain
+/// prefix: `/tvs` also keeps `/tvs-4k`. No scope keeps everything.
+pub fn in_path_scope(url: &str, scope: Option<&str>) -> bool {
+    scope.is_none_or(|p| url::Url::parse(url).is_ok_and(|u| u.path().starts_with(p)))
 }
 
 /// Site identity for sitemap scoping: the lowercased host with a single leading
@@ -840,6 +861,7 @@ mod tests {
             8,
             None,
             None,
+            None,
         )
         .await
         .pages;
@@ -901,6 +923,7 @@ mod tests {
             8,
             None,
             None,
+            None,
         )
         .await;
 
@@ -955,6 +978,7 @@ mod tests {
             8,
             None,
             None,
+            None,
         )
         .await;
 
@@ -1005,6 +1029,7 @@ mod tests {
             8,
             None,
             None,
+            None,
         )
         .await
         .pages;
@@ -1050,6 +1075,7 @@ mod tests {
             25,
             5000,
             8,
+            None,
             None,
             None,
         )
@@ -1108,9 +1134,20 @@ mod tests {
         let seeds = vec![format!("{}/sitemap.xml", mock.uri())];
 
         // Without an escalator the challenge is dropped → empty.
-        let none = fetch_sitemap_tree(seeds.clone(), &target, &client, 3, 25, 5000, 8, None, None)
-            .await
-            .pages;
+        let none = fetch_sitemap_tree(
+            seeds.clone(),
+            &target,
+            &client,
+            3,
+            25,
+            5000,
+            8,
+            None,
+            None,
+            None,
+        )
+        .await
+        .pages;
         assert!(
             none.is_empty(),
             "challenge must be dropped without escalator"
@@ -1126,6 +1163,7 @@ mod tests {
             5000,
             8,
             Some(&escalator),
+            None,
             None,
         )
         .await

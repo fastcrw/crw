@@ -106,6 +106,7 @@ pub async fn map(
         // every discovered URL with it, so a slow site got a 504 with zero links.
         overall_deadline: crw_crawl::crawl::discovery_deadline(Duration::from_secs(timeout_secs)),
         respect_robots: state.config.crawler.respect_robots_txt,
+        filter_by_path: req.filter_by_path,
     });
 
     let result =
