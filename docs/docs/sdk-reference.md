@@ -170,6 +170,22 @@ Key options (both SDKs):
 | `renderer` | `string` | — | `auto`, `lightpanda`, `chrome`, `chrome_proxy` (self-host may also configure `playwright`) |
 | `wait_for` / `waitFor` | `int` | — | milliseconds to wait after page load |
 | `json_schema` / `jsonSchema` | `dict` | — | JSON Schema for structured LLM extraction; auto-adds `json` format |
+| `css_selector` (Python keyword) | `str` | none | keep only elements matching this CSS selector |
+
+Python signature: `scrape(url, formats=None, only_main_content=None, include_tags=None, exclude_tags=None, *, render_js=None, renderer=None, wait_for=None, json_schema=None, **kwargs) -> dict`. Extra keyword arguments are passed to the API as they are.
+
+#### Titles and URLs from a list page, in one call
+
+`css_selector` keeps only the matching elements, so the markdown is just their links as `[title](url)`, in page order:
+
+```python
+import json, re
+from crw import CrwClient
+
+page = CrwClient().scrape("https://news.ycombinator.com", formats=["markdown"], css_selector=".titleline > a")
+pairs = re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", page["markdown"])  # [(title, url), ...]
+print(json.dumps([{"rank": i, "title": t, "url": u} for i, (t, u) in enumerate(pairs[:5], 1)], indent=2))
+```
 
 ### crawl
 
