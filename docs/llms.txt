@@ -60,6 +60,7 @@
 ## Integrations
 - [MCP Server](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/mcp.md): Built-in MCP server for Claude, Codex, Cursor, and other hosts
 - [MCP Client Setup](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/mcp-clients.md): Copy-paste setup for Claude Code, Claude Desktop, OpenAI Codex CLI, Cursor, Windsurf, Cline, Continue, and Gemini CLI
+- [Data Sources](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/data-sources.md): `crw_find_data` and `crw_get_data` for structured data from named public APIs (cloud mode), keys for sources that run on your machine, and their error codes
 - [crw-browse](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/crw-browse.md): Separate browser-automation MCP server (`command: crw-browse`) for real stateful browser control (click, navigate, accessibility tree); self-hosted, v0.4.0+
 - [SDK Reference](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/sdk-reference.md): Python `crw` and TypeScript `crw-sdk` clients, every method and return shape
 - [SDK Examples](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/sdk-examples.md): Copy-paste examples in multiple languages
