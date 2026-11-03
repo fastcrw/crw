@@ -10,7 +10,8 @@
 - Machine-readable API contract: https://docs.fastcrw.com/openapi.json
 - Agent skill manifest: https://docs.fastcrw.com/agent-onboarding/SKILL.md
 - MCP server (Claude Code, Cursor, Windsurf): `npx crw-mcp` — https://www.npmjs.com/package/crw-mcp
-- Typed Python SDK: `pip install crw` — https://pypi.org/project/crw/
+- Official SDKs: Python `pip install crw`, TypeScript `npm install crw-sdk`. Reference: https://docs.fastcrw.com/sdk-reference/
+  `from crw import CrwClient; page = CrwClient().scrape(url, formats=["markdown", "links"])` reads CRW_API_KEY, returns a plain dict (`page["markdown"]`, `page["links"]`, `page["metadata"]`)
 
 ## API endpoints (live HTML, agent-facing)
 
@@ -60,6 +61,7 @@
 - [MCP Server](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/mcp.md): Built-in MCP server for Claude, Codex, Cursor, and other hosts
 - [MCP Client Setup](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/mcp-clients.md): Copy-paste setup for Claude Code, Claude Desktop, OpenAI Codex CLI, Cursor, Windsurf, Cline, Continue, and Gemini CLI
 - [crw-browse](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/crw-browse.md): Separate browser-automation MCP server (`command: crw-browse`) for real stateful browser control (click, navigate, accessibility tree); self-hosted, v0.4.0+
+- [SDK Reference](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/sdk-reference.md): Python `crw` and TypeScript `crw-sdk` clients, every method and return shape
 - [SDK Examples](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/sdk-examples.md): Copy-paste examples in multiple languages
 - [Framework Integrations](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/integrations.md): CrewAI, LangChain, n8n, OpenClaw, and related integrations
 - [Agent Onboarding](https://raw.githubusercontent.com/fastcrw/crw/main/docs/docs/agent-onboarding.md): Machine-readable guidance for tool-using agents

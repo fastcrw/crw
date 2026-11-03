@@ -1,12 +1,760 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/capabilities">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capabilities — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/capabilities">
-  <script>location.replace("https://docs.fastcrw.com/capabilities");</script>
+  <meta name="description" content="`GET /v1/capabilities` returns a JSON snapshot of what the running instance supports. Clients and agents can call it on startup to adapt their behavior — instead of guessing what a self-hosted deploym">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/capabilities">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/capabilities">
+  <meta property="og:title" content="Capabilities — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="`GET /v1/capabilities` returns a JSON snapshot of what the running instance supports. Clients and agents can call it on startup to adapt their behavior — instead of guessing what a self-hosted deploym">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Capabilities — CRW Docs">
+  <meta name="twitter:description" content="`GET /v1/capabilities` returns a JSON snapshot of what the running instance supports. Clients and agents can call it on startup to adapt their behavior — instead of guessing what a self-hosted deploym">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/capabilities">https://docs.fastcrw.com/capabilities</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-capabilities-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/capabilities">https://docs.fastcrw.com/capabilities</a>.</p><h1 id="capabilities">Capabilities</h1>
+<p><code>GET /v1/capabilities</code> returns a JSON snapshot of what the running instance supports. Clients and agents can call it on startup to adapt their behavior — instead of guessing what a self-hosted deployment has configured, ask.</p>
+<h2 id="request">Request</h2>
+<pre data-lang="http"><code class="language-http">GET https://api.fastcrw.com/v1/capabilities
+Authorization: Bearer YOUR_API_KEY</code></pre>
+<p>No request body. No query parameters.</p>
+<h2 id="response-shape">Response Shape</h2>
+<pre data-lang="json"><code class="language-json">{
+  &quot;version&quot;: &quot;0.23.0&quot;,
+  &quot;llm&quot;: {
+    &quot;providers&quot;: [&quot;anthropic&quot;, &quot;openai&quot;, &quot;deepseek&quot;, &quot;openai-compatible&quot;, &quot;openai-responses&quot;, &quot;azure&quot;],
+    &quot;supportsBaseUrl&quot;: true,
+    &quot;serverKeyConfigured&quot;: false,
+    &quot;maxConcurrency&quot;: 0
+  },
+  &quot;formats&quot;: {
+    &quot;supported&quot;: [
+      &quot;markdown&quot;, &quot;html&quot;, &quot;rawHtml&quot;, &quot;plainText&quot;,
+      &quot;links&quot;, &quot;json&quot;, &quot;summary&quot;, &quot;changeTracking&quot;, &quot;screenshot&quot;
+    ],
+    &quot;llmRequired&quot;: [&quot;json&quot;, &quot;summary&quot;],
+    &quot;changeTrackingModes&quot;: [&quot;gitDiff&quot;, &quot;json&quot;],
+    &quot;changeTrackingModesLlmRequired&quot;: [&quot;json&quot;]
+  },
+  &quot;search&quot;: {
+    &quot;supported&quot;: true,
+    &quot;answer&quot;: false,
+    &quot;summarizeResults&quot;: false
+  },
+  &quot;screenshot&quot;: {
+    &quot;supported&quot;: true,
+    &quot;fullPage&quot;: true
+  },
+  &quot;renderers&quot;: {
+    &quot;available&quot;: [&quot;lightpanda&quot;, &quot;chrome&quot;],
+    &quot;mode&quot;: &quot;auto&quot;
+  },
+  &quot;extract&quot;: {
+    &quot;supported&quot;: true,
+    &quot;maxUrls&quot;: 50,
+    &quot;perFieldAttribution&quot;: true
+  },
+  &quot;documents&quot;: {
+    &quot;parsers&quot;: [&quot;pdf&quot;],
+    &quot;fileUpload&quot;: {
+      &quot;supported&quot;: true,
+      &quot;endpoint&quot;: &quot;/v2/parse&quot;,
+      &quot;maxBytes&quot;: 52428800,
+      &quot;types&quot;: [&quot;application/pdf&quot;],
+      &quot;ocr&quot;: false
+    }
+  },
+  &quot;limits&quot;: {
+    &quot;maxBatchUrls&quot;: 10000,
+    &quot;maxExtractUrls&quot;: 50,
+    &quot;searchDefaultLimit&quot;: 5,
+    &quot;searchMaxLimit&quot;: 20,
+    &quot;maxUploadBytes&quot;: 52428800
+  }
+}</code></pre>
+<p>All keys use camelCase.</p>
+<h2 id="the-contract">The Contract</h2>
+<p>Every boolean in this response is <strong>derived from the real build (compiled cargo features) and the effective config</strong>. Nothing is hardcoded to <code>true</code>.</p>
+<p>A capability reads <code>true</code> only when the instance can perform the operation <strong>for a well-formed request that supplies no extra credentials</strong>. Credentials are reported separately rather than folded into the booleans:</p>
+<ul>
+<li><code>llm.serverKeyConfigured</code> tells you whether a server-side LLM key exists.</li>
+<li><code>formats.llmRequired</code> tells you which formats need an LLM at all.</li>
+</ul>
+<p>Bring-your-own-key is always accepted and cannot be turned off. So on a BYOK-only deployment you will see <code>search.supported: true</code> alongside <code>search.answer: false</code>: the instance cannot answer on its own, but a request that carries <code>llmApiKey</code> still gets an answer. <strong>Gate on <code>search.supported</code> if you supply your own key; gate on <code>search.answer</code> if you do not.</strong></p>
+<h2 id="fields">Fields</h2>
+<h3 id="version"><code>version</code></h3>
+<p><code>string</code> — The server binary&#39;s semver version (<code>CARGO_PKG_VERSION</code>).</p>
+<h3 id="llm"><code>llm</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>providers</code></td>
+<td><code>string[]</code></td>
+<td>LLM provider tags the dispatcher accepts. Sourced from the same constant the dispatcher validates against, so the advertised list cannot drift from the accepted one.</td>
+</tr>
+<tr>
+<td><code>supportsBaseUrl</code></td>
+<td><code>boolean</code></td>
+<td>The dispatcher accepts a custom <code>baseUrl</code> on the scrape and search paths. Note: <code>POST /v1/extract</code> rejects <code>baseUrl</code> — for that route the endpoint is configured server-side via <code>[extraction.llm] base_url</code>.</td>
+</tr>
+<tr>
+<td><code>serverKeyConfigured</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code> when a server-side <code>[extraction.llm]</code> API key is configured. <code>false</code> means the instance has no server LLM key and requires callers to supply <code>llmApiKey</code> in the request body. Hosted SaaS sets this to <code>false</code> and relies on per-request keys.</td>
+</tr>
+<tr>
+<td><code>maxConcurrency</code></td>
+<td><code>number</code></td>
+<td>Server-side fan-out cap for LLM calls. <code>0</code> when no server LLM config is present.</td>
+</tr>
+<tr>
+<td><code>requireByokHeader</code></td>
+<td><code>string?</code></td>
+<td>Present only when the server requires a specific request header on LLM-touching calls. Absent when no header guard is configured.</td>
+</tr>
+</tbody></table>
+<h3 id="formats"><code>formats</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>supported</code></td>
+<td><code>string[]</code></td>
+<td>Output formats this build and config can actually produce. Eight are always present: <code>markdown</code>, <code>html</code>, <code>rawHtml</code>, <code>plainText</code>, <code>links</code>, <code>json</code>, <code>summary</code>, <code>changeTracking</code>. A ninth, <code>screenshot</code>, appears only when a capture-capable renderer is compiled in and configured — it is listed here exactly when <code>screenshot.supported</code> is <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>llmRequired</code></td>
+<td><code>string[]</code></td>
+<td>Formats that additionally need an LLM: a server key (<code>llm.serverKeyConfigured</code>) or a per-request <code>llmApiKey</code>. Requesting one without a key is a hard error, never a silent downgrade.</td>
+</tr>
+<tr>
+<td><code>changeTrackingModes</code></td>
+<td><code>string[]</code></td>
+<td>Diff modes available when <code>changeTracking</code> is in <code>supported</code>. Values: <code>gitDiff</code>, <code>json</code>.</td>
+</tr>
+<tr>
+<td><code>changeTrackingModesLlmRequired</code></td>
+<td><code>string[]</code></td>
+<td>Change-tracking modes that need an LLM. <code>gitDiff</code> is deterministic and needs none; <code>json</code> mode calls an LLM.</td>
+</tr>
+</tbody></table>
+<h3 id="search"><code>search</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>supported</code></td>
+<td><code>boolean</code></td>
+<td><code>POST /v1/search</code> is usable: <code>[search] enabled</code> is on and a backend URL is configured.</td>
+</tr>
+<tr>
+<td><code>answer</code></td>
+<td><code>boolean</code></td>
+<td>LLM-synthesized answers work <strong>without a caller-supplied key</strong> — that is, <code>supported</code> is <code>true</code> <strong>and</strong> a server LLM key is configured. When this is <code>false</code> but <code>supported</code> is <code>true</code>, a request carrying <code>llmApiKey</code> still gets an answer.</td>
+</tr>
+<tr>
+<td><code>summarizeResults</code></td>
+<td><code>boolean</code></td>
+<td>Per-result summaries. Same gate as <code>answer</code>.</td>
+</tr>
+</tbody></table>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">`search.supported` reflects configuration, not a live health probe. A configured-but-unreachable backend still reports `true`; at request time `/v1/search` returns HTTP 503 with `error_code: "search_disabled"` when search is off, and a `422` when the backend is unreachable.</div></div><h3 id="screenshot"><code>screenshot</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>supported</code></td>
+<td><code>boolean</code></td>
+<td>A capture-capable renderer is compiled in <strong>and</strong> configured. Capture runs over CDP <code>Page.captureScreenshot</code>, so it needs <code>chrome</code>, <code>chrome_proxy</code> or <code>playwright</code>. LightPanda and Camoufox cannot capture: an instance holding only those reports <code>false</code>, and the scrape path fails closed on a screenshot request rather than returning an empty image.</td>
+</tr>
+<tr>
+<td><code>fullPage</code></td>
+<td><code>boolean</code></td>
+<td>Full-page capture (<code>screenshot@fullPage</code> on v2, <code>screenshotFullPage</code> on v1). Same gate as <code>supported</code>.</td>
+</tr>
+</tbody></table>
+<h3 id="renderers"><code>renderers</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>available</code></td>
+<td><code>string[]</code></td>
+<td>The renderer tiers this instance actually constructed, in fallback order. Reflects both the build (a binary without the <code>cdp</code> feature constructs no JS tier) and the config (a tier with no endpoint set is never built). These are exactly the values the per-request <code>renderer</code> pin accepts. A build with the <code>impersonated</code> feature also lists <code>impersonated-http</code>, which is a transport tier rather than a JS one, so this list can be non-empty on a browser-less binary.</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>string</code></td>
+<td>Effective <code>[renderer] mode</code> — e.g. <code>auto</code>, <code>none</code>, or a pinned tier.</td>
+</tr>
+<tr>
+<td><code>renderJsDefault</code></td>
+<td><code>boolean?</code></td>
+<td>Effective <code>[renderer] render_js_default</code>. Omitted when unset (auto-detect).</td>
+</tr>
+</tbody></table>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">`available` means "constructible and pinnable", not "always in the auto ladder". `camoufox` is built whenever its endpoint is set even when it is excluded from auto, and `chrome_proxy` is held out of the auto ladder as a hard-block recovery arm when `auto_egress_escalation` is on.</div></div><h3 id="extract"><code>extract</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>supported</code></td>
+<td><code>boolean</code></td>
+<td><code>POST /v1/extract</code> (async, multi-URL) is mounted. Each URL still needs an LLM — see <code>llm.serverKeyConfigured</code> and BYOK.</td>
+</tr>
+<tr>
+<td><code>maxUrls</code></td>
+<td><code>number</code></td>
+<td>Max URLs accepted per request (<code>[crawler] max_extract_urls</code>).</td>
+</tr>
+<tr>
+<td><code>perFieldAttribution</code></td>
+<td><code>boolean</code></td>
+<td>Per-field <code>basis</code> attribution. <code>true</code> on a build that ships <code>basis</code>: <code>basis: true</code> on <code>/v1/extract</code> (or a <code>formats: [&quot;json&quot;]</code> scrape) returns an evidence record per top-level scalar schema property. Reports build capability, not whether an LLM is configured.</td>
+</tr>
+</tbody></table>
+<h3 id="documents"><code>documents</code></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>parsers</code></td>
+<td><code>string[]</code></td>
+<td>Active document parser types. <code>[&quot;pdf&quot;]</code> when the PDF feature is compiled in and <code>[document] enabled = true</code> in config. <code>[]</code> when PDF is disabled or not compiled.</td>
+</tr>
+<tr>
+<td><code>fileUpload.supported</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code> when the parse endpoint accepts uploads: a parser is compiled and enabled, and the enforced cap is above zero.</td>
+</tr>
+<tr>
+<td><code>fileUpload.endpoint</code></td>
+<td><code>string</code></td>
+<td>The upload path, returned as <code>/v2/parse</code>. The same handler is also mounted at <code>/firecrawl/v2/parse</code>; read this field rather than hard-coding either.</td>
+</tr>
+<tr>
+<td><code>fileUpload.maxBytes</code></td>
+<td><code>number</code></td>
+<td>The <strong>enforced</strong> upload cap in bytes — the same value the body-limit layer applies, i.e. <code>[document] max_upload_bytes</code> clamped by a 50 MiB in-memory ceiling. Lowering the knob lowers the enforced cap; raising it past the ceiling does not.</td>
+</tr>
+<tr>
+<td><code>fileUpload.types</code></td>
+<td><code>string[]</code></td>
+<td>Accepted MIME types. <code>[&quot;application/pdf&quot;]</code> when PDF is enabled, <code>[]</code> otherwise.</td>
+</tr>
+<tr>
+<td><code>fileUpload.ocr</code></td>
+<td><code>boolean</code></td>
+<td>Always <code>false</code>. The built-in PDF parser does not include an OCR engine — scanned or image-only PDFs yield empty or partial text.</td>
+</tr>
+</tbody></table>
+<h3 id="limits"><code>limits</code></h3>
+<p>Only enforced caps appear here. Each value is the one the server actually applies, not a documented default.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>maxBatchUrls</code></td>
+<td><code>number</code></td>
+<td>Max URLs per batch-scrape submission (<code>[crawler] max_batch_urls</code>). A larger batch is rejected up front.</td>
+</tr>
+<tr>
+<td><code>maxExtractUrls</code></td>
+<td><code>number</code></td>
+<td>Max URLs per <code>/v1/extract</code> request (<code>[crawler] max_extract_urls</code>). Mirrors <code>extract.maxUrls</code>.</td>
+</tr>
+<tr>
+<td><code>searchDefaultLimit</code></td>
+<td><code>number</code></td>
+<td>The <code>limit</code> <code>/v1/search</code> uses when the request omits it.</td>
+</tr>
+<tr>
+<td><code>searchMaxLimit</code></td>
+<td><code>number</code></td>
+<td>Hard cap on the <code>/v1/search</code> <code>limit</code>.</td>
+</tr>
+<tr>
+<td><code>maxUploadBytes</code></td>
+<td><code>number</code></td>
+<td>Enforced upload cap on the parse endpoint. Mirrors <code>documents.fileUpload.maxBytes</code>.</td>
+</tr>
+</tbody></table>
+<h2 id="reading-a-deployment">Reading a Deployment</h2>
+<p>The two deployment shapes differ in exactly one interesting way — where the LLM key lives.</p>
+<p><strong>BYOK-fronted (a SaaS or gateway in front of the engine).</strong> The gateway injects an LLM key on each request, so the engine itself has none: <code>llm.serverKeyConfigured</code> is <code>false</code>, and therefore <code>search.answer</code> and <code>search.summarizeResults</code> are <code>false</code> too. <code>search.supported</code> is still <code>true</code>. This is not a missing feature — it is the honest statement that the <em>engine alone</em>, with no caller-supplied key, cannot answer. Callers that send <code>llmApiKey</code> get answers.</p>
+<p><strong>Self-hosted with a server key.</strong> <code>[extraction.llm] api_key</code> is set, so <code>llm.serverKeyConfigured</code> is <code>true</code> and <code>search.answer</code> follows <code>search.supported</code>.</p>
+<p>Everything else (renderer tiers, screenshot capture, parsers, limits) varies per deployment and cannot be predicted without asking.</p>
+<h2 id="using-capabilities-at-runtime">Using Capabilities at Runtime</h2>
+<h3 id="agents-and-sdks">Agents and SDKs</h3>
+<p>Call <code>GET /v1/capabilities</code> once on startup and cache the result. Use it to:</p>
+<ul>
+<li>decide whether to send <code>formats: [&quot;json&quot;]</code> (check <code>formats.supported</code> contains <code>&quot;json&quot;</code>)</li>
+<li>decide whether to supply <code>llmApiKey</code> in the body (check <code>llm.serverKeyConfigured</code>, and <code>formats.llmRequired</code> for which formats need one)</li>
+<li>decide whether to offer screenshots (check <code>screenshot.supported</code> — never assume it from the presence of a renderer)</li>
+<li>decide whether to offer file-upload UI or API paths (check <code>documents.fileUpload.supported</code>, and size the client-side guard from <code>limits.maxUploadBytes</code>)</li>
+<li>confirm whether <code>changeTracking</code> is available before using monitor scrapes (check <code>formats.supported</code> contains <code>&quot;changeTracking&quot;</code>)</li>
+<li>size batch requests against <code>limits.maxBatchUrls</code> instead of discovering the cap through a rejection</li>
+</ul>
+<pre data-lang="python"><code class="language-python">import httpx
+
+caps = httpx.get(
+    &quot;https://api.fastcrw.com/v1/capabilities&quot;,
+    headers={&quot;Authorization&quot;: &quot;Bearer YOUR_API_KEY&quot;},
+).json()
+
+if caps[&quot;llm&quot;][&quot;serverKeyConfigured&quot;]:
+    llm_key_in_body = None          # server has a key
+else:
+    llm_key_in_body = &quot;sk-...&quot;      # caller must supply a per-request key
+
+pdf_ok = caps[&quot;documents&quot;][&quot;fileUpload&quot;][&quot;supported&quot;]
+can_screenshot = caps[&quot;screenshot&quot;][&quot;supported&quot;]
+
+# Gate on `supported` when you bring your own key; on `answer` when you do not.
+if llm_key_in_body:
+    can_answer = caps[&quot;search&quot;][&quot;supported&quot;]
+else:
+    can_answer = caps[&quot;search&quot;][&quot;answer&quot;]</code></pre>
+<h3 id="self-hosted-instances">Self-Hosted Instances</h3>
+<p>Self-hosted deployments differ from the hosted API in several ways a caller cannot predict without checking:</p>
+<ul>
+<li>PDF parsing may be disabled (<code>[document] enabled = false</code>) or not compiled in</li>
+<li>A server-side LLM key may or may not be configured</li>
+<li>The <code>[document] max_upload_bytes</code> limit can be set below 50 MiB</li>
+<li>The search backend may not be connected (<code>[search] search_backend_url</code> unset)</li>
+</ul>
+<p>Always call <code>/v1/capabilities</code> before making assumptions about what a self-hosted instance can do.</p>
+<h2 id="authentication">Authentication</h2>
+<p><code>GET /v1/capabilities</code> is an authenticated route on both hosted and self-hosted deployments (when API keys are configured). The response contains no secrets, but it describes deployment configuration, which is worth protecting.</p>
+<p>On a self-hosted instance with no API keys configured, the route is public.</p>
+<h2 id="what-to-read-next">What To Read Next</h2>
+<ul>
+<li><a href="/docs/output-formats">Output Formats</a> — the 9 formats and when to use each</li>
+<li><a href="/docs/pdf-parsing">PDF Parsing</a> — the <code>POST /firecrawl/v2/parse</code> upload endpoint</li>
+<li><a href="/docs/search">Search</a> — <code>POST /v1/search</code> and the LLM answer path</li>
+<li><a href="/docs/self-hosting">Self-Hosting</a> — configuration reference for <code>[document]</code>, <code>[extraction.llm]</code>, and <code>[search]</code></li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-capabilities-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "capabilities";</script>
+</body>
 </html>

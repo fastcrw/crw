@@ -4,6 +4,25 @@ Python SDK for [CRW](https://github.com/fastcrw/crw) — the open-source web scr
 
 New CRW integrations should use the native `/v1` methods exposed by this SDK. If you are migrating Firecrawl v2 SDK code, use the engine's `/v2` compatibility layer and validate the documented differences.
 
+## Quick start
+
+```bash
+pip install crw
+export CRW_API_KEY=crw_live_...   # from https://fastcrw.com
+```
+
+```python
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY, defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+print(page["markdown"])  # page is a plain dict: markdown, links, metadata, ...
+print(page["links"])     # list[str] of absolute URLs
+```
+
+Full reference: https://docs.fastcrw.com/sdk-reference/
+
 ## Install
 
 ```bash

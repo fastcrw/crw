@@ -1,12 +1,627 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/error-codes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error Codes — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/error-codes">
-  <script>location.replace("https://docs.fastcrw.com/error-codes");</script>
+  <meta name="description" content="The important distinction is that there are two layers of status:">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/error-codes">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/error-codes">
+  <meta property="og:title" content="Error Codes — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="The important distinction is that there are two layers of status:">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Error Codes — CRW Docs">
+  <meta name="twitter:description" content="The important distinction is that there are two layers of status:">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/error-codes">https://docs.fastcrw.com/error-codes</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-error-codes-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/error-codes">https://docs.fastcrw.com/error-codes</a>.</p><h1 id="errors-and-warnings">Errors and Warnings</h1>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">**Behaviour change (2026-10):** on the cloud API, running out of credits now answers `402 Payment Required` with `errorCode: "insufficient_credits"` instead of `429`. This applies to `/v1` and every surface except the legacy Firecrawl-compatible `/v2` (root `/v2`, `/firecrawl/v2` and `compat.fastcrw.com`), which keeps the credit `429` without an `errorCode`. Branch on `errorCode`, with the HTTP status as a fallback.</div></div><h2 id="response-semantics">Response semantics</h2>
+<ul>
+<li><code>success: true</code> means the pipeline produced usable page content.</li>
+<li><code>success: false</code> means the request failed -- either an engine error or the target returned an error status (4xx/5xx) with minimal content.</li>
+<li><code>error</code> is present when <code>success: false</code>. It describes what went wrong.</li>
+<li><code>warning</code> flags degraded target outcomes (problematic status codes, a partial render) when <code>success: true</code>, meaning content was produced but may be incomplete. An anti-bot wall is not one of these: it is always <code>success: false</code> with <code>errorCode: &quot;anti_bot&quot;</code>.</li>
+<li><code>metadata.statusCode</code> is the target site&#39;s HTTP status.</li>
+<li><code>data</code> may still be present when <code>success: false</code> if partial content was extracted.</li>
+</ul>
+<p>The important distinction is that there are two layers of status:</p>
+<ul>
+<li>the HTTP status returned by CRW,</li>
+<li>and the target site&#39;s own status exposed through <code>metadata.statusCode</code>.</li>
+</ul>
+<p>You need both to debug real scraping failures.</p>
+<h2 id="http-status-codes-returned-by-the-api">HTTP status codes returned by the API</h2>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>200</td>
+<td>Success</td>
+</tr>
+<tr>
+<td>400</td>
+<td>Invalid request parameters (bad URL, invalid JSON body, invalid selector)</td>
+</tr>
+<tr>
+<td>401</td>
+<td>Invalid or missing API key</td>
+</tr>
+<tr>
+<td>404</td>
+<td>Endpoint not found</td>
+</tr>
+<tr>
+<td>422</td>
+<td>Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (<code>unsupported_content_type</code>)</td>
+</tr>
+<tr>
+<td>402</td>
+<td>Cloud only: the credit balance cannot cover the request (<code>errorCode: &quot;insufficient_credits&quot;</code>), or a managed-LLM feature was requested on the FREE plan (<code>errorCode: &quot;llm_not_available&quot;</code>)</td>
+</tr>
+<tr>
+<td>429</td>
+<td>Request-rate or concurrency limit exceeded (on the legacy <code>/v2</code> surface, also an exhausted credit balance)</td>
+</tr>
+<tr>
+<td>502</td>
+<td>Engine internal error</td>
+</tr>
+<tr>
+<td>503</td>
+<td>Server at capacity</td>
+</tr>
+<tr>
+<td>504</td>
+<td>Request timed out</td>
+</tr>
+</tbody></table>
+<h2 id="how-to-read-common-cases">How To Read Common Cases</h2>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>What it usually means</th>
+<th>What to do next</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>HTTP <code>200</code> with <code>warning</code></td>
+<td>The request succeeded, but the target result is degraded</td>
+<td>Inspect <code>warning</code> and <code>metadata.statusCode</code></td>
+</tr>
+<tr>
+<td>HTTP <code>400</code></td>
+<td>Your request body is invalid</td>
+<td>Fix fields, selectors, or schema</td>
+</tr>
+<tr>
+<td>HTTP <code>422</code></td>
+<td>The request shape is valid JSON but semantically invalid</td>
+<td>Check format names, schema, or extraction config</td>
+</tr>
+<tr>
+<td><code>unsupported_content_type</code></td>
+<td>The origin served an office document, image or archive rather than a page</td>
+<td>Fetch the file yourself, or point the request at a PDF or an HTML page</td>
+</tr>
+<tr>
+<td>HTTP <code>402</code></td>
+<td>Out of credits (<code>insufficient_credits</code>) or a paid-plan feature on the FREE plan (<code>llm_not_available</code>)</td>
+<td>Do not retry; top up, upgrade or enable auto-recharge</td>
+</tr>
+<tr>
+<td>HTTP <code>429</code></td>
+<td>Request-rate or concurrency limit hit</td>
+<td>Back off and honor <code>Retry-After</code></td>
+</tr>
+<tr>
+<td>HTTP <code>502</code> / <code>504</code></td>
+<td>Upstream or timeout issue</td>
+<td>Retry with backoff</td>
+</tr>
+</tbody></table>
+<h2 id="common-engine-errors">Common engine errors</h2>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>When it happens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Invalid URL</td>
+<td>URL is malformed or targets a blocked address</td>
+</tr>
+<tr>
+<td>Invalid selector</td>
+<td>CSS selector or XPath expression cannot be parsed</td>
+</tr>
+<tr>
+<td>Renderer timeout</td>
+<td>JS rendering exceeded the page timeout</td>
+</tr>
+<tr>
+<td>Navigation failed</td>
+<td>CDP browser could not load the page</td>
+</tr>
+<tr>
+<td>Response too large</td>
+<td>Page exceeded the maximum allowed size</td>
+</tr>
+<tr>
+<td>Invalid JSON schema</td>
+<td>Schema provided for extraction is malformed</td>
+</tr>
+<tr>
+<td>Extraction failure</td>
+<td>LLM extraction failed (no LLM configured, or LLM returned an error)</td>
+</tr>
+<tr>
+<td><code>summary</code> format requires LLM config</td>
+<td><code>formats: [&quot;summary&quot;]</code> sent without a server-side <code>[extraction.llm]</code> block and without per-request <code>llmApiKey</code></td>
+</tr>
+<tr>
+<td>Key header required</td>
+<td>Server is in key-required mode (<code>require_byok_header</code>) and the request lacks both the header and <code>llmApiKey</code></td>
+</tr>
+<tr>
+<td>No JS renderer available</td>
+<td><code>renderJs: true</code> but no CDP browser is configured</td>
+</tr>
+</tbody></table>
+<h2 id="cloud-only-error-codes">Cloud-only error codes</h2>
+<p>The managed cloud adds these <code>errorCode</code> values on top of the engine&#39;s own. Self-hosted instances have no billing layer and never send them.</p>
+<table>
+<thead>
+<tr>
+<th><code>errorCode</code></th>
+<th>HTTP</th>
+<th>When it happens</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>insufficient_credits</code></td>
+<td>402</td>
+<td>The credit balance cannot cover the request: FREE lifetime credits used up, or a paid plan&#39;s included and top-up credits used up. Carries the <code>X-FASTCRW-Credits-Available</code>, <code>X-FASTCRW-Included-Remaining</code>, <code>X-FASTCRW-Purchased-Remaining</code> and <code>X-FASTCRW-Upgrade-Url</code> headers, plus <code>X-FASTCRW-Stop-Reason</code> when an enabled auto-recharge could not run. No <code>Retry-After</code>. Not sent on the legacy <code>/v2</code> surface, which answers <code>429</code> instead.</td>
+</tr>
+<tr>
+<td><code>llm_not_available</code></td>
+<td>402</td>
+<td>A managed-LLM feature (search <code>answer</code> / <code>summarizeResults</code>, <code>/v1/extract</code>) was requested on the FREE plan. The <code>/v1/crawl</code> LLM formats gate sends the same code with HTTP <code>403</code>.</td>
+</tr>
+</tbody></table>
+<h2 id="common-warnings">Common warnings</h2>
+<table>
+<thead>
+<tr>
+<th>Warning</th>
+<th>When it appears</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Target returned 403 Forbidden</code></td>
+<td>Target site blocked the request</td>
+</tr>
+<tr>
+<td><code>Target returned 429 Too Many Requests</code></td>
+<td>Target site rate limited the request</td>
+</tr>
+<tr>
+<td><code>Blocked by anti-bot protection</code></td>
+<td>Page contains Cloudflare/captcha markers</td>
+</tr>
+<tr>
+<td><code>JS rendering was requested but no renderer is available</code></td>
+<td>Fallback to HTTP-only fetch</td>
+</tr>
+<tr>
+<td><code>content truncated to N bytes before summarization</code></td>
+<td>Scraped content exceeded <code>maxContentChars</code> (or <code>[extraction.llm].max_html_bytes</code>); the head of the page was summarized</td>
+</tr>
+<tr>
+<td><code>summary failed: &lt;reason&gt;</code></td>
+<td>A per-result summary in <code>/v1/search</code> failed (e.g. provider 429). Other results are still returned</td>
+</tr>
+<tr>
+<td><code>answer synthesis failed: &lt;reason&gt;</code></td>
+<td>The answer call in <code>/v1/search</code> failed. <code>answer</code> is <code>null</code> but <code>summaries</code> and <code>results</code> are still returned</td>
+</tr>
+<tr>
+<td><code>N of M per-result summaries failed</code></td>
+<td>Some but not all per-result summaries failed in <code>/v1/search</code></td>
+</tr>
+</tbody></table>
+<h2 id="retry-guidance">Retry Guidance</h2>
+<p>Retrying helps only for some classes of failure:</p>
+<ul>
+<li>retry <code>429</code>, <code>502</code>, and <code>504</code> with backoff, honoring <code>Retry-After</code> when present,</li>
+<li>never retry a <code>402</code>: out of credits (<code>insufficient_credits</code>) and the FREE-plan LLM gate (<code>llm_not_available</code>) clear only when the account changes; the same goes for a legacy <code>/v2</code> <code>429</code> that carries <code>X-FASTCRW-Credits-Available</code>,</li>
+<li>do not blindly retry <code>400</code> or <code>422</code>,</li>
+<li>and treat repeated warnings from the same domain as a target compatibility problem, not a random transient issue.</li>
+</ul>
+<p>If a page is repeatedly blocked by anti-bot protection, longer retry loops usually make the situation worse rather than better.</p>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-error-codes-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "error-codes";</script>
+</body>
 </html>

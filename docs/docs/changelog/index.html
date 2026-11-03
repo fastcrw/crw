@@ -1,12 +1,1510 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/changelog">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/changelog">
-  <script>location.replace("https://docs.fastcrw.com/changelog");</script>
+  <meta name="description" content="This page is generated from the root [`CHANGELOG.md`](https://github.com/fastcrw/crw/blob/main/CHANGELOG.md), which is maintained by release-please during releases.">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/changelog">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/changelog">
+  <meta property="og:title" content="Changelog — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="This page is generated from the root [`CHANGELOG.md`](https://github.com/fastcrw/crw/blob/main/CHANGELOG.md), which is maintained by release-please during releases.">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Changelog — CRW Docs">
+  <meta name="twitter:description" content="This page is generated from the root [`CHANGELOG.md`](https://github.com/fastcrw/crw/blob/main/CHANGELOG.md), which is maintained by release-please during releases.">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/changelog">https://docs.fastcrw.com/changelog</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-changelog-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/changelog">https://docs.fastcrw.com/changelog</a>.</p><h1 id="changelog">Changelog</h1>
+<p>This page is generated from the root <a href="https://github.com/fastcrw/crw/blob/main/CHANGELOG.md"><code>CHANGELOG.md</code></a>, which is maintained by release-please during releases.</p>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">The source of truth is the repository root changelog. Do not edit this docs page manually.</div></div><p>All notable changes to CRW are documented here.</p>
+<h2 id="0391-2026-10-28"><a href="https://github.com/fastcrw/crw/compare/v0.39.0...v0.39.1">0.39.1</a> (2026-10-28)</h2>
+<h3 id="bug-fixes">Bug Fixes</h3>
+<ul>
+<li><strong>crawl:</strong> report an empty truncated render on a wall as the wall (<a href="https://github.com/fastcrw/crw/commit/6ffd008cda793b7bd6198f64f6398359490b1f58">6ffd008</a>)</li>
+<li><strong>renderer:</strong> do not rerun a hedge tier on an error it only repeats (<a href="https://github.com/fastcrw/crw/commit/b8eee36169136a8c4bf04648060e7bfa46a5e3e2">b8eee36</a>)</li>
+<li><strong>renderer:</strong> guard each stealth script section on its own (<a href="https://github.com/fastcrw/crw/commit/b28d6bd1a73a302dbc99f9fb3d95ca70c60d28f7">b28d6bd</a>)</li>
+<li><strong>renderer:</strong> log the cause of a failed response body read (<a href="https://github.com/fastcrw/crw/commit/3d5c2f122769679be30efa1c291df58c355f04b1">3d5c2f1</a>)</li>
+</ul>
+<h2 id="0390-2026-10-21"><a href="https://github.com/fastcrw/crw/compare/v0.38.0...v0.39.0">0.39.0</a> (2026-10-21)</h2>
+<h3 id="features">Features</h3>
+<ul>
+<li><strong>renderer:</strong> fresh impersonated session per hop attempt (<a href="https://github.com/fastcrw/crw/commit/b4d226ba29ecddc94ec841fda070fefdd1233b2c">b4d226b</a>)</li>
+</ul>
+<h3 id="bug-fixes-1">Bug Fixes</h3>
+<ul>
+<li><strong>deps:</strong> build with rmcp 3.5 ServerConfig, keep pdf-inspector 1.17 (<a href="https://github.com/fastcrw/crw/commit/4ce178f6727ea89c824abf1c1ad6e30f95ce7c75">4ce178f</a>)</li>
+<li><strong>renderer:</strong> check the key_share entry in the preset sentinel (<a href="https://github.com/fastcrw/crw/commit/48864affbcc7433d0bfd6e967be7bfe1dd1a1809">48864af</a>)</li>
+</ul>
+<h2 id="0380-2026-10-17"><a href="https://github.com/fastcrw/crw/compare/v0.37.2...v0.38.0">0.38.0</a> (2026-10-17)</h2>
+<h3 id="features-1">Features</h3>
+<ul>
+<li><strong>extract:</strong> configurable LLM timeout for JSON extraction (<a href="https://github.com/fastcrw/crw/commit/fa65e804223fc648067cee79f62047f31f10be10">fa65e80</a>)</li>
+<li><strong>renderer:</strong> configurable residential proxy username format (<a href="https://github.com/fastcrw/crw/commit/808f6540af69cc26445d4e3a5e5cf8501947d39c">808f654</a>)</li>
+</ul>
+<h3 id="bug-fixes-2">Bug Fixes</h3>
+<ul>
+<li><strong>batch:</strong> keep a refused .pdf page in batch, as /v1/scrape does (<a href="https://github.com/fastcrw/crw/commit/14ea8a708ef9cf3ecb294c58ec30e0ef6c7b7f44">14ea8a7</a>)</li>
+<li><strong>ci:</strong> authenticate the legacy image mirror with a PAT (<a href="https://github.com/fastcrw/crw/commit/55c2056b85339675ea97eb67d4f4b4aa99b4a5af">55c2056</a>)</li>
+<li><strong>config:</strong> honour extraction.only_main_content as the request default (<a href="https://github.com/fastcrw/crw/commit/53a6baf2ad51113f69f5e9718ad8c4c53113d383">53a6baf</a>), closes <a href="https://github.com/fastcrw/crw/issues/614">#614</a></li>
+<li><strong>core:</strong> log target URLs as origin plus a keyed tag (<a href="https://github.com/fastcrw/crw/commit/a0ef20bfd44daa83f0e5728a9e54c5f18b7db333">a0ef20b</a>)</li>
+<li><strong>crawl:</strong> record a wall no renderer tier could clear as a failed page (<a href="https://github.com/fastcrw/crw/commit/f18a3cba77c8884f47c71d310c052d86983fafe6">f18a3cb</a>)</li>
+<li><strong>crawl:</strong> report the real timeout and stop crawling binary assets (<a href="https://github.com/fastcrw/crw/commit/df29f0000a5fff3234ce77394ae1fd376bed5c5b">df29f00</a>)</li>
+<li><strong>crawl:</strong> stop logging a renderer verdict as an anti-bot wall (<a href="https://github.com/fastcrw/crw/commit/e173c0c12b1148007bdc2fef0bf140298fb10c39">e173c0c</a>)</li>
+<li><strong>extract:</strong> current Anthropic models as defaults, parse thinking blocks (<a href="https://github.com/fastcrw/crw/commit/5590aad5649b3593d7dffb6950db86ef494ccd58">5590aad</a>)</li>
+<li><strong>map:</strong> read no links or sitemap entries from a carried wall (<a href="https://github.com/fastcrw/crw/commit/7d124b80dbfae5e3ece68557b1a50491cf283ee5">7d124b8</a>)</li>
+<li><strong>mcp:</strong> keep structural and parked pages as data, like the CLI (<a href="https://github.com/fastcrw/crw/commit/f6a80bb288c1b954e9bfb8fef3aeddf8e4703c36">f6a80bb</a>)</li>
+<li><strong>mcp:</strong> read only a scrape&#39;s failure envelope as a tool error (<a href="https://github.com/fastcrw/crw/commit/939ba778395d3a7c2b7140b156dc10a5d1a9a589">939ba77</a>)</li>
+<li><strong>renderer:</strong> a ladder that never reached the wall keeps its error (<a href="https://github.com/fastcrw/crw/commit/5a12321fa9b9562fc5df8fc084c8ced37c343530">5a12321</a>)</li>
+<li><strong>renderer:</strong> give the PDF gate an honest verdict and keep /v1 as main (<a href="https://github.com/fastcrw/crw/commit/4624c9e5df09eb88f91b1540bfd64bfa7c8c42d1">4624c9e</a>)</li>
+<li><strong>renderer:</strong> launch headless Chrome with --use-mock-keychain (<a href="https://github.com/fastcrw/crw/commit/f12e95b1de12cea38bbcbba1eab6f2903f1641f3">f12e95b</a>)</li>
+<li><strong>renderer:</strong> skip a body tag inside head scripts when measuring body text (<a href="https://github.com/fastcrw/crw/commit/baacc112bb1a9d1dac5ff2b797254f93a78da826">baacc11</a>), closes <a href="https://github.com/fastcrw/crw/issues/605">#605</a></li>
+<li><strong>renderer:</strong> stop closing Web Worker targets mid-render (<a href="https://github.com/fastcrw/crw/commit/3622b86f1a56ef5d74e573e2834c6922932f8013">3622b86</a>)</li>
+<li><strong>renderer:</strong> stop reporting an anti-bot wall as a gateway failure (<a href="https://github.com/fastcrw/crw/commit/ba8610cfc3cedf35328b3e222b454383556b71cc">ba8610c</a>)</li>
+<li><strong>renderer:</strong> stop sending failed PDF fetches to browser tiers (<a href="https://github.com/fastcrw/crw/commit/4bf631db211e604dce576cf1a969977bf16b2e95">4bf631d</a>)</li>
+<li><strong>renderer:</strong> stop sending LightPanda a Mozilla-stripped user agent (<a href="https://github.com/fastcrw/crw/commit/4f5c6c0a64ff7f6c9be770fa0b37caa98d45b3ae">4f5c6c0</a>)</li>
+<li><strong>renderer:</strong> treat a .pdf hard-block status as an unclearable wall (<a href="https://github.com/fastcrw/crw/commit/30622dbd12b83e20293b383fb508b46917aba18b">30622db</a>)</li>
+<li><strong>scrape:</strong> carry the block verdict correctly on every surface (<a href="https://github.com/fastcrw/crw/commit/7f154b26bae8d23a81af0eda30582a222d9746d7">7f154b2</a>)</li>
+<li><strong>scrape:</strong> never accept or re-run an escalation over a condemned wall (<a href="https://github.com/fastcrw/crw/commit/8caac65b85e6fec004375ba56a6cdc8004e8e615">8caac65</a>)</li>
+<li><strong>scrape:</strong> skip change tracking on a blocked page (<a href="https://github.com/fastcrw/crw/commit/bb9c292134ca7a8afda7e8b302d63658af377f00">bb9c292</a>)</li>
+<li><strong>scrape:</strong> skip change tracking only on a wall no tier could clear (<a href="https://github.com/fastcrw/crw/commit/60c19e376d3f4fa823d2d45fb59730fbf6e35d6e">60c19e3</a>)</li>
+<li><strong>search:</strong> drop enrichment bodies only for a wall no tier could clear (<a href="https://github.com/fastcrw/crw/commit/31e6e268a795f65fa1dfa486e04091da803836cb">31e6e26</a>)</li>
+<li><strong>server:</strong> log every request with its route, status and error code (<a href="https://github.com/fastcrw/crw/commit/a498ed7c2795ca596a7de4cc97edd7daa483387d">a498ed7</a>)</li>
+<li><strong>v2:</strong> keep a wall no renderer tier could clear unbilled on a 4xx (<a href="https://github.com/fastcrw/crw/commit/834a9f1864e244408854c73408591b12d6f90e56">834a9f1</a>)</li>
+</ul>
+<h2 id="0372-2026-09-30"><a href="https://github.com/fastcrw/crw/compare/v0.37.1...v0.37.2">0.37.2</a> (2026-09-30)</h2>
+<h3 id="bug-fixes-3">Bug Fixes</h3>
+<ul>
+<li><strong>mcp:</strong> npm launcher falls back to api.github.com and honours proxies (<a href="https://github.com/fastcrw/crw/commit/8a3360d07a3510fd770d833d2901f93abe0cdffd">8a3360d</a>), closes <a href="https://github.com/fastcrw/crw/issues/597">#597</a></li>
+</ul>
+<h2 id="0371-2026-09-30"><a href="https://github.com/fastcrw/crw/compare/v0.37.0...v0.37.1">0.37.1</a> (2026-09-30)</h2>
+<h3 id="bug-fixes-4">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> own the Chrome profile dir and reap the browser tree on Windows (<a href="https://github.com/fastcrw/crw/commit/850bf3a5f34e94a99745834292f0ec0a7c329664">850bf3a</a>), closes <a href="https://github.com/fastcrw/crw/issues/594">#594</a></li>
+</ul>
+<h2 id="0370-2026-09-29"><a href="https://github.com/fastcrw/crw/compare/v0.36.0...v0.37.0">0.37.0</a> (2026-09-29)</h2>
+<h3 id="features-2">Features</h3>
+<ul>
+<li><strong>mcp:</strong> advertise maxAge on crw_scrape so callers can tune the fetch cache (<a href="https://github.com/fastcrw/crw/commit/c34da2d6f97fcbb9f3b225ede4a687eb605e613a">c34da2d</a>)</li>
+<li><strong>renderer:</strong> reach the solver tier on hosts that block datacenter addresses (<a href="https://github.com/fastcrw/crw/commit/63762e724b115915316bda2fa4944a3ce185a443">63762e7</a>)</li>
+<li><strong>server:</strong> expose and clear the per-host renderer preference learner (<a href="https://github.com/fastcrw/crw/commit/8d50185397c0aafd972ef1309288a4705bc6b14a">8d50185</a>)</li>
+</ul>
+<h3 id="bug-fixes-5">Bug Fixes</h3>
+<ul>
+<li><strong>browse:</strong> give script actions an object item schema (<a href="https://github.com/fastcrw/crw/commit/9043cd76301d8ae64705abcbff2349a1dd7b762c">9043cd7</a>), closes <a href="https://github.com/fastcrw/crw/issues/578">#578</a></li>
+<li><strong>ci:</strong> stop the release audit calling a healthy publish broken (<a href="https://github.com/fastcrw/crw/commit/a0ac61e43b7d620da334b0395a0e2c6002b83d8b">a0ac61e</a>)</li>
+<li><strong>crawl:</strong> classify the current Cloudflare block page as cloudflare (<a href="https://github.com/fastcrw/crw/commit/139a21d6801a648ad1c554954b5ca95e8a350b79">139a21d</a>)</li>
+<li><strong>docs:</strong> describe LightPanda as Zig-based, not Rust-based (<a href="https://github.com/fastcrw/crw/commit/b9c15549380f89bff9068957e813e6e6d2bd360f">b9c1554</a>)</li>
+<li><strong>mcp:</strong> mode-gate maxAge to proxy mode after review (<a href="https://github.com/fastcrw/crw/commit/ee87661db5ee43020c8265b868a98041b47feaab">ee87661</a>)</li>
+<li><strong>release:</strong> keep Cargo.lock in step with the workspace version (<a href="https://github.com/fastcrw/crw/commit/311ee8b8d01cf20c9bf0938a35d1ac5c74f241b3">311ee8b</a>)</li>
+<li><strong>release:</strong> publish and link from the fastcrw GitHub org (<a href="https://github.com/fastcrw/crw/commit/8de5ff377e5fc0145f139d6757efce0d30b523a7">8de5ff3</a>)</li>
+<li>replace dead docs links and keep the legacy image updated (<a href="https://github.com/fastcrw/crw/commit/ee1b1d85f125ed33b999f7ae5a75f66f61a39519">ee1b1d8</a>)</li>
+<li><strong>search:</strong> keep github and research results when sources is set (<a href="https://github.com/fastcrw/crw/commit/f3a84f3cd5a95b3a111d47e3263452d1a312b375">f3a84f3</a>)</li>
+<li><strong>v2:</strong> accept object-form sources and categories in /v2/search (<a href="https://github.com/fastcrw/crw/commit/c704f19d2c7e790896eaec6614518b495be54293">c704f19</a>)</li>
+<li><strong>v2:</strong> do not claim Firecrawl&#39;s DNS answer for any unreachable target (<a href="https://github.com/fastcrw/crw/commit/54108c736d11a707c4f653378a843b5f31039f34">54108c7</a>)</li>
+<li><strong>v2:</strong> match Firecrawl&#39;s success semantics, final URL and error envelope (<a href="https://github.com/fastcrw/crw/commit/5cfcb0ea8eb704e05f8448d660bb89c281e16e92">5cfcb0e</a>)</li>
+</ul>
+<h3 id="performance">Performance</h3>
+<ul>
+<li><strong>renderer:</strong> extend the hydration gate to 500 (<a href="https://github.com/fastcrw/crw/commit/a066f655c0680d056e2964c51e9fbe35491706ec">a066f65</a>)</li>
+<li><strong>renderer:</strong> stop spending the JS ladder on a 404 with nothing to hydrate (<a href="https://github.com/fastcrw/crw/commit/fc18b2cf6f610c50f251ad6686d4b99a660aebbe">fc18b2c</a>)</li>
+</ul>
+<h2 id="0360-2026-09-19"><a href="https://github.com/us/crw/compare/v0.35.1...v0.36.0">0.36.0</a> (2026-09-19)</h2>
+<h3 id="features-3">Features</h3>
+<ul>
+<li><strong>scrape:</strong> cache the fetch so a repeat scrape skips the network (<a href="https://github.com/us/crw/commit/601d5f50382cd2f793562a822b675a0231be4f0c">601d5f5</a>)</li>
+</ul>
+<h3 id="bug-fixes-6">Bug Fixes</h3>
+<ul>
+<li><strong>crawl:</strong> do not fail a job because robots.txt could not be read (<a href="https://github.com/us/crw/commit/e8eea02a0339b52a19f8a0d04f252003f5408974">e8eea02</a>)</li>
+<li><strong>crawl:</strong> keep the last robots rule of a file that lands on the size cap (<a href="https://github.com/us/crw/commit/1e41fb081ab2ee8ddad530ad694b025854e2669e">1e41fb0</a>)</li>
+<li><strong>extract:</strong> accumulate usage across legs, and report it on /v2/search (<a href="https://github.com/us/crw/commit/6623dce395bd72db53d9bf3f0592dfe16ee6eca0">6623dce</a>)</li>
+<li><strong>extract:</strong> forward reasoning_effort from the structured builder (<a href="https://github.com/us/crw/commit/dc161c1b4600ea175dea566a4a4c67e108faa99c">dc161c1</a>)</li>
+<li><strong>extract:</strong> stop corrupting markdown for non-HTML sources (<a href="https://github.com/us/crw/commit/0ae7c40251f042c1664d64a5c377dd306f56ffc1">0ae7c40</a>)</li>
+<li><strong>extract:</strong> stop the rescue candidate from reintroducing page chrome (<a href="https://github.com/us/crw/commit/8272600ec378ab388c14a16390bcc27bd63d153f">8272600</a>)</li>
+<li>harden consolidated crawl reliability changes (<a href="https://github.com/us/crw/commit/5691492669ec2e3a9fa7c35611b0b3a1b0efe23b">5691492</a>)</li>
+<li><strong>mcp:</strong> let CRW_LOCAL actually keep the run local (<a href="https://github.com/us/crw/commit/abc05e297b4abf22ebe72f74f6a2cc5d7a9830b1">abc05e2</a>), closes <a href="https://github.com/us/crw/issues/557">#557</a></li>
+<li>preserve crawl and renderer reliability invariants (<a href="https://github.com/us/crw/commit/65f385a669aaa21605e0e043c6bb426f65b17d10">65f385a</a>)</li>
+<li><strong>renderer:</strong> connect CDP over every resolved address, not just the first (<a href="https://github.com/us/crw/commit/77c0c74decb96a444a9d5e416d0032cba2770273">77c0c74</a>)</li>
+<li><strong>scrape:</strong> scope the page cache per tenant (<a href="https://github.com/us/crw/commit/e0a583b62a1ddb31da87983d92cfe0fa45bd3211">e0a583b</a>)</li>
+<li><strong>sdk:</strong> return the map sitemaps and keep local mode local (<a href="https://github.com/us/crw/commit/76c59c08a0f6860840202addb9909eabf09cb307">76c59c0</a>), closes <a href="https://github.com/us/crw/issues/557">#557</a></li>
+<li><strong>v2:</strong> carry llmUsage through to_v2_document (<a href="https://github.com/us/crw/commit/85fe020a478e7d256ced89a79bd523d43ee20e5f">85fe020</a>)</li>
+</ul>
+<h2 id="0351-2026-09-10"><a href="https://github.com/us/crw/compare/v0.35.0...v0.35.1">0.35.1</a> (2026-09-10)</h2>
+<h3 id="bug-fixes-7">Bug Fixes</h3>
+<ul>
+<li><strong>docker:</strong> cross-compile BoringSSL for the arm64 image leg (<a href="https://github.com/us/crw/commit/7d748e584aa0d76c83d2bc0230534bfbb055bea2">7d748e5</a>)</li>
+</ul>
+<h2 id="0350-2026-09-10"><a href="https://github.com/us/crw/compare/v0.34.1...v0.35.0">0.35.0</a> (2026-09-10)</h2>
+<h3 id="features-4">Features</h3>
+<ul>
+<li><strong>renderer:</strong> impersonated-http tier with a real Chrome TLS fingerprint (<a href="https://github.com/us/crw/commit/8a388ed83e0aca41370cc51d3ad1a179fc0d5218">8a388ed</a>)</li>
+</ul>
+<h3 id="bug-fixes-8">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> read the crate checksum from the sparse index (<a href="https://github.com/us/crw/commit/ab43c40489f3edf446c8cbcd3c56b2c4a7fb9b23">ab43c40</a>)</li>
+</ul>
+<h2 id="0341-2026-09-10"><a href="https://github.com/us/crw/compare/v0.34.0...v0.34.1">0.34.1</a> (2026-09-10)</h2>
+<h3 id="bug-fixes-9">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> report failures truthfully, scope breaker verdicts (<a href="https://github.com/us/crw/commit/36f4a0a7483ac78e9fd16beafcbd0ad25765618c">36f4a0a</a>)</li>
+</ul>
+<h2 id="0340-2026-09-08"><a href="https://github.com/us/crw/compare/v0.33.0...v0.34.0">0.34.0</a> (2026-09-08)</h2>
+<h3 id="features-5">Features</h3>
+<ul>
+<li><strong>renderer:</strong> align browser locale with the proxy exit country (<a href="https://github.com/us/crw/commit/6155ac6e670a65f594270f7a39157df8c66644b6">6155ac6</a>), closes <a href="https://github.com/us/crw/issues/385">#385</a></li>
+<li><strong>renderer:</strong> let camoufox wait out a JS challenge instead of reporting it (<a href="https://github.com/us/crw/commit/86766d5b329bdb2fa8af0f3d197dbae098ee9e6f">86766d5</a>)</li>
+</ul>
+<h3 id="bug-fixes-10">Bug Fixes</h3>
+<ul>
+<li><strong>batch:</strong> retain failed scrape results (<a href="https://github.com/us/crw/commit/63b00aff293ee86a17f104f0a237f63a89ad5e1b">63b00af</a>)</li>
+<li>keep internal URLs and proxy credentials out of error strings (<a href="https://github.com/us/crw/commit/59f7a15ac0fc8baea7e1ec0af5708b358efb7a7a">59f7a15</a>)</li>
+<li><strong>renderer:</strong> escalate lightpanda to a tier the pool actually holds (<a href="https://github.com/us/crw/commit/5c9f6cc1676a7162e84778861310ad78ba95ae30">5c9f6cc</a>)</li>
+<li><strong>renderer:</strong> give the chrome_proxy recovery arm time to finish (<a href="https://github.com/us/crw/commit/595a3c53b008fc4bc2b03f38578b7a438b0fb582">595a3c5</a>)</li>
+<li><strong>renderer:</strong> keep the HTTP shell from resurrecting a refused wall (<a href="https://github.com/us/crw/commit/c74bcf365a72d77e025ddfcefd8640f822a1d5c2">c74bcf3</a>)</li>
+<li><strong>renderer:</strong> poll the interstitial camoufox actually sees (<a href="https://github.com/us/crw/commit/49a3eb93e22626b86c98f4a5988c4094bc831614">49a3eb9</a>)</li>
+<li><strong>renderer:</strong> report scrape outcomes truthfully (<a href="https://github.com/us/crw/commit/294eb3d8a7cfb55026da493df9951b9d058a5968">294eb3d</a>)</li>
+<li><strong>renderer:</strong> stop camoufox polling out a page that already cleared (<a href="https://github.com/us/crw/commit/800a30c8f7c716e293dc64bc24664ddee44c93a6">800a30c</a>)</li>
+<li><strong>renderer:</strong> stop shipping an unclearable wall as a success (<a href="https://github.com/us/crw/commit/82a56f6bfa5f097bd046789a5db647eab2f8045e">82a56f6</a>)</li>
+<li><strong>server:</strong> make the retained batch failure legible on every surface (<a href="https://github.com/us/crw/commit/15e9bb9f3e26e41311071a4c632582d281d565a5">15e9bb9</a>)</li>
+<li><strong>v2:</strong> report per-URL batch and crawl failures on the errors route (<a href="https://github.com/us/crw/commit/c486731c52c509b6f9a7d356fef8c5b4d446c450">c486731</a>)</li>
+</ul>
+<h2 id="0330-2026-09-02"><a href="https://github.com/us/crw/compare/v0.32.0...v0.33.0">0.33.0</a> (2026-09-02)</h2>
+<h3 id="features-6">Features</h3>
+<ul>
+<li>enhance crawl error diagnostics and configurable headers (<a href="https://github.com/us/crw/commit/93b4c117dd7dd569f1f0b9abce8d3416cf162e75">93b4c11</a>)</li>
+</ul>
+<h3 id="bug-fixes-11">Bug Fixes</h3>
+<ul>
+<li><strong>crawl:</strong> report unreadable pages and honour per-request headers (<a href="https://github.com/us/crw/commit/c58a8f6e4d09bff7c5686b1db093f1571fa47988">c58a8f6</a>)</li>
+<li><strong>deps:</strong> move PDF parsing to lopdf 0.42, clearing RUSTSEC-2026-0187 (<a href="https://github.com/us/crw/commit/10f4341eaa9bb957e5b2bcfb7424fdb131e844b1">10f4341</a>)</li>
+<li><strong>extract:</strong> enforce structured output on the chat transports (<a href="https://github.com/us/crw/commit/aeb55ca844b32197859252679d9a28290aab31d7">aeb55ca</a>)</li>
+<li><strong>renderer:</strong> don&#39;t feed binary bodies to the HTML extractor (<a href="https://github.com/us/crw/commit/ab5e93e6d116ed1aa5a17c5a4193122fb18b035e">ab5e93e</a>)</li>
+<li><strong>renderer:</strong> keep the binary-body check off real pages (<a href="https://github.com/us/crw/commit/4f741d57d03170617b30e6dbbc4e83e7af6afbff">4f741d5</a>)</li>
+<li><strong>scrape:</strong> classify a wall and an empty result as failures (<a href="https://github.com/us/crw/commit/96a4b4395366cafcd1a6314b7a0af8fb6db82cab">96a4b43</a>)</li>
+</ul>
+<h2 id="0320-2026-08-24"><a href="https://github.com/us/crw/compare/v0.31.0...v0.32.0">0.32.0</a> (2026-08-24)</h2>
+<h3 id="features-7">Features</h3>
+<ul>
+<li><strong>map:</strong> return discovered sitemap document URLs (<a href="https://github.com/us/crw/commit/c65ea1c607609b3f6c2e7874f2789c307fb56fa6">c65ea1c</a>), closes <a href="https://github.com/us/crw/issues/440">#440</a></li>
+<li><strong>setup:</strong> register MCP with detected agents on scripted setup (<a href="https://github.com/us/crw/commit/2cb5f711f48f8bbf04def1e6a62dc44ed3939272">2cb5f71</a>)</li>
+</ul>
+<h3 id="bug-fixes-12">Bug Fixes</h3>
+<ul>
+<li><strong>browse:</strong> satisfy the lints Rust 1.98 turned on (<a href="https://github.com/us/crw/commit/a338091983cf697d84bf2e51d251c7538c45832b">a338091</a>)</li>
+<li><strong>map:</strong> report a sitemap by retrieval, not by entry count (<a href="https://github.com/us/crw/commit/38b1c1ffd1e4e881e25ea20ffebf17bfc90fa43f">38b1c1f</a>), closes <a href="https://github.com/us/crw/issues/440">#440</a></li>
+<li><strong>mcp:</strong> bound the map sitemaps list like the links list (<a href="https://github.com/us/crw/commit/579910a5259a81cc80ad199fddeeed3e43fd54be">579910a</a>), closes <a href="https://github.com/us/crw/issues/440">#440</a></li>
+<li><strong>mcp:</strong> pair the Smithery API key with the cloud API URL (<a href="https://github.com/us/crw/commit/566eb85eaa1d1fa6b3a2fda491f49816ea244a23">566eb85</a>)</li>
+<li><strong>renderer:</strong> stop treating a cleared page as a Cloudflare challenge (<a href="https://github.com/us/crw/commit/0b91afb6f19ed0458cd09a7edcc3e19d1c38b453">0b91afb</a>)</li>
+<li><strong>research:</strong> restore arXiv coverage and unbreak the OpenAlex pool (<a href="https://github.com/us/crw/commit/a942b6d303dec0e2461062cab2c74dedf0ba0ec8">a942b6d</a>)</li>
+<li><strong>sdk:</strong> follow batch pagination and stop on cancel in both SDKs (<a href="https://github.com/us/crw/commit/47dd99b9ee4b56b13c86d44173af7b1a3ed70893">47dd99b</a>)</li>
+</ul>
+<h2 id="0310-2026-08-18"><a href="https://github.com/us/crw/compare/v0.30.0...v0.31.0">0.31.0</a> (2026-08-18)</h2>
+<h3 id="features-8">Features</h3>
+<ul>
+<li><strong>search:</strong> carry a paid-rescue entitlement to the search backend (<a href="https://github.com/us/crw/commit/d7812a0e62fd4f5d92660df3254ce01146f78d8e">d7812a0</a>)</li>
+<li><strong>search:</strong> per-request query-expand override and deadline-bounded scout (<a href="https://github.com/us/crw/commit/8436b434ca3b5ebc615bc81337ca7ec27e2c5118">8436b43</a>)</li>
+<li><strong>search:</strong> snippet-first lazy-scrape answer path (gated, default off) (<a href="https://github.com/us/crw/commit/32382c46f5bcb015b2d4a3c38a241a75ae33064b">32382c4</a>)</li>
+<li><strong>setup:</strong> offer MCP registration for detected AI tools (<a href="https://github.com/us/crw/commit/8d78c0cf937c0988e4de189ec5ed5198bb7b95a5">8d78c0c</a>)</li>
+<li>simplify onboarding and align documentation truth (<a href="https://github.com/us/crw/commit/974887780f0653ec8a96f450eb79843088533d8d">9748877</a>)</li>
+</ul>
+<h3 id="bug-fixes-13">Bug Fixes</h3>
+<ul>
+<li><strong>cli:</strong> drop emoji from setup output (<a href="https://github.com/us/crw/commit/a781671b3ad7ff4125b2689d1ac3422906319245">a781671</a>)</li>
+<li><strong>cli:</strong> keep the smoke fixture inside the published crate (<a href="https://github.com/us/crw/commit/b3f85c61d1539e79deba09cc8643fb6b44131d46">b3f85c6</a>)</li>
+<li><strong>config:</strong> pin the deployed config shape, and sync the embedded spec (<a href="https://github.com/us/crw/commit/16ea2efe188e3dabe3e24ccb5b28e9fb50983b2f">16ea2ef</a>)</li>
+<li><strong>crawl:</strong> apply the block verdict on crawl, batch and extract (<a href="https://github.com/us/crw/commit/def3f9c7dd2a1334d1cb26b5cca605f59a3449ea">def3f9c</a>)</li>
+<li><strong>deps:</strong> hold pdf-inspector at 0.1.6, 0.1.7 loses page content (<a href="https://github.com/us/crw/commit/aef471913b82e526a758263639b461f11a2943f7">aef4719</a>)</li>
+<li><strong>extract:</strong> retry an LLM POST that died before reaching the provider (<a href="https://github.com/us/crw/commit/a9da7db01e78b76795b3f69073eec19577205447">a9da7db</a>)</li>
+<li><strong>extract:</strong> stop calling valid non-HTML content an anti-bot block (<a href="https://github.com/us/crw/commit/04c5f6370dc864e10dfd56473fed833d545ef1d3">04c5f63</a>)</li>
+<li><strong>install:</strong> resolve latest via GitHub redirect, not the REST API (<a href="https://github.com/us/crw/commit/cd78a6099bbc64da2faedbece82a453b81b0ff85">cd78a60</a>)</li>
+<li><strong>renderer:</strong> report a blackholed origin as unreachable, not a timeout (<a href="https://github.com/us/crw/commit/625019081de6e086e520774bba7b4541aaca2d54">6250190</a>)</li>
+<li><strong>renderer:</strong> search for &lt;/body&gt; after &lt;body&gt;, not from the start (<a href="https://github.com/us/crw/commit/28564bbb129b526bc931b26149877ad0094d3f46">28564bb</a>)</li>
+<li><strong>scrape:</strong> stop returning an origin error page as a successful scrape (<a href="https://github.com/us/crw/commit/13106aed62def301ad4ed853827a2bf598a70d86">13106ae</a>)</li>
+<li><strong>scrape:</strong> stop selling registrar parking pages as content (<a href="https://github.com/us/crw/commit/68f45456231bfc6895db81131b59a92ce1f14b6d">68f4545</a>)</li>
+</ul>
+<h2 id="0300-2026-08-07"><a href="https://github.com/us/crw/compare/v0.29.0...v0.30.0">0.30.0</a> (2026-08-07)</h2>
+<h3 id="features-9">Features</h3>
+<ul>
+<li><strong>mcp:</strong> add option to hide credit-billing fields (<a href="https://github.com/us/crw/commit/bc951f1ce687657341c8844e173b7664632c65a5">bc951f1</a>)</li>
+<li><strong>renderer:</strong> make the interactive render reserve configurable (<a href="https://github.com/us/crw/commit/9fdcde8d5ee071cc75e933b2dfdb92c7c4172508">9fdcde8</a>)</li>
+</ul>
+<h3 id="bug-fixes-14">Bug Fixes</h3>
+<ul>
+<li><strong>extract:</strong> drop single-render nav menus under onlyMainContent (<a href="https://github.com/us/crw/commit/c5bd7e6f27ec56abbc82eb1394cc0fef03964d34">c5bd7e6</a>)</li>
+<li><strong>mcp:</strong> scope credit-field strip and honor config in proxy mode (<a href="https://github.com/us/crw/commit/b8899d66b2021ae9d14e79bca3e5634c1756610d">b8899d6</a>)</li>
+<li><strong>renderer:</strong> attribute nav-budget log to the real renderer tier (<a href="https://github.com/us/crw/commit/a8af83a4539a0e12fd797563c13b0d0344a1af41">a8af83a</a>)</li>
+<li><strong>renderer:</strong> classify a blackholed origin with a hung proxy rescue as unreachable (<a href="https://github.com/us/crw/commit/329c478ccc2e942159204ab9516106430f3909ba">329c478</a>)</li>
+<li><strong>renderer:</strong> close the guard&#39;s remaining fail-open and budget holes (<a href="https://github.com/us/crw/commit/1f5edeba3e35427cb27abc8e23647b4c2bf0c477">1f5edeb</a>)</li>
+<li><strong>renderer:</strong> keep the outbound guard closed under teardown and pressure (<a href="https://github.com/us/crw/commit/4695bfaa6a1f3f739d2f6888c1a376db77c06c22">4695bfa</a>)</li>
+<li><strong>renderer:</strong> reap cancelled legacy renders and keep denials attributable (<a href="https://github.com/us/crw/commit/27807f672361639fea2a4707c7da8c91ba715bd7">27807f6</a>)</li>
+<li><strong>renderer:</strong> stop releasing unjudged requests at render teardown (<a href="https://github.com/us/crw/commit/d57f6a411cff2c6c009a54b43b2daef79583e437">d57f6a4</a>)</li>
+<li><strong>renderer:</strong> validate outbound destinations in the CDP render tiers (<a href="https://github.com/us/crw/commit/30ca299d15b65b352e67edf90ccf28eb33f6cc02">30ca299</a>)</li>
+</ul>
+<h3 id="performance-1">Performance</h3>
+<ul>
+<li><strong>crawl:</strong> stop rendering JSON bodies that score low on quality (<a href="https://github.com/us/crw/commit/a973993dd91ede70c658f5fd92ff0183a9577012">a973993</a>)</li>
+<li><strong>renderer:</strong> cut chrome challenge retries 3 to 1 in docker config (<a href="https://github.com/us/crw/commit/81774c767e09ab1be05c2ff4aff3d29d0e638531">81774c7</a>)</li>
+</ul>
+<h2 id="0290-2026-08-04"><a href="https://github.com/us/crw/compare/v0.28.0...v0.29.0">0.29.0</a> (2026-08-04)</h2>
+<h3 id="features-10">Features</h3>
+<ul>
+<li><strong>extract:</strong> expand table rowspan/colspan into a flat grid (<a href="https://github.com/us/crw/commit/0f486aa556fda6e24f2b683e9f593ae39f8013d4">0f486aa</a>)</li>
+<li><strong>extract:</strong> support openai-responses LLM provider (<a href="https://github.com/us/crw/commit/ed551e3257da61a238efc188c9c064462591851d">ed551e3</a>)</li>
+<li><strong>renderer:</strong> cf_clearance cookie cache — solve a Cloudflare challenge once, reuse across the host (<a href="https://github.com/us/crw/commit/c9b6e6d5cafb361cbfc637dc34c3e1acd1cef96b">c9b6e6d</a>)</li>
+<li><strong>renderer:</strong> decouple chrome_proxy arm pool from renderer.pool_size (<a href="https://github.com/us/crw/commit/3b0ef229802677fe29a74f1b06b4582be323f7c7">3b0ef22</a>)</li>
+<li><strong>renderer:</strong> fire the cloak CF-recovery arm on a fresh budget (gated) (<a href="https://github.com/us/crw/commit/9f1e5ea5555bbf29cd41e454902be0cd804a15e4">9f1e5ea</a>)</li>
+</ul>
+<h3 id="bug-fixes-15">Bug Fixes</h3>
+<ul>
+<li><strong>antibot:</strong> catch Reddit/Cloudflare/Vercel block pages sent as 200 (<a href="https://github.com/us/crw/commit/e7b2f5b988aec7188592ad4d128e3f8f1115d556">e7b2f5b</a>)</li>
+<li><strong>antibot:</strong> catch Vercel block pages that beat the markdown guard (<a href="https://github.com/us/crw/commit/0d95dadc91c1583f8ef482767854bcea9932f792">0d95dad</a>)</li>
+<li><strong>core:</strong> stop SSRF guard over-blocking public /16s (<a href="https://github.com/us/crw/commit/555d62bc2e55fd0ccb870ab4b5f6732281393a1d">555d62b</a>)</li>
+<li><strong>extract:</strong> drop two over-broad boilerplate patterns (<a href="https://github.com/us/crw/commit/ee5993c9d03705f165f05a849346ad416662c25f">ee5993c</a>)</li>
+<li><strong>extract:</strong> keep Elementor page content and collapse repeated nav (<a href="https://github.com/us/crw/commit/86c1d2d1ab4c92e3b85c6a6530c92aa4f5ad2df8">86c1d2d</a>)</li>
+<li><strong>extract:</strong> stop deleting article content under onlyMainContent (<a href="https://github.com/us/crw/commit/682a731c56bf31da1b14f716ae26a227de8c6285">682a731</a>)</li>
+<li><strong>extract:</strong> validate Responses status and stop echoing error bodies (<a href="https://github.com/us/crw/commit/9cd06f43bd77fc48863c51e6906e8d3d1bd76657">9cd06f4</a>)</li>
+<li><strong>mcp:</strong> stop advertising an output schema the proxy cannot honour (<a href="https://github.com/us/crw/commit/e76bcbcdbb37291cedadd122a59d104c0c7683f8">e76bcbc</a>), closes <a href="https://github.com/us/crw/issues/391">#391</a></li>
+<li><strong>renderer:</strong> cloak solves cold hosts on a fresh exit IP, not a pinned one (<a href="https://github.com/us/crw/commit/c2403f25013598ea5be162a66605649b288fde5e">c2403f2</a>)</li>
+<li><strong>renderer:</strong> pool the chrome_proxy tier so its targets get reaped (<a href="https://github.com/us/crw/commit/1bf32e8caf058bde8016e17af11d0458472ee21e">1bf32e8</a>)</li>
+<li><strong>renderer:</strong> reap orphaned chrome targets on cancelled renders (<a href="https://github.com/us/crw/commit/727a0419a7f91bf0de1414d0324565b40917fd79">727a041</a>)</li>
+<li><strong>renderer:</strong> stop anti-bot blocks from stranding the recovery tier (<a href="https://github.com/us/crw/commit/223de6c4c32ff4ba1bd1f13fdf9ed310a3a6f540">223de6c</a>)</li>
+<li><strong>renderer:</strong> stop discarding good content when the JS ladder fails (<a href="https://github.com/us/crw/commit/6d366651de0801525857e95e16569d242daf3e68">6d36665</a>)</li>
+<li><strong>scrape:</strong> stop reporting a thin page as an anti-bot block (<a href="https://github.com/us/crw/commit/544d4aa1a76bff2789c1d368d15c665e630bdbd9">544d4aa</a>)</li>
+<li><strong>scrape:</strong> stop selling a CDN&#39;s error page as the page that was asked for (<a href="https://github.com/us/crw/commit/d9ddca9e9a22eb1d108e1f34bbd182543f67c54f">d9ddca9</a>)</li>
+<li><strong>search:</strong> validate <code>lang</code> at the API boundary (<a href="https://github.com/us/crw/commit/52711fe42b1acbdff54b18b57f1e44653c2aad7c">52711fe</a>)</li>
+</ul>
+<h2 id="0280-2026-07-23"><a href="https://github.com/us/crw/compare/v0.27.1...v0.28.0">0.28.0</a> (2026-07-23)</h2>
+<h3 id="features-11">Features</h3>
+<ul>
+<li><strong>sdk:</strong> add typed response object interfaces (<a href="https://github.com/us/crw/commit/a2acacb1e6cbf3077fdd089f710cac75eb7eabda">a2acacb</a>), closes <a href="https://github.com/us/crw/issues/361">#361</a></li>
+</ul>
+<h3 id="bug-fixes-16">Bug Fixes</h3>
+<ul>
+<li><strong>core:</strong> bound SSRF DNS resolution with an 8s timeout (<a href="https://github.com/us/crw/commit/4b542dc65dd01465cc0e917f4607dc9095d00e18">4b542dc</a>)</li>
+<li><strong>crawl:</strong> accept the nested scrapeOptions shape the spec publishes (<a href="https://github.com/us/crw/commit/c5683334414df28525c7efb42332fb2e2165858f">c568333</a>)</li>
+<li><strong>openapi:</strong> re-sync the docs copy of the 3.0 spec (<a href="https://github.com/us/crw/commit/ffe8618b24cece724ecc62d2f8d044d37d3816a4">ffe8618</a>)</li>
+<li><strong>openapi:</strong> sync the spec with the real types, and guard it in CI (<a href="https://github.com/us/crw/commit/dcc0fcc77d8b926fe4744564072d59b81f4dcef6">dcc0fcc</a>)</li>
+<li><strong>renderer:</strong> forward custom request headers on the CDP path (<a href="https://github.com/us/crw/commit/a0677f7a75d58b5330def3ec88527f60d50a9351">a0677f7</a>), closes <a href="https://github.com/us/crw/issues/351">#351</a></li>
+<li><strong>renderer:</strong> stop misclassifying &gt;500KB pages as thin (<a href="https://github.com/us/crw/commit/21c15dd7910afcd3b228d6f3c11e3dda9005b7b0">21c15dd</a>)</li>
+<li><strong>renderer:</strong> treat a blank caller UA as absent, document header scope (<a href="https://github.com/us/crw/commit/69a2f8e0f44f249a80f4fde3cec11232b6cae976">69a2f8e</a>)</li>
+<li><strong>search:</strong> bound the per-result scrape budget for scrapeOptions (<a href="https://github.com/us/crw/commit/97aa15431c06b80bf2dbfaec37c381ec09b4e281">97aa154</a>)</li>
+<li><strong>v2:</strong> honor location.languages as an Accept-Language header (<a href="https://github.com/us/crw/commit/bac52cdf2a2fd505cc60322ef8140a2ec40d6d16">bac52cd</a>)</li>
+<li><strong>v2:</strong> honor renderJs on the Firecrawl-compat surface (<a href="https://github.com/us/crw/commit/8491d5f4d2903b2d01999d457db4b32732aacc37">8491d5f</a>), closes <a href="https://github.com/us/crw/issues/346">#346</a></li>
+<li><strong>v2:</strong> thread the extraction prompt through extract and the json format (<a href="https://github.com/us/crw/commit/0f2650e45f96b715986b7fbc861ba817bcad2c54">0f2650e</a>), closes <a href="https://github.com/us/crw/issues/352">#352</a></li>
+</ul>
+<h3 id="performance-2">Performance</h3>
+<ul>
+<li><strong>search:</strong> parallelize enrichment DNS validation and dedup scout scrapes (<a href="https://github.com/us/crw/commit/6e1ca78ef3e8b79994e98e88b9d7f287d7ed204e">6e1ca78</a>)</li>
+</ul>
+<h2 id="0271-2026-07-22"><a href="https://github.com/us/crw/compare/v0.27.0...v0.27.1">0.27.1</a> (2026-07-22)</h2>
+<h3 id="bug-fixes-17">Bug Fixes</h3>
+<ul>
+<li><strong>packaging:</strong> verify downloaded binaries against published checksums (<a href="https://github.com/us/crw/commit/a181e6906ce3427258ab34703c64c47be0957883">a181e69</a>)</li>
+<li><strong>search:</strong> distinguish a degraded backend from a zero-result query (<a href="https://github.com/us/crw/commit/c8c031a13793d96bbd05d4ebabd1846c5f88117a">c8c031a</a>)</li>
+</ul>
+<h2 id="0270-2026-07-21"><a href="https://github.com/us/crw/compare/v0.26.1...v0.27.0">0.27.0</a> (2026-07-21)</h2>
+<h3 id="features-12">Features</h3>
+<ul>
+<li><strong>docker:</strong> make published bind address configurable (<a href="https://github.com/us/crw/commit/79ac8f700895694a05d7c2f097617930e0784892">79ac8f7</a>)</li>
+<li><strong>renderer:</strong> route learned CF-managed domains straight to cloak (<a href="https://github.com/us/crw/commit/884ed635b19af2dd3b80092deb83072ff2f1982a">884ed63</a>)</li>
+</ul>
+<h3 id="bug-fixes-18">Bug Fixes</h3>
+<ul>
+<li><strong>compose:</strong> make crw host port overridable via CRW_HOST_PORT (<a href="https://github.com/us/crw/commit/3f0a1ebbdc7d0e749c29460c99a6953b171932d3">3f0a1eb</a>)</li>
+<li><strong>crawl:</strong> stop flagging cleared managed pages as CF challenges (<a href="https://github.com/us/crw/commit/9d81efebd33d7ad34f0c1b64f73f6bc64bbc8f7b">9d81efe</a>)</li>
+</ul>
+<h2 id="0261-2026-07-21"><a href="https://github.com/us/crw/compare/v0.26.0...v0.26.1">0.26.1</a> (2026-07-21)</h2>
+<h3 id="bug-fixes-19">Bug Fixes</h3>
+<ul>
+<li><strong>extract:</strong> count MAX_USER_PROMPT_CHARS as Unicode scalars (<a href="https://github.com/us/crw/commit/ea798f5abf9df7b4448cb1d5732b8ac5511d37b6">ea798f5</a>)</li>
+<li><strong>extract:</strong> count maxChars as Unicode scalars (<a href="https://github.com/us/crw/commit/f319de682a274e2b2c62f514fe19834deb581cad">f319de6</a>)</li>
+<li><strong>server:</strong> require auth on admin and metrics routes, restrict CORS (<a href="https://github.com/us/crw/commit/1a662473da9a98173c4f7e6d42280049799d3895">1a66247</a>)</li>
+</ul>
+<h2 id="0260-2026-07-19"><a href="https://github.com/us/crw/compare/v0.25.2...v0.26.0">0.26.0</a> (2026-07-19)</h2>
+<h3 id="features-13">Features</h3>
+<ul>
+<li><strong>extract:</strong> expose extracted images in scrape response (<a href="https://github.com/us/crw/commit/7d632ef56cd20fd9a30784bb400b19593cdad74e">7d632ef</a>)</li>
+<li><strong>renderer:</strong> let the cloak arm self-provision its residential proxy (<a href="https://github.com/us/crw/commit/35bc4728913628f310f0872573c3bb7b5b93b87f">35bc472</a>)</li>
+<li><strong>renderer:</strong> send x-deadline-ms to the cloak sidecar mirror call (<a href="https://github.com/us/crw/commit/0de10e276a4e04ffa595ff0adc06e146bedc725c">0de10e2</a>)</li>
+<li><strong>search:</strong> passage-select + snippet-first for the answer path (<a href="https://github.com/us/crw/commit/88f2e93bc43469990f3fc197f2652f7e74565f49">88f2e93</a>)</li>
+<li><strong>server:</strong> add Kimi Code compat routes (/kimi/search, /kimi/fetch) (<a href="https://github.com/us/crw/commit/5a241e5f2fd810d18d7fa077f3b3e036a92ec5fd">5a241e5</a>)</li>
+</ul>
+<h3 id="bug-fixes-20">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> give chrome_proxy recovery arm its own budget and load-shed it (<a href="https://github.com/us/crw/commit/1a3942b02efe659377e8dcde6986b9b2ea09db6f">1a3942b</a>)</li>
+<li><strong>server:</strong> add success field to /v1/extract responses (<a href="https://github.com/us/crw/commit/4f386ed2acd404b2b7b5b540bcb2079dab4451be">4f386ed</a>), closes <a href="https://github.com/us/crw/issues/318">#318</a></li>
+</ul>
+<h2 id="0252-2026-07-17"><a href="https://github.com/us/crw/compare/v0.25.1...v0.25.2">0.25.2</a> (2026-07-17)</h2>
+<h3 id="bug-fixes-21">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> stop the mcp-registry verify failing on a published version (<a href="https://github.com/us/crw/commit/24cebb001cd23e1b7b0a31024795a75d82349de0">24cebb0</a>)</li>
+<li><strong>renderer:</strong> fire chrome_proxy recovery arm under the default deadline (<a href="https://github.com/us/crw/commit/e6c19a1fc71b1ee422f8c6391737f3503f8b684f">e6c19a1</a>)</li>
+<li><strong>renderer:</strong> suppress chrome_proxy on antibot-detected fingerprint walls (<a href="https://github.com/us/crw/commit/ff09f3004c76290ed9cd9b376ed774ed20ae626b">ff09f30</a>)</li>
+<li>surface and recover HTTP-200 Wikimedia datacenter block shell (<a href="https://github.com/us/crw/commit/a148f609fd15e430481352a794eaacde6851bd8c">a148f60</a>)</li>
+</ul>
+<h2 id="0251-2026-07-16"><a href="https://github.com/us/crw/compare/v0.25.0...v0.25.1">0.25.1</a> (2026-07-16)</h2>
+<h3 id="bug-fixes-22">Bug Fixes</h3>
+<ul>
+<li><strong>browse:</strong> stop a rejected multibyte url from panicking the log path (<a href="https://github.com/us/crw/commit/66a394d139e8d6d14371953fef4cc04e2d919b61">66a394d</a>)</li>
+<li><strong>extract:</strong> stop a multibyte value from panicking the basis scan (<a href="https://github.com/us/crw/commit/5efddc42f3f8ed48a311c4f6047a4c32122dab3c">5efddc4</a>)</li>
+<li><strong>renderer:</strong> avoid panic slicing multibyte HTML at the scan-size cap (<a href="https://github.com/us/crw/commit/95fe1894e6d98b6e32ef58fd9110020162e2655b">95fe189</a>)</li>
+</ul>
+<h2 id="0250-2026-07-16"><a href="https://github.com/us/crw/compare/v0.24.1...v0.25.0">0.25.0</a> (2026-07-16)</h2>
+<h3 id="features-14">Features</h3>
+<ul>
+<li><strong>engine:</strong> add opt-in cloak Turnstile-solver recovery tier (<a href="https://github.com/us/crw/commit/41f780e0ea5d4e74d363a79cd108b33663b00bb1">41f780e</a>)</li>
+<li><strong>extract:</strong> add canonical cancellation lifecycle (<a href="https://github.com/us/crw/commit/635679f3c279d1961db1ad021c3eb2bd800a34c4">635679f</a>)</li>
+</ul>
+<h3 id="bug-fixes-23">Bug Fixes</h3>
+<ul>
+<li><strong>engine:</strong> detect large Cloudflare challenge pages and return clean blocks (<a href="https://github.com/us/crw/commit/b3e81585594c030a922df72af1a811d4fb8cc0d5">b3e8158</a>)</li>
+<li><strong>extract:</strong> carry selector_no_match through the full pipeline for include_tags (<a href="https://github.com/us/crw/commit/819372deb66071efbf37d6b08e5b119f6f78f7a7">819372d</a>)</li>
+<li><strong>extract:</strong> don&#39;t relabel a finished job as cancelled (<a href="https://github.com/us/crw/commit/cb05be2d590f7310887cb40485299c2d037cd911">cb05be2</a>)</li>
+<li><strong>extract:</strong> enforce lifecycle expiry invariants (<a href="https://github.com/us/crw/commit/903fbb9475d6c7680690653db825df0903e5c830">903fbb9</a>)</li>
+<li><strong>extract:</strong> return empty + selector_no_match when a selector matches nothing (<a href="https://github.com/us/crw/commit/7a1ac760d30213fbcbf74cb2d8694ffc4c9fc34f">7a1ac76</a>)</li>
+<li><strong>map:</strong> bound the seed SSRF check and widen the latched direct-rescue (<a href="https://github.com/us/crw/commit/b55e0817c9c9cd6628d404a0fbd7572759393834">b55e081</a>)</li>
+<li><strong>map:</strong> stop returning 504 with zero URLs on sites without a sitemap (<a href="https://github.com/us/crw/commit/159b0a34f5a273fe7ef38dd5e78cc11307b5cb46">159b0a3</a>)</li>
+<li><strong>mcp:</strong> keep the success envelope on extract lifecycle tools (<a href="https://github.com/us/crw/commit/0bff32141e1711a969b6bba6f51da12fbba43636">0bff321</a>)</li>
+</ul>
+<h2 id="0241-2026-07-14"><a href="https://github.com/us/crw/compare/v0.24.0...v0.24.1">0.24.1</a> (2026-07-14)</h2>
+<h3 id="bug-fixes-24">Bug Fixes</h3>
+<ul>
+<li><strong>engine:</strong> drop hickory-dns so direct egress resolves in Docker (<a href="https://github.com/us/crw/commit/4cf098f471307e199c09575450c42c9f88ece87e">4cf098f</a>)</li>
+<li><strong>renderer:</strong> detect Chrome on Windows in embedded mode (<a href="https://github.com/us/crw/commit/7d3bf0f032be394e0fc3fc63706b7f1e567c3296">7d3bf0f</a>)</li>
+</ul>
+<h2 id="0240-2026-07-12"><a href="https://github.com/us/crw/compare/v0.23.0...v0.24.0">0.24.0</a> (2026-07-12)</h2>
+<h3 id="breaking-changes">⚠ BREAKING CHANGES</h3>
+<ul>
+<li><strong>server:</strong> the <code>monitor</code> cargo feature and the crw-monitor crate are removed. Self-hosted scheduled monitoring must be driven by an external scheduler calling the stateless change-tracking primitives.</li>
+</ul>
+<h3 id="features-15">Features</h3>
+<ul>
+<li><strong>bench:</strong> live answer track + managed-endpoint support (<a href="https://github.com/us/crw/commit/278d6d52fb694e6820f27014413fb9f9dfd9f742">278d6d5</a>)</li>
+<li><strong>bench:</strong> multi-track benchmark discipline (<a href="https://github.com/us/crw/commit/887623c885c9a7299d34a622254f78a5882a3cb6">887623c</a>)</li>
+<li><strong>extract:</strong> per-field evidence contract (basis) (<a href="https://github.com/us/crw/commit/273f2da9c5ddf620264c2976b565fd7b7007097c">273f2da</a>)</li>
+<li><strong>mcp:</strong> advertise server instructions and web-first tool guidance (<a href="https://github.com/us/crw/commit/23cc08dfeb88dd9f732bf8e0580ba2138dc52e47">23cc08d</a>)</li>
+<li><strong>server:</strong> derive /v1/capabilities from the real build and config (<a href="https://github.com/us/crw/commit/cd5818c63c19e4de9bada7b5ebdade4eda871fb2">cd5818c</a>)</li>
+<li><strong>server:</strong> native /v1/batch/scrape endpoint (<a href="https://github.com/us/crw/commit/3a51f3364b47e744cbb040c4e4b823e3870cd5ae">3a51f33</a>)</li>
+</ul>
+<h3 id="bug-fixes-25">Bug Fixes</h3>
+<ul>
+<li><strong>engine:</strong> accumulate LLM usage across every leg, not just the first (<a href="https://github.com/us/crw/commit/c83de80c0c368cfa7b9437c9b6e25faf840fd3a1">c83de80</a>)</li>
+<li><strong>mcp:</strong> align instructions with advertised tools, scrub backend name (<a href="https://github.com/us/crw/commit/392e3904e3aaea5c561e958eb15e96ad1980a480">392e390</a>)</li>
+<li><strong>renderer:</strong> keep chrome_proxy in the screenshot ladder for captures (<a href="https://github.com/us/crw/commit/41524042081fe33d92fb96e45ee9f2c6a2626c29">4152404</a>)</li>
+<li><strong>renderer:</strong> recover blocked-egress scrapes and stop degenerate JS attempts (<a href="https://github.com/us/crw/commit/376f8d98abfadee947c2df3b1320e418276e3978">376f8d9</a>)</li>
+<li><strong>renderer:</strong> recover connect-timeout blackholes via the fallback proxy (<a href="https://github.com/us/crw/commit/1e14879eb2325ad9d96d1231eaa656f3a3b68bc3">1e14879</a>)</li>
+<li><strong>sdk:</strong> extract works against the managed API, and search stops discarding the answer (<a href="https://github.com/us/crw/commit/612df13d3b8dfb1c37fe59046122733d04caef59">612df13</a>)</li>
+<li><strong>server:</strong> stop advertising extract and baseUrl the instance cannot honour (<a href="https://github.com/us/crw/commit/db358b09ba878abfb2e8c08fabb6a8ca2da5be37">db358b0</a>)</li>
+<li>stop leaking the search backend&#39;s name to users, and guard it (<a href="https://github.com/us/crw/commit/22098d6d464f8416dd09b576fd58d87a7cf4e4fd">22098d6</a>)</li>
+</ul>
+<h3 id="code-refactoring">Code Refactoring</h3>
+<ul>
+<li><strong>server:</strong> remove the stateful monitor layer from open core (<a href="https://github.com/us/crw/commit/bf6d221ed32111bda21e4ae184a42ff6da9b2143">bf6d221</a>)</li>
+</ul>
+<h2 id="0230-2026-07-09"><a href="https://github.com/us/crw/compare/v0.22.0...v0.23.0">0.23.0</a> (2026-07-09)</h2>
+<h3 id="breaking-changes-1">⚠ BREAKING CHANGES</h3>
+<ul>
+<li><strong>server:</strong> SDK extract() now returns a per-URL results array instead of a merged object, and no longer accepts systemPrompt or baseUrl.</li>
+</ul>
+<h3 id="features-16">Features</h3>
+<ul>
+<li><strong>server:</strong> native /v1/extract endpoint (<a href="https://github.com/us/crw/commit/b5fc49441a440da37f9a094fb68a9a813380a814">b5fc494</a>)</li>
+<li><strong>server:</strong> reserve interactive capacity from batch + plan-scaled width (<a href="https://github.com/us/crw/commit/ada487de8b8b7b98ece7eed012da0d406e2d21de">ada487d</a>)</li>
+</ul>
+<h3 id="bug-fixes-26">Bug Fixes</h3>
+<ul>
+<li><strong>docker:</strong> CARGO_BUILD_JOBS via env, not empty -j flag (<a href="https://github.com/us/crw/commit/37282d2bbd2fd38d50c8f0cfc1977bcb5fa19ff9">37282d2</a>)</li>
+</ul>
+<h3 id="performance-3">Performance</h3>
+<ul>
+<li><strong>docker:</strong> build only requested binaries via CARGO_PKGS arg (<a href="https://github.com/us/crw/commit/98b6626bc949cc1b89401306b5bb31ab47e60b89">98b6626</a>)</li>
+</ul>
+<h2 id="0220-2026-07-09"><a href="https://github.com/us/crw/compare/v0.21.3...v0.22.0">0.22.0</a> (2026-07-09)</h2>
+<h3 id="features-17">Features</h3>
+<ul>
+<li><strong>cli:</strong> non-interactive cloud setup via &#39;crw setup --api-key&#39; (<a href="https://github.com/us/crw/commit/e7cc4f99b29d88608b1fbe3359fab8ba179695ce">e7cc4f9</a>)</li>
+<li><strong>installer:</strong> connect to cloud when CRW_API_KEY is set (<a href="https://github.com/us/crw/commit/fedb5de046da3578d2207ba40bf66671d198f9c9">fedb5de</a>)</li>
+<li><strong>server:</strong> batch scrape scale guards for 10k-URL submits (<a href="https://github.com/us/crw/commit/9a3e0b64b0a0b6663315912c205f4278b8419801">9a3e0b6</a>)</li>
+</ul>
+<h3 id="bug-fixes-27">Bug Fixes</h3>
+<ul>
+<li><strong>clippy:</strong> satisfy clippy 1.97 lints (for_kv_map, manual_filter) (<a href="https://github.com/us/crw/commit/ed4522d943770999717531fe07cf75b17611697d">ed4522d</a>)</li>
+<li><strong>mcp:</strong> launch server via &#39;npx -y crw-mcp&#39; so fresh installs work (<a href="https://github.com/us/crw/commit/a574a61d587cc6e287a7d9d38f63ce42ada3e558">a574a61</a>)</li>
+<li><strong>server:</strong> cancelled crawl/batch jobs reach a terminal state (<a href="https://github.com/us/crw/commit/fee388cf3cc5570c5980ae60d73fe5a85f658d36">fee388c</a>)</li>
+</ul>
+<h3 id="performance-4">Performance</h3>
+<ul>
+<li><strong>docker:</strong> cargo-chef dependency layer for faster engine builds (<a href="https://github.com/us/crw/commit/603acfa94850ca3face85295d6091e11a7b6ade2">603acfa</a>)</li>
+<li><strong>server:</strong> raise batch URL validation concurrency to 256 (<a href="https://github.com/us/crw/commit/651d3c0a6a3d6451492aa725e7a387669f3d7103">651d3c0</a>)</li>
+</ul>
+<h2 id="0213-2026-07-08"><a href="https://github.com/us/crw/compare/v0.21.2...v0.21.3">0.21.3</a> (2026-07-08)</h2>
+<h3 id="bug-fixes-28">Bug Fixes</h3>
+<ul>
+<li><strong>ci:</strong> let release doc-sync pushes bypass branch protection (<a href="https://github.com/us/crw/commit/7510d1ec6d28e431ab734a040aa423a756c842f8">7510d1e</a>)</li>
+</ul>
+<h2 id="0212-2026-07-08"><a href="https://github.com/us/crw/compare/v0.21.1...v0.21.2">0.21.2</a> (2026-07-08)</h2>
+<h3 id="bug-fixes-29">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> load images/media/fonts for screenshots (<a href="https://github.com/us/crw/commit/2310e5cf0b18447c77dd37807b7a28dc78cb9dfc">2310e5c</a>)</li>
+<li><strong>renderer:</strong> resolve CDP ws host to IP for Chromium 148+ rebinding guard (<a href="https://github.com/us/crw/commit/b197b950140b772b313137868fd8dc627e834c37">b197b95</a>)</li>
+</ul>
+<h2 id="0211-2026-07-07"><a href="https://github.com/us/crw/compare/v0.21.0...v0.21.1">0.21.1</a> (2026-07-07)</h2>
+<h3 id="bug-fixes-30">Bug Fixes</h3>
+<ul>
+<li><strong>scrape:</strong> detect modern Cloudflare Turnstile 200 interstitial (<a href="https://github.com/us/crw/commit/ce3771fbbe5f7fd3da1ea90761594ba3a2032633">ce3771f</a>), closes <a href="https://github.com/us/crw/issues/350">#350</a></li>
+<li><strong>scrape:</strong> scan full html for CF challenge markers, not an 80KB prefix (<a href="https://github.com/us/crw/commit/99fe2b2d6dd3d998d9e3a3d8c30f91b032b43671">99fe2b2</a>), closes <a href="https://github.com/us/crw/issues/350">#350</a></li>
+</ul>
+<h2 id="0210-2026-07-06"><a href="https://github.com/us/crw/compare/v0.20.0...v0.21.0">0.21.0</a> (2026-07-06)</h2>
+<h3 id="breaking-changes-2">⚠ BREAKING CHANGES</h3>
+<ul>
+<li><strong>api:</strong> error responses now use <code>errorCode</code> instead of <code>error_code</code>. The managed API already strips the field, so managed clients are unaffected; self-hosted clients parsing <code>error_code</code> should read <code>errorCode</code>.</li>
+</ul>
+<h3 id="features-18">Features</h3>
+<ul>
+<li><strong>cli:</strong> add crw bench FRAMES harness (<a href="https://github.com/us/crw/commit/fb78bcb57b3add83db28e5ecdbaf39ef39d067fe">fb78bcb</a>)</li>
+<li><strong>cli:</strong> bench A/B flags, concurrency, crash-safe writes (<a href="https://github.com/us/crw/commit/7eb059edac5ea1f857aca34e97a83145928064ee">7eb059e</a>)</li>
+<li><strong>core:</strong> add evidence &amp; provenance primitives (<a href="https://github.com/us/crw/commit/4a638a08e5e1ee3502854e20ae01afd885aa2353">4a638a0</a>)</li>
+<li><strong>core:</strong> expose sourceHash on scrape responses (<a href="https://github.com/us/crw/commit/b0d89f925d98a36bb7ad3cff9b28a7ec1f5a238f">b0d89f9</a>)</li>
+<li><strong>extract:</strong> prompt-based extraction and full meta-tag metadata (<a href="https://github.com/us/crw/commit/645320407c254768f91e75f391350035a11342ba">6453204</a>)</li>
+<li><strong>proxy:</strong> retry with default country on residential CONNECT tunnel failure (<a href="https://github.com/us/crw/commit/8aafdc8a598d3e3aca0ef714749382a926f8a32a">8aafdc8</a>)</li>
+<li><strong>search:</strong> thread per-request country to result-page scraping (<a href="https://github.com/us/crw/commit/be3b0d1797d7559adc4e459b89aa23bf1c4f3832">be3b0d1</a>)</li>
+<li><strong>server:</strong> add /firecrawl/* compat namespace, own /v1 as native API (<a href="https://github.com/us/crw/commit/d9cb3b87a8ad36c75788793b236a822596370875">d9cb3b8</a>)</li>
+</ul>
+<h3 id="bug-fixes-31">Bug Fixes</h3>
+<ul>
+<li><strong>api:</strong> rename error_code response field to errorCode (<a href="https://github.com/us/crw/commit/e4df682b863821ab4c71752881ca7304e5a718ad">e4df682</a>)</li>
+<li><strong>cli:</strong> repair clap arg conflict that panicked debug builds (<a href="https://github.com/us/crw/commit/f2a6b7798fcdb6bd1c1badc420ad8bd517b6ae67">f2a6b77</a>)</li>
+<li><strong>docs:</strong> add redirect stubs for pre-flatten legacy doc URLs (<a href="https://github.com/us/crw/commit/a1f29dc9b3f4573bef96a7a4724846477aa7ab6c">a1f29dc</a>)</li>
+<li><strong>extract:</strong> unify untrusted-content fencing; nonce-fence the change judge (<a href="https://github.com/us/crw/commit/192b9d742cb4455f70370c737afd29761189018a">192b9d7</a>)</li>
+<li><strong>renderer:</strong> cap full-page screenshot height to avoid OOM (<a href="https://github.com/us/crw/commit/c5f555de54b41a088e2be66fa7c2be6333c7ac5d">c5f555d</a>), closes <a href="https://github.com/us/crw/issues/161">#161</a></li>
+<li><strong>renderer:</strong> don&#39;t browser-render thin pages that ship no JS (<a href="https://github.com/us/crw/commit/f42f14acfdde646ec2223832b138f3cf2952531c">f42f14a</a>)</li>
+<li><strong>scrape:</strong> report anti-bot/challenge pages as blocked, not success (<a href="https://github.com/us/crw/commit/d06f05189f8bec911c63dada4c27d1b5daf8e478">d06f051</a>)</li>
+<li><strong>search:</strong> charset-aware scrape decode + per-result error + neutral answer warnings (<a href="https://github.com/us/crw/commit/a9870e2faa25a23de0d004054c37a7f04f026fa8">a9870e2</a>)</li>
+</ul>
+<h2 id="0200-2026-07-01"><a href="https://github.com/us/crw/compare/v0.19.0...v0.20.0">0.20.0</a> (2026-07-01)</h2>
+<h3 id="features-19">Features</h3>
+<ul>
+<li><strong>map:</strong> escalate anti-bot-gated sitemaps through the JS renderer (<a href="https://github.com/us/crw/commit/2634a7e0a5c2670d8075ef1ef5547716e62ad2e3">2634a7e</a>)</li>
+<li><strong>map:</strong> fix URL discovery on hard sites + configurable discovery limit (<a href="https://github.com/us/crw/commit/f5fe1f4a9487643e7e58ef7d5c29e5d988fcdc42">f5fe1f4</a>)</li>
+</ul>
+<h3 id="bug-fixes-32">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> flat 1-credit cost for every renderer (<a href="https://github.com/us/crw/commit/35a604cabf375d5e956adc0ec18f017e57309e79">35a604c</a>)</li>
+</ul>
+<h2 id="0190-2026-06-28"><a href="https://github.com/us/crw/compare/v0.18.3...v0.19.0">0.19.0</a> (2026-06-28)</h2>
+<h3 id="features-20">Features</h3>
+<ul>
+<li><strong>renderer:</strong> proxy-retry on origin rate-limit (429) (<a href="https://github.com/us/crw/commit/da7ecdaff97b6d9aa995f4353afeadae91b328ef">da7ecda</a>)</li>
+<li><strong>renderer:</strong> relaxed-TLS fallback for cert-broken origins (<a href="https://github.com/us/crw/commit/13d39f692d42cc64f00389bf55943dd51a6a49ad">13d39f6</a>)</li>
+</ul>
+<h3 id="performance-5">Performance</h3>
+<ul>
+<li><strong>engine:</strong> offload HTML extraction off the async reactor (<a href="https://github.com/us/crw/commit/16831532dff80047fd9f9039aafc43b284e8dbca">1683153</a>)</li>
+</ul>
+<h2 id="0183-2026-06-23"><a href="https://github.com/us/crw/compare/v0.18.2...v0.18.3">0.18.3</a> (2026-06-23)</h2>
+<h3 id="bug-fixes-33">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> strip &quot;Mozilla&quot; UA prefix for lightpanda (it rejects it) (<a href="https://github.com/us/crw/commit/fda6139a74c3c57aa38665d93e5123090bc71a32">fda6139</a>)</li>
+</ul>
+<h2 id="0182-2026-06-23"><a href="https://github.com/us/crw/compare/v0.18.1...v0.18.2">0.18.2</a> (2026-06-23)</h2>
+<h3 id="bug-fixes-34">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> send a modern UA on the CDP path (setUserAgentOverride) (<a href="https://github.com/us/crw/commit/ffcf5640384d49bf5ebe2c72e8ba91001bf2e931">ffcf564</a>)</li>
+</ul>
+<h2 id="0181-2026-06-23"><a href="https://github.com/us/crw/compare/v0.18.0...v0.18.1">0.18.1</a> (2026-06-23)</h2>
+<h3 id="bug-fixes-35">Bug Fixes</h3>
+<ul>
+<li><strong>npm:</strong> ship bin/install.js + bin/agents.js in the crw-mcp package (<a href="https://github.com/us/crw/commit/437dbc760630e58819cfcb860d84dfb3ba5061b5">437dbc7</a>)</li>
+</ul>
+<h2 id="0180-2026-06-23"><a href="https://github.com/us/crw/compare/v0.17.0...v0.18.0">0.18.0</a> (2026-06-23)</h2>
+<h3 id="features-21">Features</h3>
+<ul>
+<li><strong>extract:</strong> optional reasoning_effort config field (<a href="https://github.com/us/crw/commit/e677190a6c54d0987e09ac9dcc5580f5df28371a">e677190</a>)</li>
+<li><strong>install:</strong> auto-launch <code>crw setup</code> after install + conversion-tuned copy (<a href="https://github.com/us/crw/commit/5cc35f915c54827481fbfc136d712928a84e66b0">5cc35f9</a>)</li>
+<li><strong>mcp:</strong> add <code>install</code> command that wires skill + MCP for all agents (<a href="https://github.com/us/crw/commit/4b416214fb09930a22338521b089fa82683836df">4b41621</a>)</li>
+</ul>
+<h3 id="bug-fixes-36">Bug Fixes</h3>
+<ul>
+<li><strong>ci:</strong> rebase-retry docs-sync push + sync 0.17.0 changelog (<a href="https://github.com/us/crw/commit/597aa90b56ad5188691e844e29f5a849a54c092e">597aa90</a>)</li>
+<li><strong>install:</strong> default to the crw CLI + drop the musl/glibc gate (<a href="https://github.com/us/crw/commit/9958273bae8a5d954991b6a863dfee6ed7ef669a">9958273</a>)</li>
+<li><strong>install:</strong> drop the GB figure from local, surface 500 credits everywhere (<a href="https://github.com/us/crw/commit/f997aa0e75007db2a4ee9fe4a4cc191bf00da0d0">f997aa0</a>)</li>
+<li><strong>mcp:</strong> clarify crawl/parse jsonSchema arg for MCP clients (<a href="https://github.com/us/crw/commit/91be6977f88c259bdc2c846be92a183308d62ebe">91be697</a>)</li>
+<li><strong>mcp:</strong> static musl linux binaries + correct <code>claude mcp add</code> docs (<a href="https://github.com/us/crw/commit/75333d678e4112a1d03ca8d1c416fd989345cce0">75333d6</a>)</li>
+<li><strong>server:</strong> make crw- model-prefix boot guard opt-in (<a href="https://github.com/us/crw/commit/5cb867c17aeac45e03d30cd11897a7fc9a5b9e5f">5cb867c</a>)</li>
+<li><strong>stealth:</strong> bump UA + Sec-Ch-Ua from Chrome 131 to 150 (<a href="https://github.com/us/crw/commit/695863cb09279e3bdee06928cbfb8b120a74e61b">695863c</a>)</li>
+</ul>
+<h2 id="0170-2026-06-21"><a href="https://github.com/us/crw/compare/v0.16.0...v0.17.0">0.17.0</a> (2026-06-21)</h2>
+<h3 id="features-22">Features</h3>
+<ul>
+<li><strong>renderer:</strong> add opt-in Camoufox stealth renderer tier (<a href="https://github.com/us/crw/commit/744beda540fad3e17b6d9c1d2127cad30ab83767">744beda</a>)</li>
+<li><strong>renderer:</strong> conditional hedge + event-driven readiness for p90 (<a href="https://github.com/us/crw/commit/90650079d8f34e65cf67f22aad5bf96f62c580ef">9065007</a>)</li>
+<li><strong>scrape:</strong> add screenshot output format via CDP capture (<a href="https://github.com/us/crw/commit/61e03e71b8dda137dffa730bcb864660009b270d">61e03e7</a>), closes <a href="https://github.com/us/crw/issues/161">#161</a></li>
+<li><strong>sdk:</strong> add Research API methods to TS + Python SDKs (<a href="https://github.com/us/crw/commit/3a2f71062b00acd0c67092fc5da7bb4caa1cf527">3a2f710</a>)</li>
+<li><strong>search:</strong> add Firecrawl-compatible research API engine layer (<a href="https://github.com/us/crw/commit/ba1a87c568da7f152f33cef63b188180ec210a29">ba1a87c</a>)</li>
+<li><strong>search:</strong> overlap query-expansion scrape with original (C1) (<a href="https://github.com/us/crw/commit/4f6147e8ef7ab3146387bad4cf0902e587d1660c">4f6147e</a>)</li>
+<li><strong>skills:</strong> add crw agent skill set (<a href="https://github.com/us/crw/commit/0ddbe010fdfe484f2c58db773569d85989441372">0ddbe01</a>)</li>
+<li><strong>skills:</strong> publish crw-research agent skill + docs install command (<a href="https://github.com/us/crw/commit/4638715bed7d34db0c3a08ec49be6b4a80f39791">4638715</a>)</li>
+</ul>
+<h3 id="bug-fixes-37">Bug Fixes</h3>
+<ul>
+<li><strong>docs:</strong> render :::tabs and :::callouts in prerendered pages (<a href="https://github.com/us/crw/commit/f3a495ac745598eddc83926466dede60fd7d4fa0">f3a495a</a>)</li>
+<li><strong>map:</strong> render SPA shells during URL discovery (<a href="https://github.com/us/crw/commit/0ec4bf9b7c405e98def0b6f7ab3f73bf6320c275">0ec4bf9</a>), closes <a href="https://github.com/us/crw/issues/166">#166</a></li>
+<li><strong>mcp,sdk:</strong> drop phantom search country param, export CrwApiError (<a href="https://github.com/us/crw/commit/58b8e5cd67347c3f4f7c8ebd341236873ba201b9">58b8e5c</a>)</li>
+<li><strong>pdf:</strong> bound sandbox child address space to prevent false pdf_too_large (<a href="https://github.com/us/crw/commit/06acb8331490713967cf95bd40005c5af839373b">06acb83</a>)</li>
+<li><strong>proxy:</strong> normalize empty CRW_CRAWLER__PROXY to None (<a href="https://github.com/us/crw/issues/154">#154</a>) (<a href="https://github.com/us/crw/commit/b3d0fe996a2d0e2b8f3231c55f6ed86f0b14552b">b3d0fe9</a>)</li>
+<li><strong>scrape:</strong> capture screenshot outside the nav-budget race (<a href="https://github.com/us/crw/commit/4021b5084db3b24b1f4c143f7729aa268006a039">4021b50</a>)</li>
+<li><strong>search:</strong> resolve arXiv inspect via Semantic Scholar (<a href="https://github.com/us/crw/commit/70126c6e5e3c07fb7ad05400424adbdfdf129563">70126c6</a>)</li>
+</ul>
+<h3 id="performance-6">Performance</h3>
+<ul>
+<li><strong>search:</strong> research concurrency 4-&gt;8, cache cap 20k-&gt;3k (<a href="https://github.com/us/crw/commit/e3a6ac3bef2a901a9f87b1cb710d594154ebe00f">e3a6ac3</a>)</li>
+</ul>
+<h2 id="0160-2026-06-14"><a href="https://github.com/us/crw/compare/v0.15.2...v0.16.0">0.16.0</a> (2026-06-14)</h2>
+<h3 id="features-23">Features</h3>
+<ul>
+<li><strong>mcp:</strong> optimize MCP server for context, weight, and conformance (<a href="https://github.com/us/crw/commit/aac7999b9379fd8b6ef818ce37f78634416f79c1">aac7999</a>)</li>
+<li><strong>proxy:</strong> add proxy list + rotation primitives and HTTP-path rotation (<a href="https://github.com/us/crw/commit/776e9fbad4ee509ec5201020772169d151e0587f">776e9fb</a>)</li>
+<li><strong>proxy:</strong> rotate the JS/Chrome (CDP) path per request (<a href="https://github.com/us/crw/commit/422ac09c1f4dc2549a54e1079cec18330ccf0ea0">422ac09</a>)</li>
+<li><strong>proxy:</strong> v2 BYOP plumbing + honest docs + verification harness (<a href="https://github.com/us/crw/commit/0983ba38ad1537b21ecfdc658bdda7a79c0b5437">0983ba3</a>)</li>
+</ul>
+<h3 id="bug-fixes-38">Bug Fixes</h3>
+<ul>
+<li><strong>extract:</strong> stop doubling /v1 in structured-extraction chat URL (<a href="https://github.com/us/crw/commit/d8b8ebc887eca97ca75ae1eb1893429bc547e80e">d8b8ebc</a>)</li>
+<li><strong>extract:</strong> unify Anthropic structured URL, stop /v1/messages doubling (<a href="https://github.com/us/crw/commit/90ce3dd5479060eee0a3319e78d3d7653984e53c">90ce3dd</a>)</li>
+<li><strong>proxy:</strong> accept snake_case proxy_list alias on v1 ScrapeRequest/CrawlRequest (<a href="https://github.com/us/crw/commit/a8e7b71d891355912dbfc1ad23a1d0e6f6bfd865">a8e7b71</a>)</li>
+<li><strong>proxy:</strong> CLI crawl/map --proxy reaches the JS/CDP tier (round-4 review) (<a href="https://github.com/us/crw/commit/6ee71755ce656b6ff32e4c1f4847e35655854035">6ee7175</a>)</li>
+<li><strong>proxy:</strong> resolve review findings (IP-leak/correctness hardening) (<a href="https://github.com/us/crw/commit/72e048683eceba19b676a4bca2c8186ad762d3e1">72e0486</a>)</li>
+<li><strong>proxy:</strong> route /map discovery through the rotator (round-2 review) (<a href="https://github.com/us/crw/commit/5ee06cfb7e0c7e910a0ce0590597a277c6f49332">5ee06cf</a>)</li>
+<li><strong>proxy:</strong> route crawl robots/sitemap egress through the rotator (<a href="https://github.com/us/crw/commit/4835e7dc02263350ae7bbcf591a353258e308032">4835e7d</a>)</li>
+</ul>
+<h2 id="0152-2026-06-12"><a href="https://github.com/us/crw/compare/v0.15.1...v0.15.2">0.15.2</a> (2026-06-12)</h2>
+<h3 id="bug-fixes-39">Bug Fixes</h3>
+<ul>
+<li><strong>mcp:</strong> npm launcher downloads binary when platform pkg missing (<a href="https://github.com/us/crw/commit/4ae1aa684f93c4c6a36fe157ce013700c5a9e6ea">4ae1aa6</a>)</li>
+</ul>
+<h2 id="0151-2026-06-11"><a href="https://github.com/us/crw/compare/v0.15.0...v0.15.1">0.15.1</a> (2026-06-11)</h2>
+<h3 id="bug-fixes-40">Bug Fixes</h3>
+<ul>
+<li><strong>ci:</strong> poll npm in verify_npm_sdk + expose ./package.json export (<a href="https://github.com/us/crw/commit/ed185dd3fd34313e5babf1c9b71e08faab3918c5">ed185dd</a>)</li>
+</ul>
+<h2 id="0150-2026-06-10"><a href="https://github.com/us/crw/compare/v0.14.0...v0.15.0">0.15.0</a> (2026-06-10)</h2>
+<h3 id="breaking-changes-3">⚠ BREAKING CHANGES</h3>
+<ul>
+<li>CrwClient() with no API key now targets the cloud and raises if unauthenticated, instead of running locally. Set CRW_LOCAL=1 for the previous zero-config local behavior.</li>
+</ul>
+<h3 id="features-24">Features</h3>
+<ul>
+<li>add TypeScript SDK (crw-sdk) (<a href="https://github.com/us/crw/commit/1dd96f7037933f933773ef92d97b68af9134906a">1dd96f7</a>)</li>
+<li>cloud-first default + full client SDK parity (<a href="https://github.com/us/crw/commit/21e819ed8a863929bb67323c8b8c4b37ac5f712f">21e819e</a>)</li>
+<li>fold langchain/crewai adapters into crw.integrations extras (<a href="https://github.com/us/crw/commit/cd49120f957d23e06899d4628388e1aa8cd11842">cd49120</a>)</li>
+<li><strong>release:</strong> publish crw-cli (and crw-browse) to crates.io (<a href="https://github.com/us/crw/commit/b3d80046be72f1495985f6f21485c6fbdae4da7c">b3d8004</a>)</li>
+<li><strong>search:</strong> accept native SearXNG categories as passthrough (<a href="https://github.com/us/crw/commit/b3bcc5d439fb37f214b76b96e053053765714e39">b3bcc5d</a>)</li>
+</ul>
+<h3 id="bug-fixes-41">Bug Fixes</h3>
+<ul>
+<li><strong>antibot:</strong> detect Google rate-limit/bot-wall pages served with HTTP 200 (<a href="https://github.com/us/crw/commit/08bb46e5e41d9933e1c9603239938dbd500323fe">08bb46e</a>)</li>
+<li><strong>ci:</strong> compile TS tests to JS so the SDK suite runs on Node 18/20 (<a href="https://github.com/us/crw/commit/e1b75469af88cad612f93c64333508850864a981">e1b7546</a>)</li>
+<li><strong>extract:</strong> avoid doubling chat/completions in structured base_url (<a href="https://github.com/us/crw/commit/3816bb6713dc0932d0b06179f2e37927dba95dfb">3816bb6</a>)</li>
+<li><strong>map:</strong> fold hyphen/underscore param spellings, add compare actions (<a href="https://github.com/us/crw/commit/f34ae12844082db68d052b132c524eb5a4a4c9c1">f34ae12</a>), closes <a href="https://github.com/us/crw/issues/128">#128</a></li>
+<li><strong>npm:</strong> declare node&gt;=18 engines on crw-mcp packages (<a href="https://github.com/us/crw/commit/3c953feaa3c01d18f0dc05f36be339cb68d31470">3c953fe</a>)</li>
+<li><strong>renderer:</strong> reap CDP target + context on PoolGuard cancellation drop (<a href="https://github.com/us/crw/commit/0eebadcb1a4360a0dad5b682301c181a0c328259">0eebadc</a>)</li>
+</ul>
+<h2 id="0140-2026-06-08"><a href="https://github.com/us/crw/compare/v0.13.4...v0.14.0">0.14.0</a> (2026-06-08)</h2>
+<h3 id="features-25">Features</h3>
+<ul>
+<li><strong>onboarding:</strong> cloud-default messaging + api.fastcrw.com base URL (<a href="https://github.com/us/crw/commit/4ccc92c065027d900f0bd67e0273216bd76aa065">4ccc92c</a>)</li>
+<li><strong>pdf:</strong> PDF→markdown via pdf-inspector with Firecrawl-compatible parsers + /v2/parse (<a href="https://github.com/us/crw/commit/196b153db011807a80a2b19155ef0605a3ca692b">196b153</a>)</li>
+<li><strong>search:</strong> query-relevance rerank, list answers, multi-round latency guard (<a href="https://github.com/us/crw/commit/ebafe8358283260df75a0d9629c59c8a1fcdad4a">ebafe83</a>)</li>
+</ul>
+<h3 id="bug-fixes-42">Bug Fixes</h3>
+<ul>
+<li>accept string env vars for auth.api_keys (<a href="https://github.com/us/crw/commit/534f9320653c37aaba79e0db43ef9400b74b749b">534f932</a>)</li>
+<li><strong>pdf:</strong> vendor test fixture into each crate (preflight: no cross-crate include) (<a href="https://github.com/us/crw/commit/2c7bfe93bbd38a384e84dab6daa5ae0fd2e55c65">2c7bfe9</a>)</li>
+<li><strong>release:</strong> scope out-of-crate include check to src/ only (<a href="https://github.com/us/crw/commit/cd61fbfd24046f6ef0a72e70e764189c39463fb6">cd61fbf</a>)</li>
+<li><strong>release:</strong> verify apt/homebrew by artifact, not flaky status-ack (<a href="https://github.com/us/crw/commit/7a572fd6e5b39117d316377919387e9e7ec8ad3b">7a572fd</a>)</li>
+</ul>
+<h2 id="0134-2026-06-07"><a href="https://github.com/us/crw/compare/v0.13.3...v0.13.4">0.13.4</a> (2026-06-07)</h2>
+<h3 id="bug-fixes-43">Bug Fixes</h3>
+<ul>
+<li><strong>docker:</strong> install aarch64 libc headers for cross-compile + CI guard (<a href="https://github.com/us/crw/commit/8cd31ac016177d3d2621e8ecfa03a027b1621a3a">8cd31ac</a>)</li>
+</ul>
+<h2 id="0133-2026-06-06"><a href="https://github.com/us/crw/compare/v0.13.2...v0.13.3">0.13.3</a> (2026-06-06)</h2>
+<h3 id="bug-fixes-44">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> stop verify-publish reporting false failures (<a href="https://github.com/us/crw/commit/d57c8c6285a014031bcf310386e83493c7dcd2f2">d57c8c6</a>)</li>
+</ul>
+<h3 id="performance-7">Performance</h3>
+<ul>
+<li><strong>docker:</strong> cross-compile arm64 instead of QEMU (2h -&gt; ~3min) (<a href="https://github.com/us/crw/commit/a7cab423d11fd8a7474c587796f86eacf2c32df9">a7cab42</a>)</li>
+</ul>
+<h2 id="0132-2026-06-06"><a href="https://github.com/us/crw/compare/v0.13.1...v0.13.2">0.13.2</a> (2026-06-06)</h2>
+<h3 id="bug-fixes-45">Bug Fixes</h3>
+<ul>
+<li><strong>server:</strong> embed openapi spec inside the crate so it can publish (<a href="https://github.com/us/crw/commit/e606cb9303cec3716b7dbffd4d848164486368ea">e606cb9</a>)</li>
+</ul>
+<h2 id="0131-2026-06-06"><a href="https://github.com/us/crw/compare/v0.13.0...v0.13.1">0.13.1</a> (2026-06-06)</h2>
+<h3 id="bug-fixes-46">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> correct publish tier ordering + guard topology (<a href="https://github.com/us/crw/commit/c84deedeeeb2698f50d94247b770560cd6f3d0df">c84deed</a>)</li>
+</ul>
+<h2 id="0130-2026-06-06"><a href="https://github.com/us/crw/compare/v0.12.1...v0.13.0">0.13.0</a> (2026-06-06)</h2>
+<h3 id="features-26">Features</h3>
+<ul>
+<li><strong>search:</strong> deterministic Wikidata entity-relation lookup (W3) (<a href="https://github.com/us/crw/commit/aa96e3e182fad6d8e2caf03628461515ca5aab7f">aa96e3e</a>)</li>
+</ul>
+<h3 id="bug-fixes-47">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> sync Cargo.lock internal crate versions to 0.12.1 (<a href="https://github.com/us/crw/commit/b5fc8a5b988401bb2ecca6fdd3be328d1ccd683a">b5fc8a5</a>)</li>
+</ul>
+<h2 id="0121-2026-06-05"><a href="https://github.com/us/crw/compare/v0.12.0...v0.12.1">0.12.1</a> (2026-06-05)</h2>
+<h3 id="bug-fixes-48">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> bump internal dep pins and track them in release config (<a href="https://github.com/us/crw/commit/0139ec247c7f328ef172646eac3de5e0f287c42a">0139ec2</a>)</li>
+<li><strong>release:</strong> sync Cargo.lock with bumped internal dep versions (<a href="https://github.com/us/crw/commit/5c89d6037e32435a49cfd4fbdf1c2ba05ad83ae8">5c89d60</a>)</li>
+</ul>
+<h2 id="0120-2026-06-05"><a href="https://github.com/us/crw/compare/v0.11.0...v0.12.0">0.12.0</a> (2026-06-05)</h2>
+<h3 id="features-27">Features</h3>
+<ul>
+<li><strong>answer:</strong> gated moat-hardening abstention (answer_guarded) (<a href="https://github.com/us/crw/commit/7ef7f32c085f4e01429b4afa6794c52836cdd4e6">7ef7f32</a>)</li>
+<li><strong>mcp:</strong> emit structuredContent for crw_search; bump protocol to 2025-06-18 (<a href="https://github.com/us/crw/commit/0cd9a4fa0e338683b75c5719bc3c54cca3b2dba6">0cd9a4f</a>), closes <a href="https://github.com/us/crw/issues/89">#89</a></li>
+<li><strong>search:</strong> diagnose search config and name unreachable host (<a href="https://github.com/us/crw/issues/90">#90</a>) (<a href="https://github.com/us/crw/commit/25f94410869e24cb79a7835e2f05627d0eb07351">25f9441</a>)</li>
+<li><strong>search:</strong> pin SearXNG infoboxes/answers as structured sources (W0) (<a href="https://github.com/us/crw/commit/554f18ce4747057a04ec64f9f983faf46a48dee2">554f18c</a>)</li>
+</ul>
+<h3 id="bug-fixes-49">Bug Fixes</h3>
+<ul>
+<li><strong>search:</strong> use resolvable searxng host in docker config (<a href="https://github.com/us/crw/issues/90">#90</a>) (<a href="https://github.com/us/crw/commit/d9660219d23bdd4364940c97c9911dd31e73567b">d966021</a>)</li>
+</ul>
+<h2 id="0110-2026-06-03"><a href="https://github.com/us/crw/compare/v0.10.0...v0.11.0">0.11.0</a> (2026-06-03)</h2>
+<h3 id="features-28">Features</h3>
+<ul>
+<li><strong>api:</strong> serve /openapi.json and /openapi-3.0.json from crw-server (<a href="https://github.com/us/crw/commit/3dc79b443b6a41c3f325865aaa6bccdf562fda49">3dc79b4</a>)</li>
+<li><strong>docs:</strong> ship OpenAPI spec, SKILL.md, and agent-shell (<a href="https://github.com/us/crw/commit/2145c977463b8d5577e5cf81d3c4106ea20eddb4">2145c97</a>)</li>
+<li><strong>docs:</strong> wave 1 — API surface unblock for AI agent citations (<a href="https://github.com/us/crw/commit/9b2809028cf8c1c666fd94cd9b11dcab50daa633">9b28090</a>)</li>
+<li><strong>docs:</strong> wave 2 — 15-page glossary cluster for AIO citations (<a href="https://github.com/us/crw/commit/14cd7e1db3f70cbd9dd7da08818b25d1e8688c71">14cd7e1</a>)</li>
+<li><strong>extract:</strong> wave 2 cache token telemetry + DeepSeek provider tag fix (<a href="https://github.com/us/crw/commit/1b4f1aa4eec70657964864f8c7d134150b6e2354">1b4f1aa</a>)</li>
+<li><strong>mcp,cli,docs:</strong> snippet alias + agent-shell polish for benchmark wins (<a href="https://github.com/us/crw/commit/3472d1333dd5520a481e226543e6271d940c145f">3472d13</a>)</li>
+<li><strong>monitor:</strong> add feature-gated self-host crw-monitor mode (M6) (<a href="https://github.com/us/crw/commit/ff732f3a31a66cf97746e79f7e4017788841f94a">ff732f3</a>)</li>
+<li><strong>monitor:</strong> add stateless change-tracking diff engine + LLM judge (<a href="https://github.com/us/crw/commit/a07808127762b6d2acf248de65f0cb9d17aad2d6">a078081</a>)</li>
+<li><strong>monitor:</strong> stateless change-tracking diff engine + LLM judge + self-host monitor (<a href="https://github.com/us/crw/commit/dc432cef74e720afb4e8224bef7647212f220ed7">dc432ce</a>)</li>
+<li><strong>renderer:</strong> add chrome_proxy tier + antibot-driven failover (<a href="https://github.com/us/crw/commit/0e37e307b7dbe2bb52b0e4ef5b190fd2c1ec0217">0e37e30</a>)</li>
+<li><strong>search:</strong> adaptive multi-round evidence-scout retrieval (gated) (<a href="https://github.com/us/crw/commit/9dd32244eb3d072852f601ddfd538c019074c4b5">9dd3224</a>)</li>
+<li><strong>search:</strong> commit-policy answer prompt to cut over-abstention (<a href="https://github.com/us/crw/issues/71">#71</a>) (<a href="https://github.com/us/crw/commit/cac7b29cbc78f358b3d4cc508ad9d97e250f8483">cac7b29</a>)</li>
+<li><strong>search:</strong> gated calibrated-answer path to cut over-abstention (<a href="https://github.com/us/crw/issues/78">#78</a>) (<a href="https://github.com/us/crw/commit/a53225d799082751dfe933b8fb3bae4c16d07a90">a53225d</a>)</li>
+<li><strong>search:</strong> gated page-2 fallback for thin reranked answer pools (<a href="https://github.com/us/crw/issues/77">#77</a>) (<a href="https://github.com/us/crw/commit/2a7f0ac247666e9e360dad4bc0f26da247d4355e">2a7f0ac</a>)</li>
+<li><strong>search:</strong> gated synthesis temperature/seed for deterministic eval (<a href="https://github.com/us/crw/issues/81">#81</a>) (<a href="https://github.com/us/crw/commit/52a8c58edf3e81c84e8ca8317e46d8ac95a8bf94">52a8c58</a>)</li>
+<li><strong>search:</strong> multi-query expansion for the answer path (gated, default off) (<a href="https://github.com/us/crw/issues/73">#73</a>) (<a href="https://github.com/us/crw/commit/4e387afc0f3e979ce21b30842539e7e1b9b774df">4e387af</a>)</li>
+<li><strong>search:</strong> multi-variant query expansion for recall (gated) (<a href="https://github.com/us/crw/commit/7bd093fa674c933b7c4206bbefb32cc2414bb471">7bd093f</a>)</li>
+<li><strong>search:</strong> passage-level relevance gate for the answer path (gated, off) (<a href="https://github.com/us/crw/issues/75">#75</a>) (<a href="https://github.com/us/crw/commit/43ac625caf60d49fa6ca6bfa7fdd54ad8a12418e">43ac625</a>)</li>
+<li><strong>search:</strong> RRF re-rank + junk/coverage/geo filter + query cleaning for answer path (<a href="https://github.com/us/crw/commit/32efee67ed4e180505de9e2aec05d489adc58a51">32efee6</a>)</li>
+<li><strong>search:</strong> RRF re-rank + junk/coverage/geo filter + query cleaning for answer path (<a href="https://github.com/us/crw/commit/682fa1ccbe26a0cd919a2181831ad1c73b530642">682fa1c</a>)</li>
+<li><strong>search:</strong> snippet-fallback (Pattern A) + bake calibrated-answer durable (<a href="https://github.com/us/crw/issues/79">#79</a>) (<a href="https://github.com/us/crw/commit/de1b1f1eac4108095b3d6d7bdda97c035666102a">de1b1f1</a>)</li>
+<li><strong>search:</strong> wave 4 R1+R2 — aggregated llmUsage + per-leg max_tokens (v0.11.0) (<a href="https://github.com/us/crw/commit/3570f82e0e1fe00e9851dc405506bdd2f0e04c01">3570f82</a>)</li>
+<li><strong>search:</strong> wave 4 R1+R2 + bump 0.11.0 (<a href="https://github.com/us/crw/commit/9ebd23d9d658fb07700ffc4a3259fbe079763627">9ebd23d</a>)</li>
+<li><strong>v2:</strong> add Firecrawl /v2 API surface (<a href="https://github.com/us/crw/commit/f793ec09c8c95dad142022f9579adb4c4e1cceb6">f793ec0</a>)</li>
+</ul>
+<h3 id="bug-fixes-50">Bug Fixes</h3>
+<ul>
+<li><strong>antibot:</strong> strip inline data-URIs before classifier deep scan (<a href="https://github.com/us/crw/commit/6f1cbd20b98f73df099f72b7ad08e41acada2a7e">6f1cbd2</a>)</li>
+<li><strong>browse:</strong> address outbound hardening review feedback (<a href="https://github.com/us/crw/commit/a3c2076ffdd8024579bf7ab97653816cb5bd3881">a3c2076</a>)</li>
+<li><strong>browse:</strong> harden outbound URL handling (<a href="https://github.com/us/crw/commit/c37097253c7df89a5cedb3ddb79e5c9386f75b1b">c370972</a>)</li>
+<li><strong>cli:</strong> swap SearXNG default to 127.0.0.1 + actionable error hint (<a href="https://github.com/us/crw/commit/618d41b52c3fa0c971eb6c34ea98922f06ea094f">618d41b</a>)</li>
+<li><strong>docker:</strong> include OpenAPI specs in crw-api build context (<a href="https://github.com/us/crw/commit/f70c7af6486a82d6bd86c9a7c1054c410f045877">f70c7af</a>)</li>
+<li><strong>docker:</strong> include OpenAPI specs in crw-api build context (<a href="https://github.com/us/crw/commit/0238138f832a507a70ed411d96ec0143cbb7333e">0238138</a>)</li>
+<li><strong>docs:</strong> add 2 missing Firecrawl-shape shims caught by sapient (<a href="https://github.com/us/crw/commit/22b3d5482ca224d0eebd76a795ed8428f108d080">22b3d54</a>)</li>
+<li><strong>extract:</strong> accept deepseek/openai-compatible providers in structured extract (<a href="https://github.com/us/crw/commit/2f0d86d5245c24d388671299beb5acd76458c4ca">2f0d86d</a>)</li>
+<li><strong>search:</strong> default reranker to the proven lexical core (<a href="https://github.com/us/crw/issues/69">#69</a>) (<a href="https://github.com/us/crw/commit/06585b60abd2093288e520157369f16286fd2737">06585b6</a>)</li>
+<li><strong>search:</strong> point engine at searxng-internal alias (search_rpc-only) (<a href="https://github.com/us/crw/issues/70">#70</a>) (<a href="https://github.com/us/crw/commit/110aee729624b42d71b6f219f52dadd6d6bc6ddb">110aee7</a>)</li>
+<li><strong>v2:</strong> batch status mutates state in place (no O(n^2) snapshot copy) (<a href="https://github.com/us/crw/commit/c03d359cfdfc2b2cf4d9603cccff7a08e6c54c69">c03d359</a>)</li>
+<li><strong>v2:</strong> emit invalidURLs (not invalidUrls) on batch start (<a href="https://github.com/us/crw/commit/611c54ded77aaa962cb76ff504c11310c7005825">611c54d</a>)</li>
+</ul>
+<h3 id="performance-8">Performance</h3>
+<ul>
+<li><strong>search:</strong> calibrated answer top_n 8-&gt;5 (4x faster, accuracy holds) (<a href="https://github.com/us/crw/issues/80">#80</a>) (<a href="https://github.com/us/crw/commit/751f8ee160d28b84d352e533864ca4043793d294">751f8ee</a>)</li>
+</ul>
+<h2 id="0100-2026-05-20"><a href="https://github.com/us/crw/compare/v0.9.1...v0.10.0">0.10.0</a> (2026-05-20)</h2>
+<h3 id="features-29">Features</h3>
+<ul>
+<li><strong>detector:</strong> add vendor-specific anti-bot block markers (<a href="https://github.com/us/crw/commit/c88c508fb90b166dfe3727fd5dfb4f1597e43667">c88c508</a>)</li>
+<li><strong>renderer:</strong> add chrome_proxy as 4th fallback tier (<a href="https://github.com/us/crw/commit/b4da4f79bb4d0ed71c25f14aaae5137d00f8b26b">b4da4f7</a>)</li>
+<li><strong>renderer:</strong> per-request country via CDP proxy auth (<a href="https://github.com/us/crw/commit/11b4d32285ed8a4e6bee8f390c264f9fc0be1b1a">11b4d32</a>)</li>
+</ul>
+<h3 id="bug-fixes-51">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> harden npm publish + fix mcp-registry verifier (<a href="https://github.com/us/crw/commit/9d4076fadd252a33e7887ee6e4925be8e6aa7d8e">9d4076f</a>)</li>
+<li><strong>renderer:</strong> detect CloudFront/WAF 403 as bot-wall (<a href="https://github.com/us/crw/commit/7e058b2915eff8b36d1186013e0810b2290492f4">7e058b2</a>)</li>
+<li><strong>renderer:</strong> escalate JS tier on 4xx/5xx and vendor-detected blocks (<a href="https://github.com/us/crw/commit/648c372ee5d52aed1459c22725be2e6d34d95afb">648c372</a>)</li>
+</ul>
+<h2 id="091-2026-05-16"><a href="https://github.com/us/crw/compare/v0.9.0...v0.9.1">0.9.1</a> (2026-05-16)</h2>
+<h3 id="bug-fixes-52">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> sync crw-cli internal dep versions with workspace (<a href="https://github.com/us/crw/commit/26c528e737c5ed136d3c6e72da36b9324363805f">26c528e</a>)</li>
+</ul>
+<h2 id="090-2026-05-16"><a href="https://github.com/us/crw/compare/v0.8.3...v0.9.0">0.9.0</a> (2026-05-16)</h2>
+<h3 id="features-30">Features</h3>
+<ul>
+<li><strong>cli:</strong> add AI extraction flags and <code>crw setup --reset</code> (<a href="https://github.com/us/crw/commit/912eea0a1fa0db5a838560f2c25da44b3ee33d44">912eea0</a>)</li>
+</ul>
+<h2 id="083-2026-05-15"><a href="https://github.com/us/crw/compare/v0.8.2...v0.8.3">0.8.3</a> (2026-05-15)</h2>
+<h3 id="features-31">Features</h3>
+<ul>
+<li><strong>cli:</strong> two-phase auto-fallback for <code>crw &lt;url&gt;</code> scrape (<a href="https://github.com/us/crw/commit/a871e544443673751974a8dc5ebb4f2b0eafd59f">a871e54</a>)</li>
+<li><strong>setup:</strong> make config.toml the canonical source for <code>crw setup</code> (<a href="https://github.com/us/crw/commit/b07c1549932399a355d30e15632d424f0ad28b85">b07c154</a>)</li>
+</ul>
+<h3 id="miscellaneous">Miscellaneous</h3>
+<ul>
+<li>release 0.8.2 (<a href="https://github.com/us/crw/commit/38ae7641b44d321150febc38eda530db3d572046">38ae764</a>)</li>
+<li>release 0.8.3 (<a href="https://github.com/us/crw/commit/efba1b308d6ac3a5e7a5bbd3f132514bf631e86b">efba1b3</a>)</li>
+</ul>
+<h2 id="082-2026-05-15"><a href="https://github.com/us/crw/compare/v0.8.2...v0.8.2">0.8.2</a> (2026-05-15)</h2>
+<h3 id="features-32">Features</h3>
+<ul>
+<li><strong>cli:</strong> two-phase auto-fallback for <code>crw &lt;url&gt;</code> scrape (<a href="https://github.com/us/crw/commit/a871e544443673751974a8dc5ebb4f2b0eafd59f">a871e54</a>)</li>
+<li><strong>setup:</strong> make config.toml the canonical source for <code>crw setup</code> (<a href="https://github.com/us/crw/commit/b07c1549932399a355d30e15632d424f0ad28b85">b07c154</a>)</li>
+</ul>
+<h3 id="miscellaneous-1">Miscellaneous</h3>
+<ul>
+<li>release 0.8.2 (<a href="https://github.com/us/crw/commit/38ae7641b44d321150febc38eda530db3d572046">38ae764</a>)</li>
+</ul>
+<h2 id="082-2026-05-14"><a href="https://github.com/us/crw/compare/v0.8.1...v0.8.2">0.8.2</a> (2026-05-14)</h2>
+<h3 id="bug-fixes-53">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> move crw-cli to unpublished and update dep versions (<a href="https://github.com/us/crw/commit/7f121f6f731e7bfa311be48fa442e0049bbda16d">7f121f6</a>)</li>
+</ul>
+<h2 id="081-2026-05-14"><a href="https://github.com/us/crw/compare/v0.8.0...v0.8.1">0.8.1</a> (2026-05-14)</h2>
+<h3 id="bug-fixes-54">Bug Fixes</h3>
+<ul>
+<li><strong>cli:</strong> mark crw-cli as publish=false to fix release (<a href="https://github.com/us/crw/commit/3104cc5acec6d6a0307adbb5cc9897ce04417a16">3104cc5</a>)</li>
+</ul>
+<h2 id="080-2026-05-14"><a href="https://github.com/us/crw/compare/v0.7.1...v0.8.0">0.8.0</a> (2026-05-14)</h2>
+<h3 id="features-33">Features</h3>
+<ul>
+<li><strong>cli:</strong> add interactive setup wizard (<a href="https://github.com/us/crw/commit/a5613b965d3444ab0ad214b976cbf6e56747e523">a5613b9</a>)</li>
+</ul>
+<h2 id="071-2026-05-12"><a href="https://github.com/us/crw/compare/v0.7.0...v0.7.1">0.7.1</a> (2026-05-12)</h2>
+<h3 id="bug-fixes-55">Bug Fixes</h3>
+<ul>
+<li>bump stale internal version pins to 0.7.0 (<a href="https://github.com/us/crw/issues/48">#48</a>) (<a href="https://github.com/us/crw/commit/0bec22a76e03f428e28281b30bb34364bf5e5edd">0bec22a</a>)</li>
+</ul>
+<h2 id="070-2026-05-12"><a href="https://github.com/us/crw/compare/v0.6.4...v0.7.0">0.7.0</a> (2026-05-12)</h2>
+<h3 id="features-34">Features</h3>
+<ul>
+<li>LLM summary and search answer (BYOK) (<a href="https://github.com/us/crw/issues/45">#45</a>) (<a href="https://github.com/us/crw/commit/ffcc2a52cd273dc334dd46b663be24fd45df4711">ffcc2a5</a>)</li>
+</ul>
+<h2 id="064-2026-05-12"><a href="https://github.com/us/crw/compare/v0.6.3...v0.6.4">0.6.4</a> (2026-05-12)</h2>
+<h3 id="features-35">Features</h3>
+<ul>
+<li><strong>renderer:</strong> add bounded browser-context pool for Chrome tier (<a href="https://github.com/us/crw/issues/43">#43</a>) (<a href="https://github.com/us/crw/commit/69b48610d269c37fa043bcd58855b3970f554f94">69b4861</a>)</li>
+</ul>
+<h2 id="063-2026-05-12"><a href="https://github.com/us/crw/compare/v0.6.2...v0.6.3">0.6.3</a> (2026-05-12)</h2>
+<h3 id="features-36">Features</h3>
+<ul>
+<li><strong>map:</strong> drop action URLs and strip tracking params (closes <a href="https://github.com/us/crw/issues/40">#40</a>) (<a href="https://github.com/us/crw/issues/41">#41</a>) (<a href="https://github.com/us/crw/commit/6d9ed39f67e4d92cc51ca16ccc21e451c4bb0373">6d9ed39</a>)</li>
+</ul>
+<h2 id="062-2026-05-10"><a href="https://github.com/us/crw/compare/v0.6.1...v0.6.2">0.6.2</a> (2026-05-10)</h2>
+<h3 id="features-37">Features</h3>
+<ul>
+<li><strong>search:</strong> add /v1/search endpoint backed by bundled SearXNG sidecar (<a href="https://github.com/us/crw/commit/f4bd7f46db9f286e3c49be95a968951802a90710">f4bd7f4</a>)</li>
+</ul>
+<h3 id="bug-fixes-56">Bug Fixes</h3>
+<ul>
+<li><strong>antibot:</strong> drop bare &#39;captcha&#39;/&#39;access denied&#39; markers — false positives (<a href="https://github.com/us/crw/commit/fae6c09537cf286bfb08cb9ebefab0c723c4160f">fae6c09</a>)</li>
+<li><strong>crawl:</strong> drop redundant <code>.into_iter()</code> for clippy 1.95 (<a href="https://github.com/us/crw/issues/39">#39</a>) (<a href="https://github.com/us/crw/commit/fb4032b86a5c0095e7e69b198ac2017aa7003000">fb4032b</a>)</li>
+<li><strong>map:</strong> WordPress sitemap-index timeout (closes <a href="https://github.com/us/crw/issues/33">#33</a>) (<a href="https://github.com/us/crw/commit/c3dfd6c66ff6bdbbaf3d2ce1646dbb9d7ac6dd5a">c3dfd6c</a>)</li>
+<li><strong>release:</strong> register crw-search crate in release manifest (<a href="https://github.com/us/crw/commit/907476163c69c5fd8e421e5063686a750c10ce24">9074761</a>)</li>
+<li><strong>search:</strong> codex iteration-1 hardening — error mapping, resource bounds, container (<a href="https://github.com/us/crw/commit/5acba7bbf1be2cc147e5c25ad9fca80e9bce757d">5acba7b</a>)</li>
+<li><strong>search:</strong> codex iteration-2 — error-body cap, per-source row budget, doc (<a href="https://github.com/us/crw/commit/a440d6e4ae3b6ac0dc8decdead3efe04ad33bc43">a440d6e</a>)</li>
+<li><strong>search:</strong> codex iteration-3 — predicate-based well-formed filter (<a href="https://github.com/us/crw/commit/4b4df3a521cba31cd2a82f2d3595d726cb4b2c16">4b4df3a</a>)</li>
+<li><strong>search:</strong> use real SearXNG image tag and add fallback secret_key (<a href="https://github.com/us/crw/commit/be1f403648d352bc68037b0c5ba208729b96d1fa">be1f403</a>)</li>
+</ul>
+<h2 id="061-2026-05-09"><a href="https://github.com/us/crw/compare/v0.6.0...v0.6.1">0.6.1</a> (2026-05-09)</h2>
+<h3 id="features-38">Features</h3>
+<ul>
+<li><strong>metrics:</strong> cdp_pending_requests, cdp_live_connections, (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
+<li><strong>renderer:</strong> live-connection registry + 60s telemetry sampler (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
+<li><strong>renderer:</strong> target lifecycle metric + leaked detection (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
+<li><strong>server:</strong> /ready endpoint with deep status code (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
+</ul>
+<h3 id="bug-fixes-57">Bug Fixes</h3>
+<ul>
+<li><strong>release:</strong> bulletproof publish pipeline and drop pdf feature (<a href="https://github.com/us/crw/commit/8fcf2f656aabe1a8a05db7d6c21011e06959e184">8fcf2f6</a>)</li>
+<li><strong>renderer:</strong> invalidate cached chrome WS URL on connect failure (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
+</ul>
+<h2 id="060-2026-05-09"><a href="https://github.com/us/crw/compare/v0.5.0...v0.6.0">0.6.0</a> (2026-05-09)</h2>
+<h3 id="features-39">Features</h3>
+<ul>
+<li><strong>extract:</strong> scale recall to 63.74% on 1000-URL benchmark (<a href="https://github.com/us/crw/commit/5b855554c5f7ba16981fbe2060e25cca4ba81686">5b85555</a>)</li>
+<li><strong>renderer:</strong> add browserless/chromium opt-in stealth profile (+2.5pt) (<a href="https://github.com/us/crw/commit/d2414c9cd89dc01447b9e52501aa26180ce7d326">d2414c9</a>)</li>
+<li><strong>renderer:</strong> chrome-stealth wiring + CDP discovery improvements (<a href="https://github.com/us/crw/commit/6b2e77c2a356ef8fc453560870985819ce75483a">6b2e77c</a>)</li>
+<li><strong>server,core,crawl:</strong> plumb tier timeouts and recall pipeline (<a href="https://github.com/us/crw/commit/7cbee43e5db319f0af39dddea07faccbf0cd25ee">7cbee43</a>)</li>
+</ul>
+<h3 id="miscellaneous-2">Miscellaneous</h3>
+<ul>
+<li>release 0.6.0 (<a href="https://github.com/us/crw/commit/bd03a352922b293431e49722c052f90c945f1c56">bd03a35</a>)</li>
+</ul>
+<h2 id="050-2026-05-04"><a href="https://github.com/us/crw/compare/v0.4.2...v0.5.0">0.5.0</a> (2026-05-04)</h2>
+<h3 id="features-40">Features</h3>
+<ul>
+<li><strong>core:</strong> add deadline module and request/renderer config scaffolding (<a href="https://github.com/us/crw/commit/5a4e69ae605d15c0090f3d866db0f8f4fa23a715">5a4e69a</a>)</li>
+<li><strong>core:</strong> thread end-to-end Deadline through scrape pipeline (<a href="https://github.com/us/crw/commit/5991986cdac9756500dab40b8bf05ad454dbd21c">5991986</a>)</li>
+<li><strong>crawl:</strong> key per-domain rate limiter by eTLD+1 (<a href="https://github.com/us/crw/commit/39c7954881cfde47e34dad2eaa4141f1f10b1156">39c7954</a>)</li>
+<li><strong>crawl:</strong> per-host concurrency cap on the eTLD+1 limiter (<a href="https://github.com/us/crw/commit/274f462b2755a02fc2485bddc7ac8ad3fd11c0e3">274f462</a>)</li>
+<li><strong>renderer:</strong> add browserless/chromium opt-in stealth profile (<a href="https://github.com/us/crw/commit/236f62682f29011a959bdef5a9770475a809f0a9">236f626</a>)</li>
+<li><strong>renderer:</strong> chrome nav-budget cap + truncated/deadline_exceeded flags (<a href="https://github.com/us/crw/commit/c57cef8c6ad2ba2fefce7f4110685bc779359378">c57cef8</a>)</li>
+<li><strong>renderer:</strong> chrome request-paused interception pump (T27) (<a href="https://github.com/us/crw/commit/13fcaa4c5560f254d67682bff96ba24e39cdf13e">13fcaa4</a>)</li>
+<li><strong>renderer:</strong> leak-through fallback when global breaker open &amp; host clean (<a href="https://github.com/us/crw/commit/86a9e36880f2dddcb3d7b7bd6c993825559cf487">86a9e36</a>)</li>
+<li><strong>renderer:</strong> outcome-aware breaker + extraction and stealth fixes (<a href="https://github.com/us/crw/commit/86dd10fd014235cb9bd107e32c7cf6e04cb03367">86dd10f</a>)</li>
+<li><strong>renderer:</strong> own per-eTLD+1 host limiter in FallbackRenderer (<a href="https://github.com/us/crw/commit/0577516bd41dc284f24cbaf3ed95544504ba50be">0577516</a>)</li>
+<li><strong>renderer:</strong> recover FC-wins URLs to reach 92% bench coverage (<a href="https://github.com/us/crw/commit/ba12424e44c34aa44bb8a41bc1f16d1dd87f498a">ba12424</a>)</li>
+</ul>
+<h3 id="bug-fixes-58">Bug Fixes</h3>
+<ul>
+<li><strong>compose:</strong> auto-restart and bound memory for renderer containers (<a href="https://github.com/us/crw/commit/dd610ccae2579138d5438795e1d5ac441a0fafc3">dd610cc</a>)</li>
+<li><strong>core:</strong> emit meaningful Timeout value when deadline already expired (<a href="https://github.com/us/crw/commit/607bb27692686f3563af52ea721d7dfb800d0405">607bb27</a>)</li>
+<li><strong>crawl:</strong> prioritize anti-bot detection over placeholder warning (<a href="https://github.com/us/crw/commit/05aa93358f3fa9826eb97db114bef06d1754dae3">05aa933</a>)</li>
+<li>escalate to JS renderer on HTTP failure and empty markdown (<a href="https://github.com/us/crw/commit/9fc79344702e30be0555e63a02aa5377f15cca93">9fc7934</a>)</li>
+<li><strong>mcp:</strong> apply per-endpoint timeouts to proxy client (<a href="https://github.com/us/crw/commit/741f1b245e064b267b4fb0dfb5487099bc86e2e4">741f1b2</a>)</li>
+<li><strong>renderer:</strong> enforce Deadline in HttpFetcher via tokio::time::timeout (<a href="https://github.com/us/crw/commit/b1c4058f47eed204d413a51c56d8ae43f547ff63">b1c4058</a>)</li>
+<li><strong>renderer:</strong> keep larger thin-result HTML when stitching attempts (<a href="https://github.com/us/crw/commit/8147236cc6b94d3c2db34f1128a687d9e110dc35">8147236</a>)</li>
+<li><strong>renderer:</strong> rescue 39 bench failures via UA, retry, and thin-content escalation (<a href="https://github.com/us/crw/commit/ddacb49e92688c3a20c7f7fe32da58d83c620f31">ddacb49</a>)</li>
+<li><strong>server:</strong> classify anti-bot challenges as anti_bot, not no-markdown (<a href="https://github.com/us/crw/commit/3ece4dd5b5318f71fe3744fa9d09948afaa738de">3ece4dd</a>)</li>
+</ul>
+<h3 id="performance-9">Performance</h3>
+<ul>
+<li><strong>renderer:</strong> drop fixed 2s JS wait, rely on SPA selector poll (<a href="https://github.com/us/crw/commit/cb043f7754f870df67a3a56e41a552ba7f7867f4">cb043f7</a>)</li>
+<li><strong>renderer:</strong> tighten tier timeouts and bump LP retry threshold (<a href="https://github.com/us/crw/commit/3f93d6052251eb72abee20ea4992ca3cdfc7ddb4">3f93d60</a>)</li>
+<li><strong>renderer:</strong> widen breaker tolerance to 20 failures / 10s cooldown (<a href="https://github.com/us/crw/commit/6525a84c18e2c4fafa92cc0d29203310755d3ef1">6525a84</a>)</li>
+</ul>
+<h3 id="miscellaneous-3">Miscellaneous</h3>
+<ul>
+<li>release 0.5.0 (<a href="https://github.com/us/crw/commit/3987de1b15b5d7605cc26645d14b74020c8eb7a9">3987de1</a>)</li>
+</ul>
+<h2 id="042-2026-04-29"><a href="https://github.com/us/crw/compare/v0.4.1...v0.4.2">0.4.2</a> (2026-04-29)</h2>
+<h3 id="features-41">Features</h3>
+<ul>
+<li><strong>core:</strong> add render decision types and prometheus metrics scaffold (<a href="https://github.com/us/crw/commit/e08682b761822a7100e0f40cffe4cd4f3dcf2a5c">e08682b</a>)</li>
+<li><strong>renderer:</strong> add per-host renderer preference cache (<a href="https://github.com/us/crw/commit/21e41d1330bed255854824f55c3419a590a86411">21e41d1</a>)</li>
+<li><strong>renderer:</strong> track HTTP routing and warn on pinned-renderer failure (<a href="https://github.com/us/crw/commit/3208d277aa4c480c1257648dc86a7151dcfb8976">3208d27</a>)</li>
+<li><strong>renderer:</strong> wire host preferences, circuit breakers, and CF detection (<a href="https://github.com/us/crw/commit/0c53c645562c43a4f62aa22f1e7f603c42b3b3f3">0c53c64</a>)</li>
+</ul>
+<h3 id="bug-fixes-59">Bug Fixes</h3>
+<ul>
+<li><strong>core,renderer:</strong> surface render metadata and harden host normalization (<a href="https://github.com/us/crw/commit/ee4130b62467defb61c5b85bf267c767b3bd909a">ee4130b</a>)</li>
+<li><strong>renderer:</strong> correct failure classification and routing decisions (<a href="https://github.com/us/crw/commit/4d684bdaa0cd1a27f011d73322099258a0f713be">4d684bd</a>)</li>
+<li><strong>renderer:</strong> probe lifecycle, RAII guard, breaker counter (<a href="https://github.com/us/crw/commit/02044f573cd6274231b3856cd799d7e74d61f9ba">02044f5</a>)</li>
+</ul>
+<h2 id="041-2026-04-28"><a href="https://github.com/us/crw/compare/v0.4.0...v0.4.1">0.4.1</a> (2026-04-28)</h2>
+<h3 id="features-42">Features</h3>
+<ul>
+<li>add per-request renderer field for scrape and crawl APIs (<a href="https://github.com/us/crw/issues/29">#29</a>) (<a href="https://github.com/us/crw/commit/f1e0b63fd28be0ceb38342086a309f92bbbc1e53">f1e0b63</a>)</li>
+<li><strong>crw-browse:</strong> add interactive browser MCP server with phase-2 tools (<a href="https://github.com/us/crw/commit/e78879db18c7c4b3df2a4984349a65b4493b1cda">e78879d</a>)</li>
+<li>honor renderer mode and force_js in config (fixes <a href="https://github.com/us/crw/issues/28">#28</a>) (<a href="https://github.com/us/crw/commit/b76e473facbce08a841ef8bd9fdfac97a552a8fd">b76e473</a>)</li>
+</ul>
+<h3 id="bug-fixes-60">Bug Fixes</h3>
+<ul>
+<li>detect failed JS renders and fail over to next renderer (<a href="https://github.com/us/crw/commit/fca8fd5cadb4fa3c96bf5a315f96ab6d1e63989c">fca8fd5</a>)</li>
+<li><strong>docs:</strong> use absolute logo paths in site.config.js (<a href="https://github.com/us/crw/commit/c5c93215561094a35038ab6af2b21e91c16199f4">c5c9321</a>)</li>
+<li><strong>docs:</strong> use absolute paths for logo and favicon assets (<a href="https://github.com/us/crw/commit/cdb14517da6425c105b95749dec35bbc9e977f5e">cdb1451</a>)</li>
+</ul>
+<h2 id="040-2026-04-22"><a href="https://github.com/us/crw/compare/v0.3.6...v0.4.0">0.4.0</a> (2026-04-22)</h2>
+<h3 id="features-43">Features</h3>
+<ul>
+<li>add crw-browse MCP server, SOCKS5 proxy, extract mcp-proto (<a href="https://github.com/us/crw/commit/9a53753baf6d87272bd2417fc87102a8ed34d41b">9a53753</a>)</li>
+</ul>
+<h3 id="miscellaneous-4">Miscellaneous</h3>
+<ul>
+<li>release 0.4.0 (<a href="https://github.com/us/crw/commit/e15fc74cf0dfc7c02ca7e6b82258aeff57f74f17">e15fc74</a>)</li>
+</ul>
+<h2 id="036-2026-04-21"><a href="https://github.com/us/crw/compare/v0.3.5...v0.3.6">0.3.6</a> (2026-04-21)</h2>
+<h3 id="features-44">Features</h3>
+<ul>
+<li><strong>ci:</strong> add Google Indexing API notification for docs changes (<a href="https://github.com/us/crw/commit/3b5a3404e91a1d776275ac312ad08cad86339a98">3b5a340</a>)</li>
+<li><strong>docs:</strong> generate static HTML pages for SEO indexability (<a href="https://github.com/us/crw/commit/7b321c0a26cea0da32d42e952f6327b468bdb099">7b321c0</a>)</li>
+</ul>
+<h3 id="bug-fixes-61">Bug Fixes</h3>
+<ul>
+<li><strong>ci:</strong> trigger release workflow after release-please creates tag (<a href="https://github.com/us/crw/commit/27f2b67d0b9db4f7b1bacc6c901e9c92131a3a95">27f2b67</a>)</li>
+<li><strong>mcp:</strong> bump npm optionalDependencies from 0.3.0 to 0.3.5 (<a href="https://github.com/us/crw/commit/0e363e0fc512eb18bcb8284a9723b00f50e2dfd0">0e363e0</a>)</li>
+<li><strong>renderer:</strong> detect loading placeholders and poll for content stability (<a href="https://github.com/us/crw/commit/d3b642b2736b4568fa8a3502e521b8bede60317f">d3b642b</a>)</li>
+</ul>
+<h2 id="035-2026-04-09"><a href="https://github.com/us/crw/compare/v0.3.4...v0.3.5">0.3.5</a> (2026-04-09)</h2>
+<h3 id="features-45">Features</h3>
+<ul>
+<li><strong>mcp:</strong> add crw_search tool for cloud/proxy mode (<a href="https://github.com/us/crw/commit/7fe4a8e79aae9dfcd0b400c17f175af583a33eef">7fe4a8e</a>)</li>
+</ul>
+<h2 id="034-2026-04-09"><a href="https://github.com/us/crw/compare/v0.3.3...v0.3.4">0.3.4</a> (2026-04-09)</h2>
+<h3 id="bug-fixes-62">Bug Fixes</h3>
+<ul>
+<li><strong>config:</strong> env var overrides not applied due to missing prefix_separator (<a href="https://github.com/us/crw/commit/71c7ae544bd74575cf30101190d65708934bcb1f">71c7ae5</a>), closes <a href="https://github.com/us/crw/issues/18">#18</a></li>
+</ul>
+<h2 id="033-2026-04-09"><a href="https://github.com/us/crw/compare/v0.3.2...v0.3.3">0.3.3</a> (2026-04-09)</h2>
+<h3 id="features-46">Features</h3>
+<ul>
+<li>add APT/Debian package distribution (<a href="https://github.com/us/crw/commit/c34b8e93563c0f3f4b3fa1a1e395e6041e97766c">c34b8e9</a>)</li>
+<li><strong>renderer:</strong> spawn all available browsers for multi-renderer fallback (<a href="https://github.com/us/crw/commit/f546437568eb833684978793e5b79880f2710016">f546437</a>)</li>
+</ul>
+<h2 id="032-2026-04-08"><a href="https://github.com/us/crw/compare/v0.3.1...v0.3.2">0.3.2</a> (2026-04-08)</h2>
+<h3 id="bug-fixes-63">Bug Fixes</h3>
+<ul>
+<li><strong>cli:</strong> auto-prepend https:// when no scheme provided (<a href="https://github.com/us/crw/commit/105060644acb1ef930555869372f5413947ac194">1050606</a>)</li>
+</ul>
+<h2 id="031-2026-04-08"><a href="https://github.com/us/crw/compare/v0.3.0...v0.3.1">0.3.1</a> (2026-04-08)</h2>
+<h3 id="features-47">Features</h3>
+<ul>
+<li>add llms.txt, SKILL.md, MCP init command, and docs UI improvements (<a href="https://github.com/us/crw/commit/1b22d194ec9a8b8db8db39a1d44ce38a56716f5d">1b22d19</a>)</li>
+<li>add one-line install script with auto platform detection (<a href="https://github.com/us/crw/commit/6354f7929896bb9a12eeebb9d5bf439731fac874">6354f79</a>)</li>
+<li><strong>docs:</strong> add dark mode logo support and improve docs UI (<a href="https://github.com/us/crw/commit/047df7b46485d9cdec76b213db181dc0aa592511">047df7b</a>)</li>
+<li><strong>docs:</strong> align design with SaaS site and update branding (<a href="https://github.com/us/crw/commit/631d07c66a34bcc71e8d2494a177182977886a8c">631d07c</a>)</li>
+<li><strong>docs:</strong> unify docs into docs.fastcrw.com with Mintlify-style design (<a href="https://github.com/us/crw/commit/4994998ae97924100e4415b90a5b78db3b8cf09e">4994998</a>)</li>
+<li><strong>docs:</strong> update URLs, dark mode, syntax highlighting, and benchmarks (<a href="https://github.com/us/crw/commit/0678cdfde6a9de9b5fa56ec2c6256a63a0342317">0678cdf</a>)</li>
+<li>release all 3 binaries, CLI auto-browser, README overhaul (<a href="https://github.com/us/crw/commit/aa2950d564cb97f668c0c838713f612bffa33e32">aa2950d</a>)</li>
+<li>update README banner with new logo (<a href="https://github.com/us/crw/commit/bcba1ad95e7ac1afd3066827f2327452b60c81f0">bcba1ad</a>)</li>
+</ul>
+<h3 id="bug-fixes-64">Bug Fixes</h3>
+<ul>
+<li>crawl HTTP polling bug + SDK test suite + docs (<a href="https://github.com/us/crw/issues/16">#16</a>) (<a href="https://github.com/us/crw/commit/b6d898360cb2396683e9e82f778d2ee3b8455625">b6d8983</a>)</li>
+<li>remove internal implementation detail from roadmap (<a href="https://github.com/us/crw/commit/a5013f07f039615de5c5988e6bbf64629b56aa0e">a5013f0</a>)</li>
+</ul>
+<h2 id="030-2026-04-02"><a href="https://github.com/us/crw/compare/v0.2.2...v0.3.0">0.3.0</a> (2026-04-02)</h2>
+<h3 id="features-48">Features</h3>
+<ul>
+<li>add search() method to Python SDK and docs (<a href="https://github.com/us/crw/commit/591e3fed4bbd14b4470fd2f5cbc24c02f7543dba">591e3fe</a>)</li>
+</ul>
+<h2 id="022-2026-04-02"><a href="https://github.com/us/crw/compare/v0.2.1...v0.2.2">0.2.2</a> (2026-04-02)</h2>
+<h3 id="bug-fixes-65">Bug Fixes</h3>
+<ul>
+<li><strong>renderer:</strong> escalate to JS renderer on HTTP 401/403 responses (<a href="https://github.com/us/crw/commit/f515caa2e315a06df9274967bdc3fb23dbafcbcf">f515caa</a>)</li>
+<li>use GitHub latest release instead of pinned version for binary download (<a href="https://github.com/us/crw/commit/4afcb1a4c67d4e9b36809ed32ce88b6a9fd4c342">4afcb1a</a>)</li>
+</ul>
+<h2 id="021-2026-03-28"><a href="https://github.com/us/crw/compare/v0.2.0...v0.2.1">0.2.1</a> (2026-03-28)</h2>
+<h3 id="bug-fixes-66">Bug Fixes</h3>
+<ul>
+<li>make crw-mcp npm wrapper executable (<a href="https://github.com/us/crw/commit/576a9eb19ae90bc677344045dd70fb96e8b938da">576a9eb</a>)</li>
+<li>use latest tag in server.json OCI identifier (<a href="https://github.com/us/crw/commit/7ec3b82ab78aa2c7ff900d07400f8a2426cb955f">7ec3b82</a>)</li>
+</ul>
+<h2 id="020-2026-03-28"><a href="https://github.com/us/crw/compare/v0.1.2...v0.2.0">0.2.0</a> (2026-03-28)</h2>
+<h3 id="features-49">Features</h3>
+<ul>
+<li>add MCP Registry support for official server discovery (<a href="https://github.com/us/crw/commit/154b9f520015260d012ebf899513c3af1f9dfe3d">154b9f5</a>)</li>
+</ul>
+<h2 id="012-2026-03-27"><a href="https://github.com/us/crw/compare/v0.1.1...v0.1.2">0.1.2</a> (2026-03-27)</h2>
+<h3 id="bug-fixes-67">Bug Fixes</h3>
+<ul>
+<li>vendor pdf-inspector as crw-pdf for crates.io publishability (<a href="https://github.com/us/crw/commit/3f7681dde0b78ff2c0c11d232d21a714edb94d75">3f7681d</a>)</li>
+</ul>
+<h2 id="011-2026-03-26"><a href="https://github.com/us/crw/compare/v0.1.0...v0.1.1">0.1.1</a> (2026-03-26)</h2>
+<h3 id="bug-fixes-68">Bug Fixes</h3>
+<ul>
+<li>skip already-published crates without masking real errors (<a href="https://github.com/us/crw/commit/010649c522e4e49edcf51873d4c1065e08d510b1">010649c</a>)</li>
+</ul>
+<h2 id="010-2026-03-26"><a href="https://github.com/us/crw/compare/v0.0.14...v0.1.0">0.1.0</a> (2026-03-26)</h2>
+<h3 id="features-50">Features</h3>
+<ul>
+<li>add PDF extraction support via pdf-inspector (<a href="https://github.com/us/crw/commit/06dd5bf89caf004929f22d41d00f8a297d09b825">06dd5bf</a>)</li>
+</ul>
+<h2 id="0014-2026-03-25"><a href="https://github.com/us/crw/compare/v0.0.13...v0.0.14">0.0.14</a> (2026-03-25)</h2>
+<h3 id="features-51">Features</h3>
+<ul>
+<li><strong>mcp:</strong> auto-download LightPanda binary for zero-config JS rendering (<a href="https://github.com/us/crw/commit/41f443b885326401b653cfcba0054cb943672ca6">41f443b</a>)</li>
+<li><strong>mcp:</strong> auto-spawn headless Chrome for JS rendering in embedded mode (<a href="https://github.com/us/crw/commit/9a6b0ae3f16399f8f9f233109e431f74a882d973">9a6b0ae</a>)</li>
+</ul>
+<h3 id="bug-fixes-69">Bug Fixes</h3>
+<ul>
+<li><strong>ci:</strong> move crw-mcp to Tier 4 in release workflow and add workflow_dispatch (<a href="https://github.com/us/crw/commit/d7584a82c0dd4ac0c6cd8b169b19939d92eb4e95">d7584a8</a>)</li>
+</ul>
+<h2 id="0013-2026-03-24"><a href="https://github.com/us/crw/compare/v0.0.12...v0.0.13">0.0.13</a> (2026-03-24)</h2>
+<h3 id="features-52">Features</h3>
+<ul>
+<li><strong>mcp:</strong> add embedded mode — self-contained MCP server, no crw-server needed (<a href="https://github.com/us/crw/commit/75e54504487f24ee30c0272bb83eb9aab807a284">75e5450</a>)</li>
+</ul>
+<h3 id="bug-fixes-70">Bug Fixes</h3>
+<ul>
+<li><strong>ci:</strong> switch release-please to simple type for Rust workspace support (<a href="https://github.com/us/crw/commit/51cd420ab77e4bd58bf1a6a7ab0c28287896a0b7">51cd420</a>)</li>
+</ul>
+<h2 id="v0012">v0.0.12</h2>
+<ul>
+<li><strong>Readability drill-down</strong> — when <code>&lt;main&gt;</code> or <code>&lt;article&gt;</code> wraps &gt;90% of body, the extractor now searches inside for narrower content elements (<code>.main-page-content</code>, <code>.article-content</code>, <code>.entry-content</code>, etc.) instead of discarding. Fixes MDN pages returning 35 chars and StackOverflow returning only the question</li>
+<li><strong>Base64 image stripping</strong> — <code>data:</code> URI images are removed in both HTML cleaning (lol_html) and markdown post-processing (regex safety net). Eliminates massive base64 blobs from Reddit and similar sites</li>
+<li><strong>Select/dropdown removal</strong> — <code>&lt;select&gt;</code> elements removed in <code>onlyMainContent</code> mode; dropdown/city-selector/location-selector noise patterns added. Fixes Hürriyet city dropdown leaking into content</li>
+<li><strong>Extended scored selectors</strong> — added <code>.main-page-content</code>, <code>.js-post-body</code>, <code>.s-prose</code>, <code>#question</code>, <code>.page-content</code>, <code>#page-content</code>, <code>[role=&quot;article&quot;]</code> for better MDN, StackOverflow, and generic site coverage</li>
+<li><strong>Smarter fallback chain</strong> — when primary extraction produces too-short markdown, both fallbacks (cleaned HTML and basic clean) are tried and the longer result is picked, instead of short-circuiting on non-empty but insufficient content</li>
+</ul>
+<h2 id="v0011">v0.0.11</h2>
+<ul>
+<li><strong>Stealth anti-bot bypass</strong> — automatic stealth JS injection via <code>Page.addScriptToEvaluateOnNewDocument</code> before every CDP navigation. Spoofs <code>navigator.webdriver</code>, Chrome runtime object, plugins array, languages, permissions API, iframe <code>contentWindow</code>, and <code>toString()</code> proxy to bypass Cloudflare, PerimeterX, and other bot detection systems</li>
+<li><strong>Cloudflare challenge auto-retry</strong> — detects Cloudflare JS challenge pages (&quot;Just a moment&quot;, <code>cf-browser-verification</code>, <code>challenge-platform</code>) after page load and polls up to 3 times at 3-second intervals for non-interactive challenges to auto-resolve</li>
+<li><strong>HTTP → CDP auto-escalation</strong> — <code>FallbackRenderer::fetch()</code> in auto mode now checks HTTP responses for anti-bot challenge signatures and automatically escalates to JS rendering when detected, instead of returning the challenge HTML</li>
+<li><strong>Chrome failover in Docker</strong> — full automatic failover chain: HTTP → LightPanda → Chrome. Added <code>chromedp/headless-shell</code> as a Docker Compose sidecar service with 2GB shared memory. If LightPanda crashes on complex SPAs (React, Angular), Chrome handles the render</li>
+<li><strong>Chrome WS URL auto-discovery</strong> — CDP renderer resolves Chrome DevTools WebSocket URL via the <code>/json/version</code> HTTP endpoint with <code>Host: localhost</code> header (required for chromedp/headless-shell&#39;s socat proxy). Uses <code>OnceCell</code> for lazy one-time resolution</li>
+<li><strong>Proxy configuration docs</strong> — expanded proxy config comments with examples for HTTP, SOCKS5, and residential proxy providers (IPRoyal, Oxylabs, Smartproxy)</li>
+<li><strong>Raw string delimiter fix</strong> — fixed <code>markdown.rs</code> test that used <code>r#&quot;...&quot;#</code> with a string containing <code>&quot;#</code>, changed to <code>r##&quot;...&quot;##</code></li>
+</ul>
+<h2 id="v0010-v009">v0.0.10 / v0.0.9</h2>
+<ul>
+<li><strong>Crawl cancel endpoint</strong> — <code>DELETE /v1/crawl/{id}</code> cancels a running crawl job via <code>AbortHandle</code> and returns <code>{ success: true }</code></li>
+<li><strong>API rate limiting</strong> — token-bucket rate limiter (configurable <code>rate_limit_rps</code>, default 10). Returns 429 with <code>error_code: &quot;rate_limited&quot;</code> when exceeded</li>
+<li><strong>Machine-readable error codes</strong> — all error responses now include an <code>error_code</code> field (e.g. <code>&quot;invalid_url&quot;</code>, <code>&quot;http_error&quot;</code>, <code>&quot;rate_limited&quot;</code>, <code>&quot;not_found&quot;</code>)</li>
+<li><strong>Map response envelope</strong> — <code>/v1/map</code> now returns <code>{ success, data: { links } }</code> instead of <code>{ success, links }</code> for consistency with other endpoints</li>
+<li><strong>Fenced code blocks</strong> — indented code blocks (4-space) are post-processed into fenced (```) blocks for better LLM/RAG compatibility</li>
+<li><strong>Sphinx footer cleanup</strong> — <code>&quot;footer&quot;</code> added to exact-token noise patterns, catching <code>&lt;div class=&quot;footer&quot;&gt;</code> in Sphinx/documentation sites</li>
+<li><strong><code>renderedWith: &quot;http&quot;</code></strong> — HTTP-only fetches now report <code>rendered_with: &quot;http&quot;</code> in metadata instead of <code>null</code></li>
+<li><strong>405 JSON responses</strong> — all routes now have <code>.fallback(method_not_allowed)</code> returning structured JSON with <code>error_code: &quot;method_not_allowed&quot;</code> instead of empty bodies</li>
+<li><strong>Anchor link cleanup</strong> — empty anchor links (<code>[](#id)</code>, <code>[¶](#id)</code>) and pilcrow/section signs stripped from Markdown output</li>
+<li><strong><code>role=&quot;contentinfo&quot;</code> cleanup</strong> — elements with ARIA roles <code>contentinfo</code>, <code>navigation</code>, <code>banner</code>, <code>complementary</code> removed during cleaning</li>
+<li><strong>Tiny chunk merging</strong> — topic chunking merges heading-only chunks (&lt;50 chars) with the next chunk to improve RAG embedding quality</li>
+</ul>
+<h2 id="v008">v0.0.8</h2>
+<ul>
+<li><strong>Wikipedia / MediaWiki onlyMainContent fix</strong> — <code>onlyMainContent: true</code> now correctly extracts article text from Wikipedia pages (~49% size reduction). Previously the <code>&lt;html&gt;</code> element&#39;s <code>class=&quot;vector-toc-available&quot;</code> matched the <code>&quot;toc&quot;</code> noise pattern via substring, removing the entire page</li>
+<li><strong>3-tier noise pattern matching</strong> — noise class/id matching now uses substring (long patterns), exact-token (short/ambiguous: <code>toc</code>, <code>share</code>, <code>social</code>, <code>comment</code>, <code>related</code>), and prefix (<code>ad-</code>, <code>ads-</code>) matching to avoid false positives</li>
+<li><strong>Structural element guard</strong> — noise handler never removes <code>&lt;html&gt;</code>, <code>&lt;head&gt;</code>, <code>&lt;body&gt;</code>, or <code>&lt;main&gt;</code> elements</li>
+<li><strong>Re-clean after readability</strong> — readability output is re-cleaned to strip residual noise (infobox, navbox, catlinks) that survives inside broad containers</li>
+<li><strong>Wikipedia-aware readability</strong> — added <code>.mw-parser-output</code>, <code>#mw-content-text</code>, <code>#bodyContent</code> to scored selectors; priority/scored selectors that wrap &gt;90% of body are skipped</li>
+<li><strong>BYOK LLM extraction</strong> — per-request <code>llmApiKey</code>, <code>llmProvider</code>, <code>llmModel</code> fields for bring-your-own-key structured extraction without server config</li>
+<li><strong>JSON format validation</strong> — <code>formats: [&quot;json&quot;]</code> without <code>jsonSchema</code> now returns a 400 error instead of a warning</li>
+<li><strong>Block detection skip</strong> — pages &gt;50 KB skip interstitial/block detection (no more false &quot;blocked by anti-bot&quot; on Wikipedia)</li>
+<li><strong>Null byte URL rejection</strong> — URLs with <code>%00</code> or null bytes rejected at validation</li>
+<li><strong>Request timeout</strong> — default timeout bumped from 60s to 120s</li>
+<li><strong>Dockerfile fix</strong> — corrected <code>cargo build</code> flags, added <code>config.docker.toml</code></li>
+</ul>
+<h2 id="v007">v0.0.7</h2>
+<ul>
+<li><strong><code>success: false</code> on 4xx targets</strong> — scraping a 403/404/429 target with minimal body now correctly returns <code>success: false</code> with error details, instead of <code>success: true</code> with a warning. Targets with real content (custom error pages) still return <code>success: true</code> with a warning</li>
+<li><strong>JS renderer fallback warning</strong> — when <code>renderJs: true</code> is requested but no CDP renderer is available, the response now includes <code>rendered_with: &quot;http_only_fallback&quot;</code> and a warning instead of silently falling back</li>
+<li><strong>CDP health check</strong> — <code>is_available()</code> now runs a real <code>Browser.getVersion</code> command instead of just testing the WebSocket connection</li>
+<li><strong>Specific error messages</strong> — unknown formats now return descriptive errors (e.g., <code>&quot;Unknown format &#39;extract&#39;. Valid formats: ...&quot;</code>) instead of generic 422</li>
+<li><strong><code>&quot;extract&quot;</code> format alias</strong> — <code>formats: [&quot;extract&quot;]</code> and <code>formats: [&quot;llm-extract&quot;]</code> are now accepted as aliases for <code>&quot;json&quot;</code> (Firecrawl compatibility)</li>
+<li><strong>Chunk dedup by default</strong> — deduplication is now enabled by default for all chunking strategies; separator-only chunks (<code>---</code>, <code>***</code>) are filtered out</li>
+<li><strong>Chunk relevance scores</strong> — chunks now return <code>{ content, score, index }</code> objects instead of plain strings when a query is provided</li>
+<li><strong>Map timeout</strong> — <code>/v1/map</code> accepts a <code>timeout</code> parameter (default 120s, max 300s) to prevent 502s on large sites</li>
+<li><strong>Stealth + JS rendering fix</strong> — <code>stealth: true</code> with <code>renderJs: true</code> no longer bypasses CDP; the shared renderer is used with stealth headers injected</li>
+<li><strong>BM25 NaN guard</strong> — prevents <code>NaN</code> scores when all chunks are empty</li>
+</ul>
+<h2 id="v006">v0.0.6</h2>
+<ul>
+<li><strong>Crate READMEs on crates.io</strong> — all 7 crates now have detailed README documentation visible on their crates.io pages, with usage examples, API docs, and installation instructions</li>
+</ul>
+<h2 id="v005">v0.0.5</h2>
+<ul>
+<li><strong><code>crw-cli</code> now on crates.io</strong> — install the standalone CLI with <code>cargo install crw-cli</code> and scrape URLs without running a server</li>
+<li><strong>Parallelized release workflow</strong> — crate publishing uses tiered parallelism, cutting release time by ~2.25 minutes</li>
+<li><strong>CLI and MCP install docs</strong> — README now includes <code>cargo install</code> instructions for both <code>crw-cli</code> and <code>crw-mcp</code></li>
+</ul>
+<h2 id="v004">v0.0.4</h2>
+<ul>
+<li><strong>Hardened rendering and warning semantics</strong> — improved reliability of the rendering pipeline and warning detection logic</li>
+<li><strong>XPath output escaping</strong> — XPath extraction results are now properly escaped to prevent injection</li>
+<li><strong>Broadened status warnings</strong> — expanded HTTP status code range that triggers warning metadata</li>
+<li><strong>Capped interstitial scan</strong> — bounded interstitial page detection to avoid excessive scanning</li>
+<li><strong>Clippy cleanup</strong> — simplified status code checks for cleaner, idiomatic Rust</li>
+</ul>
+<h2 id="v003">v0.0.3</h2>
+<ul>
+<li><strong>Warning-aware target handling</strong> — 4xx and anti-bot targets now return <code>success: true</code> with <code>warning</code> and <code>metadata.statusCode</code></li>
+<li><strong>More reliable JS rendering</strong> — CDP navigation now waits for real page lifecycle completion before applying <code>waitFor</code></li>
+<li><strong>Stealth decompression fix</strong> — gzip and brotli responses decode cleanly instead of leaking garbled binary payloads</li>
+<li><strong>Crawl compatibility</strong> — <code>limit</code>, <code>maxPages</code>, and <code>max_pages</code> now normalize to the same crawl cap</li>
+<li><strong>XPath and chunking fixes</strong> — XPath returns all matches, chunk overlap/dedupe is supported, and scorer rank order is preserved</li>
+</ul>
+<h2 id="v002">v0.0.2</h2>
+<ul>
+<li><strong>CSS selector &amp; XPath</strong> — target specific DOM elements before Markdown conversion (<code>cssSelector</code>, <code>xpath</code>)</li>
+<li><strong>Chunking strategies</strong> — split content into topic, sentence, or regex-delimited chunks for RAG pipelines (<code>chunkStrategy</code>)</li>
+<li><strong>BM25 &amp; cosine filtering</strong> — rank chunks by relevance to a query and return top-K results (<code>filterMode</code>, <code>topK</code>)</li>
+<li><strong>Better Markdown</strong> — switched to <code>htmd</code> (Turndown.js port): tables, code block languages, nested lists all render correctly</li>
+<li><strong>Stealth mode</strong> — rotate User-Agent from a built-in Chrome/Firefox/Safari pool and inject 12 browser-like headers (<code>stealth: true</code>)</li>
+<li><strong>Per-request proxy</strong> — override the global proxy on a per-request basis (<code>proxy: &quot;http://...&quot;</code>)</li>
+<li><strong>Rate limit jitter</strong> — randomized delay between requests to avoid uniform traffic fingerprinting</li>
+<li><strong><code>crw-server setup</code></strong> — one-command JS rendering setup: downloads LightPanda, creates <code>config.local.toml</code></li>
+</ul>
+<h2 id="v001">v0.0.1</h2>
+<ul>
+<li><strong>Firecrawl-compatible REST API</strong> — <code>/v1/scrape</code>, <code>/v1/crawl</code>, <code>/v1/map</code> with identical request/response format</li>
+<li><strong>6 output formats</strong> — markdown, HTML, cleaned HTML, raw HTML, plain text, links, structured JSON</li>
+<li><strong>LLM structured extraction</strong> — JSON schema in, validated structured data out (Anthropic tool_use + OpenAI function calling)</li>
+<li><strong>JS rendering</strong> — auto-detect SPAs via heuristics, render via LightPanda, Playwright, or Chrome (CDP)</li>
+<li><strong>BFS crawler</strong> — async crawl with rate limiting, robots.txt, sitemap support, concurrent jobs</li>
+<li><strong>MCP server</strong> — built-in stdio + HTTP transport for Claude Code and Claude Desktop</li>
+<li><strong>SSRF protection</strong> — private IPs, cloud metadata, IPv6, dangerous URI filtering</li>
+<li><strong>Docker ready</strong> — multi-stage build with LightPanda sidecar</li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-changelog-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "changelog";</script>
+</body>
 </html>

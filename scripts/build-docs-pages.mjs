@@ -318,6 +318,8 @@ function renderMarkdown(md) {
 // ── Generate pages ────────────────────────────────────────────────────────────
 let generated = 0;
 const errors = [];
+// slug → generated page HTML, reused by the legacy redirect stubs below
+const pages = {};
 
 for (const { slug, title, seoTitle } of slugMeta) {
   const mdPath = path.join(CONTENT_DIR, `${slug}.md`);
@@ -338,6 +340,7 @@ for (const { slug, title, seoTitle } of slugMeta) {
   const content = rewriteInternalLinks(addHeadingIds(rawHtml));
 
   const pageHtml = buildPage(slug, seoTitle || title, description, content);
+  pages[slug] = pageHtml;
 
   // Write to docs/{slug}/index.html
   const outDir = path.join(DOCS_DIR, slug);
@@ -353,9 +356,16 @@ for (const { slug, title, seoTitle } of slugMeta) {
 //   • /v1/map           — legacy API-style path, now /map
 // Emit a canonical meta-refresh stub at each old location so the 404s and any
 // external backlinks resolve to the live page. Stubs are noindex.
+// Coding agents fetch docs without running JS or following meta-refresh, so a
+// bare "moved" stub costs them a second round trip. Each stub therefore serves
+// the target page's own content; canonical + noindex keep it out of the index.
 function buildRedirectStub(target) {
   const url = `${BASE_URL}/${target}`;
-  return `<!DOCTYPE html>
+  const notice = `<p>This page moved to <a href="${url}">${url}</a>.</p>`;
+  const page = pages[target];
+  if (!page) {
+    errors.push(`  REDIRECT TARGET NOT GENERATED: ${target}`);
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -365,9 +375,17 @@ function buildRedirectStub(target) {
   <meta http-equiv="refresh" content="0; url=${url}">
   <script>location.replace(${JSON.stringify(url)});</script>
 </head>
-<body>This page moved to <a href="${url}">${url}</a>.</body>
+<body>${notice}</body>
 </html>
 `;
+  }
+  return page
+    .replace(/\s*<meta name="robots" content="[^"]*">/, "")
+    .replace(
+      "</title>",
+      `</title>\n  <meta name="robots" content="noindex, follow">\n  <meta http-equiv="refresh" content="0; url=${url}">`
+    )
+    .replace('<article id="article" role="main">', (m) => m + notice);
 }
 
 // old path (relative to docs/) → current slug it should resolve to
@@ -384,21 +402,42 @@ for (const [oldPath, target] of Object.entries(renamedSlugs)) {
 // into a breaking URL change. Point each one at its exact current reference
 // page rather than collapsing every endpoint to the docs homepage.
 Object.assign(legacyRedirects, {
-  api: "api-reference",
-  "api/scrape": "api-reference/scrape",
-  "api/crawl": "api-reference/crawl",
-  "api/map": "api-reference/map",
-  "api/search": "api-reference/search",
-  "api/extract": "api-reference/extract",
+  api: "rest-api",
+  "api/scrape": "scraping",
+  "api/crawl": "crawling",
+  "api/map": "map",
+  "api/search": "search",
+  "api/extract": "extract",
+  "api-reference": "rest-api",
+  "api-reference/introduction": "rest-api",
+  "api-reference/scrape": "scraping",
+  "api-reference/crawl": "crawling",
+  "api-reference/crawl/get-crawl-status": "crawling",
+  "api-reference/crawl-url": "crawling",
+  "api-reference/map": "map",
+  "api-reference/endpoint/map": "map",
+  "api-reference/search": "search",
+  "api-reference/extract": "extract",
+  // Early agent landing pages, previously hand-written and since gone stale.
+  quickstart: "quick-start",
+  "get-started/quickstart": "quick-start",
+  "features/scrape": "scraping",
+  "features/crawl": "crawling",
+  "features/map": "map",
+  "features/search": "search",
+  "features/extract": "extract",
+  // Paths coding agents guess when looking for the SDK.
+  sdks: "sdk-reference",
+  "sdks/python": "sdk-reference",
+  "sdks/typescript": "sdk-reference",
+  "integrations/sdk-examples": "sdk-examples",
 });
 
 let redirectsWritten = 0;
 for (const [oldPath, target] of Object.entries(legacyRedirects)) {
   const outDir = path.join(DOCS_DIR, oldPath);
   // Never clobber a real generated page (slugMeta dirs live at docs/<slug>/).
-  if (existsSync(path.join(outDir, "index.html")) && slugTitles[path.basename(oldPath)] && !oldPath.startsWith("docs/") && !(oldPath in renamedSlugs)) {
-    continue;
-  }
+  if (slugTitles[oldPath] && !(oldPath in renamedSlugs)) continue;
   await mkdir(outDir, { recursive: true });
   await writeFile(path.join(outDir, "index.html"), buildRedirectStub(target), "utf8");
   redirectsWritten++;

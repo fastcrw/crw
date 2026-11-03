@@ -40,7 +40,7 @@ Authentication:
 
 ### Installation
 
-CRW is HTTP-first. You can start with cURL immediately and then move to your existing Python or Node.js HTTP client without installing a dedicated SDK. See the [Basic usage](#basic-usage) tabs below for ready-to-run Python (`requests`), Node.js (`fetch`), and cURL examples.
+Official SDKs: `pip install crw` (Python) and `npm install crw-sdk` (TypeScript). Both wrap every endpoint and return plain objects; see the [SDK reference](/sdk-reference). Plain HTTP works too: the [Basic usage](#basic-usage) tabs below show the SDK, `requests`, `fetch`, and cURL.
 
 ### Basic usage
 
@@ -56,6 +56,17 @@ Start with this request:
 ```
 
 :::tabs
+::tab{title="Python SDK"}
+```python
+# pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+print(page["markdown"])  # str
+print(page["links"])     # list[str] of absolute URLs
+```
 ::tab{title="Python"}
 ```python
 import requests
@@ -217,9 +228,9 @@ Use the smallest output shape that solves the job:
 
 - `markdown` is the default and best first request for most pipelines.
 - `html` or `rawHtml` is useful when downstream systems need original structure.
-- `links` is useful when you want lightweight discovery without page bodies.
+- `links` is useful when you want lightweight discovery without page bodies. It returns `data.links` as a flat `string[]` of absolute URLs (no anchor text); when you need each link's text, read it from `markdown`, where links stay inline as `[text](url)`.
 - `summary` is the LLM-prose path — needs `llmApiKey` or a server `[extraction.llm]` config. Optional `summaryPrompt` lets the caller pick language/tone without weakening the safety wrapper.
-- `json` is the extraction path and should be paired with `jsonSchema`.
+- `json` is the extraction path and should be paired with `jsonSchema`. On the hosted API, `json` and `summary` run a managed LLM and need a paid plan (Hobby or above); the FREE plan returns an error for them, so parse `markdown` or `links` there.
 
 If you ask for multiple formats, only those formats are populated in the response.
 

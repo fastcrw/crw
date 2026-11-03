@@ -1,12 +1,747 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/migrate-from-firecrawl">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Migrate from Firecrawl — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/migrate-from-firecrawl">
-  <script>location.replace("https://docs.fastcrw.com/migrate-from-firecrawl");</script>
+  <meta name="description" content="The core request shape is intentionally compatible. These work against fastCRW with no modification when you point the client at the right base URL:">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/migrate-from-firecrawl">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/migrate-from-firecrawl">
+  <meta property="og:title" content="Migrate from Firecrawl — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="The core request shape is intentionally compatible. These work against fastCRW with no modification when you point the client at the right base URL:">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Migrate from Firecrawl — CRW Docs">
+  <meta name="twitter:description" content="The core request shape is intentionally compatible. These work against fastCRW with no modification when you point the client at the right base URL:">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/migrate-from-firecrawl">https://docs.fastcrw.com/migrate-from-firecrawl</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-migrate-from-firecrawl-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/migrate-from-firecrawl">https://docs.fastcrw.com/migrate-from-firecrawl</a>.</p><h1 id="migrate-from-firecrawl-in-one-afternoon">Migrate from Firecrawl in One Afternoon</h1>
+<p><strong>Goal:</strong> Move a working Firecrawl integration to fastCRW in a single afternoon. This guide covers the four mechanical changes (base URL, SDK package, env var, extraction shape) plus the behavioral differences you must validate before going to production.</p>
+<p><strong>Time estimate:</strong> 15 minutes of code changes, 30–60 minutes of validation.</p>
+<hr>
+<h2 id="what-transfers-without-changes">What transfers without changes</h2>
+<p>The core request shape is intentionally compatible. These work against fastCRW with no modification when you point the client at the right base URL:</p>
+<ul>
+<li><code>/v1/scrape</code> — same body fields (<code>url</code>, <code>formats</code>, <code>onlyMainContent</code>, <code>waitFor</code>, <code>maxAge</code>, etc.)</li>
+<li><code>/v1/crawl</code> + <code>/v1/crawl/{id}</code> polling</li>
+<li><code>/v1/map</code></li>
+<li><code>/v1/search</code></li>
+<li><code>Authorization: Bearer &lt;key&gt;</code> header</li>
+</ul>
+<hr>
+<h2 id="step-1-swap-the-base-url">Step 1 — Swap the base URL</h2>
+<p>Every engine call goes to <code>https://api.fastcrw.com</code> instead of <code>https://api.firecrawl.dev</code>.</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">cURL — before</button><button class="code-tab" data-tab="1">cURL — after</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="bash"><code class="language-bash">curl -X POST https://api.firecrawl.dev/v1/scrape \
+  -H &quot;Authorization: Bearer $FIRECRAWL_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://news.ycombinator.com&quot;,
+    &quot;formats&quot;: [&quot;markdown&quot;]
+  }'</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://news.ycombinator.com&quot;,
+    &quot;formats&quot;: [&quot;markdown&quot;]
+  }'</code></pre></div>
+    </div><p><strong>Self-hosted:</strong> if you run your own <code>crw-server</code>, use your server&#39;s address (e.g. <code>http://crw:3000</code>) wherever this guide says <code>https://api.fastcrw.com</code>. Authentication is optional on self-hosted; disable it with <code>[server] auth_required = false</code> in your <code>config.toml</code>.</p>
+<p>:::note{title=&quot;Keeping the Firecrawl SDK? Change one line&quot;}
+You don&#39;t have to swap SDKs. Point your existing Firecrawl client at
+<strong><code>https://compat.fastcrw.com</code></strong> and it works. Same string in every language, no
+path suffix, nothing else to change:</p>
+<pre data-lang="typescript"><code class="language-typescript">const app = new FirecrawlApp({
+  apiKey: process.env.CRW_API_KEY,
+  apiUrl: &quot;https://compat.fastcrw.com&quot;,
+});</code></pre>
+<pre data-lang="python"><code class="language-python">app = FirecrawlApp(
+    api_key=os.environ[&quot;CRW_API_KEY&quot;],
+    api_url=&quot;https://compat.fastcrw.com&quot;,
+)</code></pre>
+<p>That host exists because the SDKs disagree about base paths. <code>firecrawl-py</code>&#39;s v2
+client resolves each endpoint against the base <em>origin</em> and drops any path you
+put there, while the JS client and <code>firecrawl-py</code>&#39;s v1 client keep it. A hostname
+is the one form all of them honour.</p>
+<p>The <strong>v2 SDK is the supported drop-in</strong>; the legacy v1 SDK is compatible only for
+<code>scrape</code>.</p>
+<p><strong>Self-hosting?</strong> Ignore all of this and use your own address
+(<code>http://crw:3000</code>). Your engine serves every surface at the root already.
+:::</p>
+<p>:::warning{title=&quot;Scheduled change: the root /v2 alias&quot;}
+<code>https://api.fastcrw.com/v2/*</code> still answers and is what earlier versions of this
+guide told Python users to use. It is scheduled to close in <strong>October 2026</strong>, so
+that <code>api.fastcrw.com</code> serves only our native <code>/v1</code> API.</p>
+<p>If you are on it, move your base URL to <code>https://compat.fastcrw.com</code>. Nothing else
+changes: same shapes, same keys, same credits. Self-hosted deployments are not
+affected.
+:::</p>
+<hr>
+<h2 id="step-2-swap-the-sdk-package">Step 2 — Swap the SDK package</h2>
+<h3 id="python">Python</h3>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Before (firecrawl-py)</button><button class="code-tab" data-tab="1">After (crw)</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="bash"><code class="language-bash">pip install firecrawl-py</code></pre><p><pre data-lang="python"><code class="language-python">from firecrawl import FirecrawlApp
+
+app = FirecrawlApp(api_key=&quot;fc-...&quot;)
+
+result = app.scrape_url(
+    &quot;https://news.ycombinator.com&quot;,
+    params={&quot;formats&quot;: [&quot;markdown&quot;]},
+)
+print(result[&quot;markdown&quot;][:500])</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash">pip install crw</code></pre></p>
+<p><pre data-lang="python"><code class="language-python">from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY from env
+
+result = client.scrape(
+    &quot;https://news.ycombinator.com&quot;,
+    formats=[&quot;markdown&quot;],
+)
+print(result[&quot;markdown&quot;][:500])</code></pre></div>
+    </div></p>
+<h3 id="typescript-javascript">TypeScript / JavaScript</h3>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Before (@mendable/firecrawl-js)</button><button class="code-tab" data-tab="1">After (crw-sdk)</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="bash"><code class="language-bash">npm install @mendable/firecrawl-js</code></pre><p><pre data-lang="typescript"><code class="language-typescript">import FirecrawlApp from &quot;@mendable/firecrawl-js&quot;;
+
+const app = new FirecrawlApp({ apiKey: &quot;fc-...&quot; });
+
+const result = await app.scrapeUrl(&quot;https://news.ycombinator.com&quot;, {
+  formats: [&quot;markdown&quot;],
+});
+console.log(result.markdown?.slice(0, 500));</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash">npm install crw-sdk</code></pre></p>
+<p><pre data-lang="typescript"><code class="language-typescript">import { CrwClient } from &quot;crw-sdk&quot;;
+
+const client = new CrwClient({ apiKey: process.env.CRW_API_KEY });
+
+const result = await client.scrape(&quot;https://news.ycombinator.com&quot;, {
+  formats: [&quot;markdown&quot;],
+});
+console.log(result.markdown?.slice(0, 500));</code></pre></div>
+    </div></p>
+<hr>
+<h2 id="step-3-rename-the-environment-variable">Step 3 — Rename the environment variable</h2>
+<table>
+<thead>
+<tr>
+<th>Old var</th>
+<th>New var</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>FIRECRAWL_API_KEY</code></td>
+<td><code>CRW_API_KEY</code></td>
+<td>Engine API key</td>
+</tr>
+<tr>
+<td><code>FIRECRAWL_API_URL</code></td>
+<td><code>CRW_API_URL</code></td>
+<td>Custom engine URL (self-hosted)</td>
+</tr>
+</tbody></table>
+<p>Shell (<code>.env</code> or export):</p>
+<pre data-lang="bash"><code class="language-bash"># remove
+# export FIRECRAWL_API_KEY=fc-...
+
+# add
+export CRW_API_KEY=crw-...</code></pre>
+<p>Both SDKs read the variable automatically. No code change is needed once the env var is in place.</p>
+<hr>
+<h2 id="step-4-port-llm-extraction">Step 4 — Port LLM extraction</h2>
+<p>Firecrawl exposes a standalone <code>/v1/extract</code> route. fastCRW supports both styles: <strong>single-URL</strong> extraction runs through <code>/v1/scrape</code> with <code>formats: [&quot;json&quot;]</code> and a <code>jsonSchema</code> (response field <code>data.json</code>), and <strong>multi-URL</strong> extraction has a native async <code>POST /v1/extract</code> (URLs + prompt/schema) that returns a per-URL <code>results</code> array via <code>GET /v1/extract/{id}</code>.</p>
+<p>Multi-URL extraction: send <code>{ &quot;urls&quot;: [...], &quot;prompt&quot;/&quot;schema&quot;: ... }</code> to <code>/v1/extract</code>, then poll <code>/v1/extract/{id}</code> for <code>results</code> (one <code>{ url, status, data, error }</code> per URL).</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python — before (Firecrawl /extract)</button><button class="code-tab" data-tab="1">Python — after (crw scrape + json_schema)</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">from firecrawl import FirecrawlApp
+
+app = FirecrawlApp(api_key=&quot;fc-...&quot;)
+
+schema = {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+        &quot;title&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;price&quot;: {&quot;type&quot;: &quot;string&quot;},
+    },
+    &quot;required&quot;: [&quot;title&quot;, &quot;price&quot;],
+}
+
+result = app.extract(
+    [&quot;https://example.com/product&quot;],
+    {&quot;schema&quot;: schema},
+)
+print(result)</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="python"><code class="language-python">from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY from env
+
+schema = {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+        &quot;title&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;price&quot;: {&quot;type&quot;: &quot;string&quot;},
+    },
+    &quot;required&quot;: [&quot;title&quot;, &quot;price&quot;],
+}
+
+# Pass json_schema — the SDK adds &quot;json&quot; to formats automatically
+result = client.scrape(
+    &quot;https://example.com/product&quot;,
+    json_schema=schema,
+)
+print(result[&quot;json&quot;])</code></pre></div>
+    </div><div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">TypeScript — before (Firecrawl /extract)</button><button class="code-tab" data-tab="1">TypeScript — after (crw-sdk scrape + jsonSchema)</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="typescript"><code class="language-typescript">import FirecrawlApp from &quot;@mendable/firecrawl-js&quot;;
+
+const app = new FirecrawlApp({ apiKey: &quot;fc-...&quot; });
+
+const schema = {
+  type: &quot;object&quot;,
+  properties: {
+    title: { type: &quot;string&quot; },
+    price: { type: &quot;string&quot; },
+  },
+  required: [&quot;title&quot;, &quot;price&quot;],
+};
+
+const result = await app.extract([&quot;https://example.com/product&quot;], {
+  schema,
+});
+console.log(result.data);</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="typescript"><code class="language-typescript">import { CrwClient } from &quot;crw-sdk&quot;;
+
+const client = new CrwClient({ apiKey: process.env.CRW_API_KEY });
+
+const schema = {
+  type: &quot;object&quot;,
+  properties: {
+    title: { type: &quot;string&quot; },
+    price: { type: &quot;string&quot; },
+  },
+  required: [&quot;title&quot;, &quot;price&quot;],
+};
+
+// Pass jsonSchema — the SDK adds &quot;json&quot; to formats automatically
+const result = await client.scrape(&quot;https://example.com/product&quot;, {
+  jsonSchema: schema,
+});
+console.log(result.json);</code></pre></div>
+    </div><hr>
+<h2 id="behavioral-differences-to-validate">Behavioral differences to validate</h2>
+<p>The following table lists the gaps documented in <a href="https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md">the capability matrix</a>. Validate each that applies to your workload <strong>before</strong> switching production traffic.</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Firecrawl</th>
+<th>fastCRW</th>
+<th>Action required</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong><code>/v1/extract</code> route</strong></td>
+<td>Standalone async route</td>
+<td>Supported — <code>POST /v1/extract</code> returns a job id you poll on <code>GET /v1/extract/{id}</code></td>
+<td>None. <code>/v1/scrape</code> + <code>jsonSchema</code> also works for a single URL.</td>
+</tr>
+<tr>
+<td><strong>Multi-URL <code>/extract</code></strong></td>
+<td>One call → N URLs</td>
+<td>Supported — pass <code>urls: [...]</code> (capped by <code>limits.maxExtractUrls</code>, default 50)</td>
+<td>None. Check the cap on <code>GET /v1/capabilities</code>.</td>
+</tr>
+<tr>
+<td><strong><code>/v1/deep-research</code></strong></td>
+<td>Cloud-only Firecrawl feature</td>
+<td>Not implemented</td>
+<td>No equivalent path — remove or redesign.</td>
+</tr>
+<tr>
+<td><strong><code>/v1/agent</code> (Spark models)</strong></td>
+<td>Cloud-only Firecrawl feature</td>
+<td>Not implemented</td>
+<td>No equivalent path.</td>
+</tr>
+<tr>
+<td><strong><code>/firecrawl/v2/parse</code> file types</strong></td>
+<td>PDF, DOCX, XLSX, ODT, RTF</td>
+<td>PDF only (pure-Rust <code>pdf-inspector</code>, no OCR)</td>
+<td>If you upload non-PDF files or rely on OCR, keep Firecrawl for those calls.</td>
+</tr>
+<tr>
+<td><strong>OCR mode on PDF</strong></td>
+<td><code>mode: &quot;ocr&quot;</code> supported</td>
+<td>Accepted for wire-compat; falls back to text-layer extraction with <code>pdf_scanned</code> warning</td>
+<td>Scanned-only PDFs won&#39;t extract text.</td>
+</tr>
+<tr>
+<td><strong>Fire-engine anti-bot</strong></td>
+<td>Firecrawl Cloud only</td>
+<td>Not available (same as Firecrawl self-host)</td>
+<td>For heavy bot-protected pages, compare output quality on real targets.</td>
+</tr>
+<tr>
+<td><strong>Screenshot format</strong></td>
+<td>Supported</td>
+<td>Supported on an instance with a capture-capable browser tier (Chrome or Playwright); LightPanda and Camoufox cannot capture</td>
+<td>Check <code>screenshot.supported</code> on <code>GET /v1/capabilities</code> before relying on it.</td>
+</tr>
+<tr>
+<td><strong><code>data.metadata</code> field names</strong></td>
+<td>Some keys differ</td>
+<td>Minor divergence on a few keys</td>
+<td>Inspect <code>metadata</code> on a real response; don&#39;t assume key names are identical.</td>
+</tr>
+<tr>
+<td><strong>MCP tool names</strong></td>
+<td><code>firecrawl_scrape</code>, <code>firecrawl_crawl</code>, …</td>
+<td><code>crw_scrape</code>, <code>crw_crawl</code>, <code>crw_check_crawl_status</code>, <code>crw_map</code>, <code>crw_extract</code>, <code>crw_check_extract_status</code>, <code>crw_cancel_extract</code>, <code>crw_search</code>, <code>crw_parse_file</code></td>
+<td>Update any MCP client tool-name references.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="5-minute-verification-checklist">5-minute verification checklist</h2>
+<p>Run these five commands against a real URL from your workload after making the changes above. Use a URL you can manually inspect in your browser.</p>
+<p><strong>1. Smoke test — basic scrape</strong></p>
+<pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;url&quot;: &quot;https://news.ycombinator.com&quot;, &quot;formats&quot;: [&quot;markdown&quot;]}' \
+  | python3 -m json.tool | head -30</code></pre>
+<p>Expected: <code>&quot;success&quot;: true</code>, <code>&quot;markdown&quot;</code> field with real content.</p>
+<p><strong>2. Crawl smoke test</strong></p>
+<pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/v1/crawl \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;url&quot;: &quot;https://example.com&quot;, &quot;maxDepth&quot;: 1, &quot;maxPages&quot;: 3}' \
+  | python3 -m json.tool</code></pre>
+<p>Expected: <code>{&quot;success&quot;: true, &quot;id&quot;: &quot;&lt;job-id&gt;&quot;}</code>. Poll <code>GET /v1/crawl/{id}</code> until <code>&quot;status&quot;: &quot;completed&quot;</code>.</p>
+<p><strong>3. Map smoke test</strong></p>
+<pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/v1/map \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;url&quot;: &quot;https://example.com&quot;, &quot;maxDepth&quot;: 1}' \
+  | python3 -m json.tool | head -20</code></pre>
+<p>Expected: <code>&quot;links&quot;: [...]</code> with discovered URLs.</p>
+<p><strong>4. Search smoke test</strong></p>
+<pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/v1/search \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;query&quot;: &quot;fastcrw web scraper&quot;, &quot;limit&quot;: 3}' \
+  | python3 -m json.tool | head -30</code></pre>
+<p>Expected: <code>&quot;data&quot;: [...]</code> with search results. (Against a self-hosted engine the same
+call returns <code>&quot;data&quot;: {&quot;results&quot;: [...]}</code> — see <a href="/response-shapes">Response shapes</a>.)</p>
+<p><strong>5. SDK round-trip (Python)</strong></p>
+<pre data-lang="python"><code class="language-python">import os
+from crw import CrwClient
+
+client = CrwClient()  # CRW_API_KEY must be set
+
+# Basic scrape
+result = client.scrape(&quot;https://example.com&quot;, formats=[&quot;markdown&quot;])
+assert result.get(&quot;markdown&quot;), &quot;markdown field is empty&quot;
+print(&quot;scrape: OK&quot;)
+
+# Map
+links = client.map(&quot;https://example.com&quot;, max_depth=1)
+assert isinstance(links, list) and len(links) &gt; 0, &quot;map returned no links&quot;
+print(f&quot;map: OK ({len(links)} links)&quot;)
+
+print(&quot;All checks passed — safe to promote to production.&quot;)</code></pre>
+<hr>
+<h2 id="feature-detect-the-engine">Feature-detect the engine</h2>
+<p>Use <code>GET /v1/capabilities</code> to confirm what the target engine supports before sending calls that depend on optional features (LLM extraction, file parsing, search):</p>
+<pre data-lang="bash"><code class="language-bash">curl -s https://api.fastcrw.com/v1/capabilities \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  | python3 -m json.tool</code></pre>
+<p>The response lists <code>llm</code>, <code>search</code>, <code>documents.parsers</code>, and <code>formats</code> so your code can branch instead of assuming.</p>
+<hr>
+<h2 id="what-is-not-in-scope">What is not in scope</h2>
+<p>The following Firecrawl Cloud capabilities have no equivalent in fastCRW and are not planned:</p>
+<ul>
+<li><code>/v1/deep-research</code> (Spark model pipeline)</li>
+<li><code>/v1/agent</code> (AI agent sessions)</li>
+<li>Fire-engine proprietary anti-bot layer</li>
+</ul>
+<p>Bring-your-own-proxy IS supported on a self-hosted instance: set a pool in <code>[proxy]</code>, or pass <code>proxy</code> on the scrape body. See <a href="/docs/proxies">Proxies</a>.</p>
+<p>For any capability not in the matrix above, check <a href="https://github.com/fastcrw/crw/blob/main/COMPATIBILITY-firecrawl.md">the capability matrix</a> which is the authoritative reference.</p>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-migrate-from-firecrawl-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "migrate-from-firecrawl";</script>
+</body>
 </html>

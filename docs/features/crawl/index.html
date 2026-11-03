@@ -1,78 +1,653 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
 <head>
-<meta charset="utf-8">
-<title>fastCRW crawl feature — POST /v1/crawl</title>
-<meta name="description" content="fastCRW async multi-page crawl. Submit a seed URL, get a job id, poll for results. Hosted at api.fastcrw.com; self-host at localhost:3000.">
-<link rel="canonical" href="https://docs.fastcrw.com/crawling/">
-<meta http-equiv="refresh" content="0; url=/crawling/">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Crawl — CRW Docs</title>
+  <meta name="robots" content="noindex, follow">
+  <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/crawling">
+  <meta name="description" content="Recursively crawl a site when one page is not enough. CRW crawl is asynchronous by design: start a job, poll it, and widen scope only after the first batch looks correct.">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/crawling">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/crawling">
+  <meta property="og:title" content="Crawl — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Recursively crawl a site when one page is not enough. CRW crawl is asynchronous by design: start a job, poll it, and widen scope only after the first batch looks correct.">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Crawl — CRW Docs">
+  <meta name="twitter:description" content="Recursively crawl a site when one page is not enough. CRW crawl is asynchronous by design: start a job, poll it, and widen scope only after the first batch looks correct.">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
 <body>
-<h1>POST /v1/crawl</h1>
-<p>Hosted: <code>https://api.fastcrw.com</code> &middot; Self-hosted: <code>http://localhost:3000</code></p>
-<p><strong>Auth (hosted only):</strong> <code>Authorization: Bearer $CRW_API_KEY</code></p>
-<p><em>Self-hosted: no auth required by default.</em></p>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
 
-<p>Crawl is async: <code>POST /v1/crawl</code> returns a job id; poll
-<code>GET /v1/crawl/{id}</code> until <code>status == "completed"</code>.</p>
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
 
-<h2>Request body</h2>
-<pre><code>{
-  "url": "https://example.com",
-  "limit": 50,
-  "maxDepth": 3,
-  "includePaths": ["^/docs/.*"],
-  "excludePaths": ["^/blog/.*"],
-  "scrapeOptions": { "formats": ["markdown"], "onlyMainContent": true }
-}</code></pre>
-<p>Required: <code>url</code>. Optional: <code>limit</code> (default 10),
-<code>maxDepth</code>, <code>includePaths</code>/<code>excludePaths</code> regex
-arrays, <code>scrapeOptions</code> (forwarded to each page scrape).</p>
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
 
-<h2>Response shape (job accepted)</h2>
-<pre><code>{
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
   "success": true,
-  "id": "9f7a...e3b",
-  "url": "https://api.fastcrw.com/v1/crawl/9f7a...e3b"
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-crawling-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/crawling">https://docs.fastcrw.com/crawling</a>.</p><div class="page-intro">
+  <div class="page-kicker">More API</div>
+  <h1 id="crawl">Crawl</h1>
+  <p class="page-subtitle">Recursively crawl a site when one page is not enough. CRW crawl is asynchronous by design: start a job, poll it, and widen scope only after the first batch looks correct.</p>
+  <div class="page-capabilities">
+    <div class="page-capability"><strong>Best for:</strong> many pages from one site</div>
+    <div class="page-capability"><strong>Model:</strong> async start and poll</div>
+    <div class="page-capability"><strong>Start with:</strong> a very small crawl</div>
+  </div>
+  <div class="page-actions">
+    <a class="page-btn primary" href="/map">Use Map First</a>
+    <a class="page-btn secondary" href="/scraping">View Scrape</a>
+  </div>
+</div><div class="playground-panel">
+  <div class="playground-kicker">Try it in the Playground</div>
+  <div class="playground-title">Validate scope before you scale up</div>
+  <div class="playground-copy">Use <code>maxPages: 5</code> and <code>maxDepth: 1</code> first. If the returned batch is wrong, a larger crawl only makes the mistake more expensive.</div>
+  <div class="playground-actions">
+    <a class="page-btn primary" href="https://fastcrw.com/playground" target="_blank" rel="noopener">Open Playground</a>
+    <a class="page-btn secondary" href="/quick-start">Open Quick Start</a>
+  </div>
+</div><h2 id="crawling-a-site-with-crw">Crawling a site with CRW</h2>
+<h3 id="v1crawl">/v1/crawl</h3>
+<pre data-lang="http"><code class="language-http">POST /v1/crawl
+GET /v1/crawl/{id}
+DELETE /v1/crawl/{id}</code></pre>
+<p>Authentication:</p>
+<ul>
+<li>Hosted: send <code>Authorization: Bearer YOUR_API_KEY</code></li>
+<li>Self-hosted: only required when <code>auth.api_keys</code> is configured</li>
+</ul>
+<h3 id="installation">Installation</h3>
+<p>CRW crawl is also plain HTTP. You start the job with one request and check its status with another.</p>
+<h3 id="basic-usage">Basic usage</h3>
+<p>Start with this request:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;url&quot;: &quot;https://docs.example.com&quot;,
+  &quot;maxDepth&quot;: 1,
+  &quot;maxPages&quot;: 5,
+  &quot;formats&quot;: [&quot;markdown&quot;],
+  &quot;onlyMainContent&quot;: true
 }</code></pre>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python</button><button class="code-tab" data-tab="1">Node.js</button><button class="code-tab" data-tab="2">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">import requests
+import time
 
-<h2>Polling shape</h2>
-<pre><code>{
-  "status": "scraping" | "completed" | "failed",
-  "completed": 12,
-  "total": 50,
-  "data": [ { "markdown": "...", "metadata": { "sourceURL": "..." } } ]
+start = requests.post(
+    &quot;https://api.fastcrw.com/v1/crawl&quot;,
+    headers={&quot;Authorization&quot;: &quot;Bearer YOUR_API_KEY&quot;},
+    json={
+        &quot;url&quot;: &quot;https://docs.example.com&quot;,
+        &quot;maxDepth&quot;: 1,
+        &quot;maxPages&quot;: 5,
+        &quot;formats&quot;: [&quot;markdown&quot;],
+    },
+)
+
+crawl_id = start.json()[&quot;id&quot;]
+time.sleep(2)
+status = requests.get(
+    f&quot;https://api.fastcrw.com/v1/crawl/{crawl_id}&quot;,
+    headers={&quot;Authorization&quot;: &quot;Bearer YOUR_API_KEY&quot;},
+)
+
+print(status.json()[&quot;status&quot;])</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="javascript"><code class="language-javascript">const start = await fetch(&quot;https://api.fastcrw.com/v1/crawl&quot;, {
+  method: &quot;POST&quot;,
+  headers: {
+    &quot;Authorization&quot;: &quot;Bearer YOUR_API_KEY&quot;,
+    &quot;Content-Type&quot;: &quot;application/json&quot;
+  },
+  body: JSON.stringify({
+    url: &quot;https://docs.example.com&quot;,
+    maxDepth: 1,
+    maxPages: 5,
+    formats: [&quot;markdown&quot;]
+  })
+});
+
+const { id } = await start.json();
+await new Promise((resolve) =&gt; setTimeout(resolve, 2000));
+
+const status = await fetch(`https://api.fastcrw.com/v1/crawl/${id}`, {
+  headers: { &quot;Authorization&quot;: &quot;Bearer YOUR_API_KEY&quot; }
+});
+
+console.log((await status.json()).status);</code></pre></div><div class="code-tab-panel" data-panel="2"><pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/crawl \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://docs.example.com&quot;,
+    &quot;maxDepth&quot;: 1,
+    &quot;maxPages&quot;: 5,
+    &quot;formats&quot;: [&quot;markdown&quot;]
+  }'</code></pre></div>
+    </div><h3 id="response">Response</h3>
+<p>Start response:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;id&quot;: &quot;550e8400-e29b-41d4-a716-446655440000&quot;
 }</code></pre>
+<p>Poll response:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;status&quot;: &quot;scraping&quot;,
+  &quot;total&quot;: 5,
+  &quot;completed&quot;: 2,
+  &quot;data&quot;: []
+}</code></pre>
+<h2 id="parameters">Parameters</h2>
+<blockquote>
+<p><strong>Defaults depend on how you call it.</strong> The server defaults <code>maxDepth</code> to <code>2</code> and <code>maxPages</code> to <code>100</code> when a raw HTTP request omits them (the table below). The official Python and TypeScript SDKs use lower client-side defaults instead (<code>maxDepth: 2</code>, <code>maxPages: 10</code>) and always send them explicitly — see <a href="/docs/sdk-reference#crawl">SDK Reference</a>. Neither number is wrong; they are just set at different layers.</p>
+</blockquote>
+<blockquote>
+<p><strong>Ceilings are clamped, not rejected.</strong> <code>maxDepth</code> above <code>10</code> is silently clamped to <code>10</code>, and <code>maxPages</code> above <code>1000</code> is silently clamped to <code>1000</code> — the request still succeeds, it just runs at the ceiling instead of the value you sent.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>required</td>
+<td>Starting URL</td>
+</tr>
+<tr>
+<td><code>maxDepth</code></td>
+<td>number</td>
+<td><code>2</code></td>
+<td>Maximum depth from the start URL (raw HTTP default; clamped to 10 if higher)</td>
+</tr>
+<tr>
+<td><code>maxPages</code></td>
+<td>number</td>
+<td><code>100</code></td>
+<td>Maximum number of pages to crawl (raw HTTP default; clamped to 1000 if higher)</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>number</td>
+<td>alias</td>
+<td>Firecrawl-compatible alias for <code>maxPages</code></td>
+</tr>
+<tr>
+<td><code>max_pages</code></td>
+<td>number</td>
+<td>alias</td>
+<td>Snake_case alias for <code>maxPages</code></td>
+</tr>
+<tr>
+<td><code>formats</code></td>
+<td>string[]</td>
+<td><code>[&quot;markdown&quot;]</code></td>
+<td>Output formats for each page</td>
+</tr>
+<tr>
+<td><code>onlyMainContent</code></td>
+<td>boolean</td>
+<td><code>true</code></td>
+<td>Remove boilerplate content before conversion</td>
+</tr>
+<tr>
+<td><code>jsonSchema</code></td>
+<td>object</td>
+<td>--</td>
+<td>Optional schema for structured extraction per page</td>
+</tr>
+<tr>
+<td><code>renderJs</code></td>
+<td>boolean or null</td>
+<td><code>null</code></td>
+<td><code>true</code> forces JS on every page, <code>false</code> skips JS, <code>null</code> uses auto-detect or the server&#39;s <code>render_js_default</code></td>
+</tr>
+<tr>
+<td><code>waitFor</code></td>
+<td>number</td>
+<td>--</td>
+<td>Milliseconds to wait after JS rendering on each page</td>
+</tr>
+<tr>
+<td><code>renderer</code></td>
+<td>string</td>
+<td><code>auto</code></td>
+<td>Pin every crawled page to a specific renderer: <code>auto</code>, <code>lightpanda</code>, <code>chrome</code>, <code>chrome_proxy</code>, <code>camoufox</code>, or <code>impersonated-http</code> (self-hosted instances can also configure <code>playwright</code>; the managed cloud does not run it). Non-<code>auto</code> browser values hard-pin (no fallback) and imply <code>renderJs:true</code> unless <code>renderJs:false</code> is set; <code>impersonated-http</code> executes no JS, so it never implies <code>renderJs</code> and <code>renderJs:true</code> alongside it is rejected. Validation runs once at crawl start — invalid combinations return HTTP 400 before the job is queued. Per-page failures of a pinned renderer are logged and skipped, so failed pages may be missing from results — see <a href="/js-rendering">JS rendering</a> for the resilience tradeoff</td>
+</tr>
+<tr>
+<td><code>headers</code></td>
+<td>object</td>
+<td><code>{}</code></td>
+<td>Custom HTTP headers applied to every page the crawl fetches, forwarded on both the HTTP and browser render paths. A <code>User-Agent</code> here overrides the default. On a browser render they apply to every request the page makes (subresources included), so avoid putting cross-origin-sensitive credentials like <code>Authorization</code> here</td>
+</tr>
+<tr>
+<td><code>country</code></td>
+<td>string</td>
+<td>--</td>
+<td>2-letter ISO 3166-1 alpha-2 country code (lowercase, e.g. <code>us</code>, <code>gb</code>, <code>de</code>). Routes every page in the crawl through the named residential pool when the <code>chrome_proxy</code> renderer tier is configured. Ignored if no proxy tier is set up</td>
+</tr>
+</tbody></table>
+<h2 id="scrape-options-and-extraction">Scrape options and extraction</h2>
+<p>Crawl inherits the same content-format logic as scrape:</p>
+<ul>
+<li>Start with <code>formats: [&quot;markdown&quot;]</code></li>
+<li>Add extraction only after the first crawl batch looks correct</li>
+<li>Keep <code>onlyMainContent: true</code> unless you explicitly need full-page noise</li>
+</ul>
+<p>If you need to debug one problematic page, go back to <a href="/scraping">Scrape</a> and validate that page in isolation first.</p>
+<h2 id="checking-job-status">Checking job status</h2>
+<p>Poll the crawl ID until you reach <code>completed</code> or <code>failed</code>:</p>
+<pre data-lang="bash"><code class="language-bash">curl -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  https://api.fastcrw.com/v1/crawl/CRAWL_ID</code></pre>
+<p>Status response shape:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;status&quot;: &quot;scraping | completed | failed&quot;,
+  &quot;total&quot;: 12,
+  &quot;completed&quot;: 12,
+  &quot;data&quot;: [
+    {
+      &quot;markdown&quot;: &quot;# Page content&quot;,
+      &quot;metadata&quot;: {
+        &quot;sourceURL&quot;: &quot;https://example.com/page&quot;
+      }
+    }
+  ],
+  &quot;error&quot;: &quot;optional error&quot;
+}</code></pre>
+<h2 id="cancellation-and-limits">Cancellation and limits</h2>
+<p>Cancel a running job with:</p>
+<pre data-lang="http"><code class="language-http">DELETE /v1/crawl/{id}</code></pre>
+<p>CRW crawl stays within the same origin and should be treated as a bounded, respectful site job, not an open-ended spider.</p>
+<h2 id="common-production-patterns">Common production patterns</h2>
+<ul>
+<li>Run <a href="/map">Map</a> first when you are unsure about the reachable section.</li>
+<li>Keep <code>maxPages</code> very low on first contact with a new site.</li>
+<li>Poll with backoff instead of hammering the same crawl ID.</li>
+<li>Use extraction only after the markdown output of the first crawl batch looks correct.</li>
+</ul>
+<h2 id="common-mistakes">Common mistakes</h2>
+<ul>
+<li>Starting with <code>maxPages: 500</code> before validating the target</li>
+<li>Treating <code>crawl</code> like a synchronous route</li>
+<li>Assuming crawl crosses origins</li>
+<li>Ignoring <code>robots.txt</code> and target-side rate behavior</li>
+</ul>
+<h2 id="when-to-use-something-else">When to use something else</h2>
+<ul>
+<li>Use <a href="/map">Map</a> when you need URL discovery before crawling</li>
+<li>Use <a href="/scraping">Scrape</a> when you only need one known page</li>
+<li>Use <a href="/search">Search</a> when you do not even know the site or URL set yet</li>
+</ul>
+</article>
+    </main>
 
-<h2>Python (stdlib)</h2>
-<pre><code>#!/usr/bin/env python3
-import json, os, time, urllib.request
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-crawling-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
 
-def post(path, body):
-    req = urllib.request.Request(
-        f"https://api.fastcrw.com{path}",
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {os.environ['CRW_API_KEY']}"},
-        method="POST")
-    return json.loads(urllib.request.urlopen(req).read())
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
 
-job = post("/v1/crawl", {"url": "https://example.com", "limit": 20})
-job_id = job["id"]
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
 
-while True:
-    req = urllib.request.Request(
-        f"https://api.fastcrw.com/v1/crawl/{job_id}",
-        headers={"Authorization": f"Bearer {os.environ['CRW_API_KEY']}"})
-    s = json.loads(urllib.request.urlopen(req).read())
-    if s["status"] in ("completed", "failed"):
-        break
-    time.sleep(2)
-
-print(len(s["data"]), "pages")
-# Run with: python3 crawl.py</code></pre>
-
-<p>&rarr; Canonical page: <a href="/crawling/">/crawling/</a></p>
-<noscript><p>Redirecting to <a href="/crawling/">/crawling/</a></p></noscript>
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "crawling";</script>
 </body>
 </html>
