@@ -403,6 +403,10 @@ pub struct SitemapWalk {
     /// concurrently), so within one level the order is not stable across runs.
     /// The list is partial when the walk stops early on a cap or the deadline.
     pub sitemaps: Vec<String>,
+    /// Same-site page URLs the walk read, in scope or not. A path-scoped map of
+    /// a small section keeps few `pages` from a rich sitemap; this is what tells
+    /// the caller the site HAS a sitemap, so BFS only fills gaps.
+    pub site_pages: usize,
 }
 
 /// BFS over a sitemap tree. Same-origin filter applies to both child sitemaps
@@ -448,6 +452,7 @@ pub async fn fetch_sitemap_tree(
 
     let mut visited: HashSet<String> = HashSet::new();
     let mut all_pages: HashSet<String> = HashSet::new();
+    let mut site_pages: usize = 0;
     let mut found_sitemaps: Vec<String> = Vec::new();
     let mut current: Vec<String> = seeds
         .into_iter()
@@ -544,7 +549,11 @@ pub async fn fetch_sitemap_tree(
             for it in page_lists.iter_mut() {
                 let Some(page) = it.next() else { continue };
                 progressed = true;
-                if same_site(&page, &target_key) && in_path_scope(&page, path_scope) {
+                if !same_site(&page, &target_key) {
+                    continue;
+                }
+                site_pages += 1;
+                if in_path_scope(&page, path_scope) {
                     all_pages.insert(page);
                     if all_pages.len() >= max_urls {
                         break 'fill;
@@ -577,6 +586,7 @@ pub async fn fetch_sitemap_tree(
     SitemapWalk {
         pages: all_pages.into_iter().collect(),
         sitemaps: found_sitemaps,
+        site_pages,
     }
 }
 
@@ -1104,6 +1114,42 @@ mod tests {
         let html = r#"<html><head><title>Just a moment...</title></head>
             <body>cf-mitigated</body></html>"#;
         assert!(parse_rendered_sitemap(html).is_empty());
+    }
+
+    /// A scoped walk keeps only in-scope pages but still reports how big the
+    /// site's sitemap was, so discovery knows the site has one.
+    #[tokio::test]
+    async fn fetch_sitemap_tree_scope_counts_every_same_site_page() {
+        let mock = wiremock::MockServer::start().await;
+        let host = mock.uri();
+        let mut locs = String::new();
+        for i in 0..60 {
+            locs.push_str(&format!("<url><loc>{host}/products/p{i}</loc></url>"));
+        }
+        locs.push_str(&format!("<url><loc>{host}/c/tvs-small</loc></url>"));
+        wiremock::Mock::given(wiremock::matchers::path("/sitemap.xml"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_string(format!("<urlset>{locs}</urlset>")),
+            )
+            .mount(&mock)
+            .await;
+        let target = url::Url::parse(&host).unwrap();
+        let walk = fetch_sitemap_tree(
+            vec![format!("{host}/sitemap.xml")],
+            &target,
+            &reqwest::Client::new(),
+            3,
+            25,
+            5000,
+            8,
+            None,
+            None,
+            Some("/c/tvs"),
+        )
+        .await;
+        assert_eq!(walk.pages, vec![format!("{host}/c/tvs-small")]);
+        assert_eq!(walk.site_pages, 61);
     }
 
     #[tokio::test]
