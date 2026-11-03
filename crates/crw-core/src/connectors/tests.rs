@@ -97,6 +97,14 @@ async fn hits(server: &MockServer, p: &str) -> usize {
         .count()
 }
 
+fn approved_with(server: &MockServer, auth: &str, key: &str) -> keys::ConnectorEntry {
+    keys::ConnectorEntry {
+        api_key: Some(key.to_string()),
+        origins: vec![server.uri()],
+        auth: Some(auth.to_string()),
+    }
+}
+
 fn approved(server: &MockServer, auth: &str) -> keys::ConnectorEntry {
     keys::ConnectorEntry {
         api_key: Some(USER_KEY.to_string()),
@@ -920,6 +928,58 @@ async fn connectors_exec_header_key_refusals_send_nothing() {
 }
 
 #[tokio::test]
+async fn connectors_exec_brace_key_that_is_no_header_set_sends_nothing() {
+    // A hand-edited config or env key never went through set-key's check.
+    let server = MockServer::start().await;
+    let mut conn = connector(&server, "fca");
+    conn["auth"] = json!({"type": "header", "param": "X-Auth-Key"});
+    mount_manifest(&server, vec![conn]).await;
+    // Checked by hand below: wiremock's header matcher splits values on commas.
+    Mock::given(path("/up/works/F"))
+        .respond_with(json_ok(json!({"ok": true})))
+        .mount(&server)
+        .await;
+    for key in [
+        r#"{"X-Auth-Key":"k",}"#,
+        r#" {"X-Auth-Key":1}"#,
+        "{oops",
+        "{}",
+    ] {
+        let ctx = DataToolContext::for_tests(
+            &server.uri(),
+            false,
+            vec![("fca", approved_with(&server, "header:X-Auth-Key", key))],
+        );
+        let err = get(&ctx, "fca", json!({"id": "F"})).await.unwrap_err();
+        assert!(
+            err.starts_with(
+                "[connector_key_invalid] The stored key for OpenAlex starts with \"{\""
+            ) && err.contains("crw connectors set-key fca"),
+            "{key}: {err}"
+        );
+    }
+    // No brace: still one header value, sent as is.
+    let ctx = DataToolContext::for_tests(
+        &server.uri(),
+        false,
+        vec![(
+            "fca",
+            approved_with(&server, "header:X-Auth-Key", r#"["a","b"]"#),
+        )],
+    );
+    get(&ctx, "fca", json!({"id": "F"})).await.unwrap();
+    let sent: Vec<_> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.url.path() == "/up/works/F")
+        .collect();
+    assert_eq!(sent.len(), 1, "only the plain key went out");
+    assert_eq!(sent[0].headers.get("x-auth-key").unwrap(), r#"["a","b"]"#);
+}
+
+#[tokio::test]
 async fn connectors_exec_oversized_result_is_a_tool_error() {
     let server = MockServer::start().await;
     let ctx = local(&server, connector(&server, "openalex"), vec![]).await;
@@ -1071,6 +1131,83 @@ async fn usage_bodies(server: &MockServer) -> Vec<Value> {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     Vec::new()
+}
+
+#[tokio::test]
+async fn connectors_telemetry_drain_waits_for_a_ping_in_flight() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![connector(&server, "openalex")]).await;
+    Mock::given(path("/up/works/W1"))
+        .respond_with(json_ok(json!({})))
+        .mount(&server)
+        .await;
+    // The API is slow to accept the count: the call returns long before it lands.
+    Mock::given(path("/v1/data/usage"))
+        .respond_with(ResponseTemplate::new(204).set_delay(Duration::from_millis(400)))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), true, vec![]);
+    get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
+
+    let started = std::time::Instant::now();
+    ctx.drain(Duration::from_secs(2)).await;
+    let waited = started.elapsed();
+    assert!(
+        waited >= Duration::from_millis(300),
+        "drain returned after {waited:?}"
+    );
+    assert!(waited < Duration::from_secs(2), "{waited:?}");
+    assert_eq!(hits(&server, "/v1/data/usage").await, 1);
+    // Nothing left in flight: a second drain returns at once.
+    let started = std::time::Instant::now();
+    ctx.drain(Duration::from_secs(2)).await;
+    assert!(started.elapsed() < Duration::from_millis(100));
+}
+
+#[tokio::test]
+async fn connectors_telemetry_drain_gives_up_after_its_bound() {
+    let server = MockServer::start().await;
+    mount_manifest(&server, vec![connector(&server, "openalex")]).await;
+    Mock::given(path("/up/works/W1"))
+        .respond_with(json_ok(json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/usage"))
+        .respond_with(ResponseTemplate::new(204).set_delay(Duration::from_secs(4)))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), true, vec![]);
+    get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
+    let started = std::time::Instant::now();
+    ctx.drain(Duration::from_millis(200)).await;
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[tokio::test]
+async fn connectors_telemetry_latency_excludes_crws_own_pacing() {
+    let server = MockServer::start().await;
+    let mut conn = connector(&server, "openalex");
+    conn["minIntervalMs"] = json!(500);
+    mount_manifest(&server, vec![conn]).await;
+    Mock::given(path("/up/works/W1"))
+        .respond_with(json_ok(json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(path("/v1/data/usage"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    let ctx = DataToolContext::for_tests(&server.uri(), true, vec![]);
+    get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
+    // The second call waits out the spacing before it is sent.
+    get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
+    ctx.drain(Duration::from_secs(2)).await;
+    let bodies = usage_bodies(&server).await;
+    assert_eq!(bodies.len(), 2);
+    for body in &bodies {
+        let ms = body["latencyMs"].as_u64().unwrap();
+        assert!(ms < 400, "latency {ms} ms includes the pacing sleep");
+    }
 }
 
 #[tokio::test]
@@ -1230,7 +1367,7 @@ async fn connectors_find_maps_items_and_hides_execution() {
             "nextOffset": 6,
             "items": [
                 {"id": "openalex/works", "provider": "openalex", "capability": "works",
-                 "name": "OpenAlex: works", "description": "Works", "creditsCost": 0,
+                 "name": "OpenAlex: works", "description": "Works", "category": "Research", "creditsCost": 0,
                  "execution": "client", "keyRequired": true, "options": {"required": ["id"], "optional": ["page"]},
                  "provenance": {"source": "OpenAlex", "licence": "CC0 1.0"}},
                 {"id": "npm/package", "provider": "npm", "capability": "package",
@@ -1261,11 +1398,16 @@ async fn connectors_find_maps_items_and_hides_execution() {
     assert_eq!(
         out["items"][0],
         json!({"provider": "openalex", "capability": "works", "name": "OpenAlex: works",
-               "description": "Works", "creditsCost": 0, "requiredOptions": ["id"],
+               "description": "Works", "category": "Research", "creditsCost": 0, "requiredOptions": ["id"],
                "optionalOptions": ["page"], "keyRequired": true, "licence": "CC0 1.0",
                "keyConfigured": true})
     );
     assert_eq!(out["items"][1]["keyRequired"], false);
+    assert_eq!(
+        out["items"][1]["category"],
+        Value::Null,
+        "an older server sends none"
+    );
     assert!(out["items"][1].get("keyConfigured").is_none());
 }
 

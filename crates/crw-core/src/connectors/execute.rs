@@ -100,8 +100,12 @@ pub(crate) fn header_set(key: &str) -> Option<Vec<(String, String)>> {
 }
 
 fn key_invalid(connector: &Connector) -> String {
+    key_invalid_because(connector, "contains characters a header cannot carry")
+}
+
+fn key_invalid_because(connector: &Connector, why: &str) -> String {
     format!(
-        "[connector_key_invalid] The stored key for {} contains characters a header cannot carry. {}",
+        "[connector_key_invalid] The stored key for {} {why}. {}",
         connector.name,
         keys::set_key_hint(&connector.provider)
     )
@@ -315,6 +319,14 @@ pub(crate) async fn run(
                     }
                     None
                 }
+                // A hand-edited file or env key never passed set-key's check:
+                // a broken set is refused, not sent whole as one header.
+                None if key.trim_start().starts_with('{') => {
+                    return LocalRun::refused(key_invalid_because(
+                        connector,
+                        "starts with \"{\" but is not a flat JSON object of non-empty strings",
+                    ));
+                }
                 None => {
                     let Ok(n) = HeaderName::from_bytes(param.as_bytes()) else {
                         return LocalRun::refused(format!(
@@ -345,16 +357,20 @@ pub(crate) async fn run(
 
     let min_interval = Duration::from_millis(connector.min_interval_ms.unwrap_or(0));
     let mut last = pacer.lock(&connector.provider).await;
-    let started = Instant::now();
+    // Time spent waiting on the source only: crw's own pacing and a
+    // Retry-After sleep are not the source's latency.
+    let mut latency = Duration::ZERO;
     let mut retried = false;
     let (result, outcome) = loop {
         wait_turn(&mut last, min_interval).await;
+        let started = Instant::now();
         let attempt = tokio::time::timeout(
             ATTEMPT_TIMEOUT,
             attempt(http, url.clone(), &headers, &redactor),
         )
         .await
         .unwrap_or(Err(Failure::Fetch(FetchError::Timeout)));
+        latency += started.elapsed();
         match attempt {
             Err(Failure::RateLimited(Some(wait))) if !retried && wait <= MAX_RETRY_AFTER => {
                 retried = true;
@@ -372,7 +388,6 @@ pub(crate) async fn run(
             }
         }
     };
-    let latency = started.elapsed();
     drop(last);
 
     let result = result.map(|(data, final_url)| {

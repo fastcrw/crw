@@ -100,6 +100,9 @@ pub struct DataToolContext {
     manifest: ManifestCache,
     pacer: execute::Pacer,
     keys: KeySource,
+    /// Usage pings in flight, so [`DataToolContext::drain`] can let them land
+    /// before the process exits.
+    pings: std::sync::Mutex<tokio::task::JoinSet<()>>,
 }
 
 /// Whether usage pings are allowed: `[client] telemetry` (or
@@ -143,6 +146,7 @@ impl DataToolContext {
             manifest: ManifestCache::default(),
             pacer: execute::Pacer::default(),
             keys,
+            pings: Default::default(),
         }
     }
 
@@ -201,9 +205,9 @@ impl DataToolContext {
         result
     }
 
-    /// Fire-and-forget usage count for a call that ran here. Carries only the
-    /// provider, capability, outcome and latency; never awaited, errors only
-    /// reach a debug log.
+    /// Usage count for a call that ran here, sent in the background. Carries
+    /// only the provider, capability, outcome and latency; the call never
+    /// waits for it, and errors only reach a debug log.
     fn report_usage(&self, provider: &str, capability: &str, outcome: Outcome, latency: Duration) {
         if !self.telemetry {
             return;
@@ -218,11 +222,22 @@ impl DataToolContext {
             .authed(self.server.post(format!("{}/v1/data/usage", self.api_url)))
             .timeout(USAGE_TIMEOUT)
             .json(&body);
-        tokio::spawn(async move {
+        let mut pings = self.pings.lock().unwrap_or_else(|p| p.into_inner());
+        while pings.try_join_next().is_some() {}
+        pings.spawn(async move {
             if let Err(e) = req.send().await {
                 tracing::debug!("usage ping failed: {}", crate::error::reqwest_message(e));
             }
         });
+    }
+
+    /// Wait up to `within` for usage pings still in flight. The MCP servers
+    /// call this after stdin closes, so the last calls' counts are not lost
+    /// when the process exits; whatever is left after that is dropped.
+    pub async fn drain(&self, within: Duration) {
+        let mut pings = std::mem::take(&mut *self.pings.lock().unwrap_or_else(|p| p.into_inner()));
+        let _ = tokio::time::timeout(within, async { while pings.join_next().await.is_some() {} })
+            .await;
     }
 
     async fn forward(&self, provider: &str, capability: &str, options: &Value) -> Forwarded {
@@ -498,6 +513,7 @@ fn find_item(tool: &Value, manifest: Option<&Manifest>, ctx: &DataToolContext) -
         "capability": tool["capability"],
         "name": tool["name"],
         "description": tool["description"],
+        "category": tool["category"],
         "creditsCost": tool["creditsCost"],
         "requiredOptions": tool["options"]["required"].as_array().cloned().unwrap_or_default(),
         "optionalOptions": tool["options"]["optional"].as_array().cloned().unwrap_or_default(),

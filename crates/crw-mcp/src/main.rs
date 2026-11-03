@@ -739,6 +739,11 @@ async fn run_stdio_loop(backend: Backend) {
             let _ = stdout.flush().await;
         }
     }
+
+    // stdin closed: let the last usage pings land before the process exits.
+    if let Backend::Proxy { data, .. } = &backend {
+        data.drain(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 /// Resolve proxy-mode credentials. A truthy `CRW_LOCAL` short-circuits to no

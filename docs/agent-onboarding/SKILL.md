@@ -154,6 +154,36 @@ Parameters:
 - `parsers` — Document parsers to apply. Default: `["pdf"]`
 - `maxLength` — Truncate output to this many chars. `0` = unbounded. Default: ~15 000
 
+### crw_find_data
+
+Cloud (proxy) mode only. Find structured data sources from named public APIs (papers, packages, registries, music metadata). Use it before `crw_get_data`; use `crw_search` for open web search instead.
+
+Parameters:
+- `query`: Words to match against source names and descriptions
+- `category`: Only sources in this category (e.g. `"Research"`)
+- `provider`: Only this provider
+- `limit`: Results per page (1 to 50). Default: `10`
+- `offset`: Results to skip; pass `nextOffset` for the next page
+
+Returns: `{ "items": [{ "provider", "capability", "requiredOptions", "optionalOptions", "keyRequired", "keyConfigured", ... }], "total", "nextOffset" }`. `keyConfigured` appears on sources that run on the user's machine with their own key, and says whether that key is stored.
+
+### crw_get_data
+
+Cloud (proxy) mode only. Call one data source capability and get its JSON.
+
+Parameters:
+- `provider` (required): Provider id from `crw_find_data`
+- `capability` (required): Capability id from `crw_find_data`
+- `options`: Object of string, number or boolean values; include every name in `requiredOptions`
+
+Returns: `{ "provider", "capability", "creditsUsed", "provenance": { "source", "upstreamUrl", "licence", "attributionText", ... }, "data": ... }`. Pass `provenance.licence` and `attributionText` on when you use the data.
+
+Errors start with a code in brackets. When the source needs the user's own key:
+- `[connector_key_missing]` or `[connector_origin_not_approved]`: Do not retry. Tell the user to run the command the error names in their own terminal (for example `npx -y crw-mcp connectors set-key <provider>`, or `crw connectors set-key <provider>` with the `crw` CLI). It shows where the key will be sent, asks them to approve, and reads the key from a hidden prompt. Never ask the user to paste the key into the chat. Once it is stored, call `crw_get_data` again; no restart is needed.
+- `[invalid_options]`: Fix the options using `requiredOptions` / `optionalOptions` from `crw_find_data`.
+- `[result_too_large]`: Narrow the options (a filter, fewer fields, a smaller page) and call again.
+- `[data_sources_unavailable]`: The API has no data sources right now (or it is a self-hosted server); use `crw_search` or `crw_scrape` instead.
+
 ## Common Patterns
 
 **Scrape a page for context:**
@@ -172,6 +202,12 @@ crw_check_crawl_status(id="...")  → poll until completed
 **Search the web:**
 ```
 crw_search(query="your search query", limit=5)
+```
+
+**Get structured data from a named API (cloud mode):**
+```
+crw_find_data(query="economic time series")  → provider, capability, requiredOptions
+crw_get_data(provider="...", capability="...", options={...})  → data + provenance
 ```
 
 **Search from the CLI (one-shot LLM-ready output):**
