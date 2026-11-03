@@ -839,6 +839,48 @@ async fn connectors_exec_refuses_cross_origin_private_and_endless_redirects() {
 }
 
 #[tokio::test]
+async fn connectors_exec_body_streamed_past_the_cap_is_refused() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    // A chunked answer with no Content-Length, so only the streaming check
+    // can stop it: 1 MiB chunks until the reader hangs up.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let sent = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = sent.clone();
+    tokio::spawn(async move {
+        let Ok((mut sock, _)) = listener.accept().await else {
+            return;
+        };
+        let mut buf = vec![0u8; 8192];
+        let _ = sock.read(&mut buf).await;
+        let head = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\n";
+        if sock.write_all(head.as_bytes()).await.is_err() {
+            return;
+        }
+        let chunk = vec![b'x'; 1024 * 1024];
+        for _ in 0..64 {
+            let frame = [format!("{:x}\r\n", chunk.len()).as_bytes(), &chunk, b"\r\n"].concat();
+            if sock.write_all(&frame).await.is_err() {
+                return;
+            }
+            counter.fetch_add(chunk.len(), std::sync::atomic::Ordering::SeqCst);
+        }
+    });
+    let server = MockServer::start().await;
+    let mut conn = connector(&server, "big");
+    conn["baseUrl"] = json!(upstream);
+    let ctx = local(&server, conn, vec![]).await;
+    let err = get(&ctx, "big", json!({"id": "S"})).await.unwrap_err();
+    assert!(
+        err.starts_with("[invalid_response]") && err.contains("8 MiB"),
+        "{err}"
+    );
+    // Stopped near the cap, not after reading all 64 MiB.
+    let streamed = sent.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(streamed < 32 * 1024 * 1024, "read on to {streamed} bytes");
+}
+
+#[tokio::test]
 async fn connectors_exec_unusable_responses() {
     let server = MockServer::start().await;
     let ctx = local(&server, connector(&server, "openalex"), vec![]).await;
@@ -1419,7 +1461,7 @@ async fn connectors_telemetry_drain_gives_up_after_its_bound() {
 async fn connectors_telemetry_latency_excludes_crws_own_pacing() {
     let server = MockServer::start().await;
     let mut conn = connector(&server, "openalex");
-    conn["minIntervalMs"] = json!(500);
+    conn["minIntervalMs"] = json!(2000);
     mount_manifest(&server, vec![conn]).await;
     Mock::given(path("/up/works/W1"))
         .respond_with(json_ok(json!({})))
@@ -1431,15 +1473,19 @@ async fn connectors_telemetry_latency_excludes_crws_own_pacing() {
         .await;
     let ctx = DataToolContext::for_tests(&server.uri(), true, vec![]);
     get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
-    // The second call waits out the spacing before it is sent.
+    // The second call waits out most of the 2 s spacing before it is sent.
+    let started = std::time::Instant::now();
     get(&ctx, "openalex", json!({"id": "W1"})).await.unwrap();
-    ctx.drain(Duration::from_secs(2)).await;
+    let wall = started.elapsed();
     let bodies = usage_bodies(&server, &ctx).await;
     assert_eq!(bodies.len(), 2);
-    for body in &bodies {
-        let ms = body["latencyMs"].as_u64().unwrap();
-        assert!(ms < 400, "latency {ms} ms includes the pacing sleep");
-    }
+    // No fixed ceiling on the request itself: what the second call reports
+    // must leave out the second or more of that call spent pacing.
+    let reported = Duration::from_millis(bodies[1]["latencyMs"].as_u64().unwrap());
+    assert!(
+        wall.saturating_sub(reported) >= Duration::from_secs(1),
+        "reported {reported:?} of a {wall:?} call that waited for its turn"
+    );
 }
 
 #[tokio::test]
