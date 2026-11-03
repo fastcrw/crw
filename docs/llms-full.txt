@@ -42,6 +42,8 @@ All routes on the engine namespace (https://api.fastcrw.com or self-hosted base)
 | POST   | /v1/change-tracking/diff | Stateless per-page diff; accepts single item or batch  |
 | GET    | /v1/capabilities       | Surface what this instance supports (renderers, search)  |
 | GET/POST | /mcp               | HTTP MCP transport endpoint (crw-server built-in)        |
+| GET    | /v1/data/find          | Find structured data sources (cloud only)                |
+| GET    | /v1/data/{provider}/{capability} | Call one data source capability (cloud only)   |
 | GET    | /health                | Health check — always public, no auth required           |
 
 SaaS-only (fastcrw.com/api):
@@ -429,7 +431,7 @@ metadata.renderedWith in response: "http"|"lightpanda"|"chrome"|"chrome_proxy"|"
 
 
 ================================================================================
-## PART 7 — MCP SERVER (9 TOOLS)
+## PART 7: MCP SERVER (11 TOOLS IN PROXY MODE, 9 EMBEDDED)
 ================================================================================
 
 Package: crw-mcp (npm: npx crw-mcp | cargo: cargo install crw-mcp)
@@ -440,6 +442,8 @@ Two MCP modes:
               crw_search only appears when a search backend is configured
   Proxy     — CRW_API_URL set; forwards tool calls to a remote CRW server (cloud or self-hosted)
               crw_search always advertised (search backend is on the server)
+              adds crw_find_data and crw_get_data (structured data sources); a
+              self-hosted server has none and answers [data_sources_unavailable]
 
 Quick setup:
   # Claude Code — embedded local
@@ -596,6 +600,70 @@ Parameters:
   maxLength       number    opt       Truncate output chars; 0=unbounded (default: ~15 000)
 
 Note: "json" and "summary" formats require server LLM config.
+
+────────────────────────────────────────────────────────────────────────────────
+### Tool: crw_find_data  →  GET /v1/data/find  (proxy mode only)
+────────────────────────────────────────────────────────────────────────────────
+Find structured data sources from named public APIs (papers, packages,
+registries, music metadata). Returns the provider, capability and options to
+pass to crw_get_data. Use crw_search for open web search instead.
+
+Parameters:
+  query           string    opt       Words to match against source names and descriptions
+  category        string    opt       Only this category, e.g. "Research" (case-insensitive)
+  provider        string    opt       Only this provider
+  limit           number    opt       Results per page, 1 to 50 (default: 10)
+  offset          number    opt       Results to skip; pass nextOffset for the next page
+
+Returns:
+  {
+    "items": [{
+      "provider", "capability", "name", "description", "category",
+      "creditsCost", "requiredOptions": [...], "optionalOptions": [...],
+      "keyRequired", "licence", "keyConfigured"
+    }],
+    "total": N,
+    "nextOffset": N
+  }
+keyConfigured appears on sources that run on the user's machine with the
+user's own key, and says whether that key is stored.
+
+────────────────────────────────────────────────────────────────────────────────
+### Tool: crw_get_data  →  GET /v1/data/{provider}/{capability}  (proxy mode only)
+────────────────────────────────────────────────────────────────────────────────
+Call one data source capability and get its JSON. Call crw_find_data first.
+Some sources run on the user's machine with the user's own key; the agent sees
+the same tool and result shape either way.
+
+Parameters:
+  provider        string    required  provider from a crw_find_data item
+  capability      string    required  capability from a crw_find_data item
+  options         object    opt       Values for requiredOptions and optionalOptions
+                                      (strings, numbers or booleans)
+
+Returns:
+  {
+    "provider", "capability", "creditsUsed",
+    "provenance": {"source", "upstreamUrl", "licence", "licenceUrl",
+                   "attributionText", "retrievedAt"},
+    "data": ...
+  }
+Pass provenance.licence and attributionText on when you use the data.
+
+Data source errors (text starts with the code in brackets):
+  connector_key_missing          The source needs the user's own key. Do not retry;
+  connector_origin_not_approved  ask the user to run, in their own terminal, the
+                                 command the error names (npx -y crw-mcp connectors
+                                 set-key <provider>). Never ask for the key in chat.
+  connector_key_invalid          The stored key cannot be sent; store it again.
+  invalid_options                Fix options from requiredOptions/optionalOptions.
+  unknown_data_source            No such source or capability; call crw_find_data.
+  upstream_error, upstream_timeout, upstream_rate_limited, invalid_response
+                                 The source failed; check the options, try again later.
+  result_too_large               Over 256 KiB; narrow the options.
+  data_sources_unavailable       No data sources right now (or a self-hosted server).
+  client_execution_required      Hosted MCP only: the source runs in the local crw-mcp.
+Full table: https://docs.fastcrw.com/data-sources
 
 
 ================================================================================
@@ -923,6 +991,7 @@ BYOK requests pay a flat infra fee only (no token markup).
 ================================================================================
 
 Docs home:          https://docs.fastcrw.com
+Data sources:       https://docs.fastcrw.com/data-sources
 API playground:     https://fastcrw.com/playground
 Agent skill:        https://docs.fastcrw.com/agent-onboarding/SKILL.md
 OpenAPI contract:   https://docs.fastcrw.com/openapi.json
