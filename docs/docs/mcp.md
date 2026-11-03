@@ -246,6 +246,7 @@ For cloud mode and file-based configs, continue in [MCP Client Setup](#mcp-clien
 | `waitFor` | integer | no | ms to wait after page load |
 | `renderer` | string | no | Renderer to use (e.g. `"lightpanda"`) |
 | `maxLength` | integer | no | Max chars for content fields; `0` = unlimited (default: ~15 000) |
+| `startIndex` | integer | no | Char offset to resume a truncated result: a truncated field ends with a marker naming the `startIndex` that continues it. Each call fetches the page again (or reuses a cached fetch), so a page that renders differently between calls can shift the offset |
 | `maxAge` | integer | no | Max age of a cached copy of the fetch, in ms (default 3600000 = 1h; `0` = always fetch; cap 24h). Proxy mode only |
 
 ### crw_crawl
