@@ -103,6 +103,33 @@
       <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
     </blockquote>
 
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
     <h2 id="copy-paste-run">Quick: copy this and run</h2>
     <p><strong>Auth (hosted only):</strong>
       <code>Authorization: Bearer $CRW_API_KEY</code>.
@@ -182,7 +209,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
       <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
       <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
       <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
-      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonOptions.schema</code> — structured extract</li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
     </ul>
 
     <h2>Install (local setup only)</h2>

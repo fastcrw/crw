@@ -1,12 +1,810 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/recipe-rag">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Build a RAG Knowledge Base — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/recipe-rag">
-  <script>location.replace("https://docs.fastcrw.com/recipe-rag");</script>
+  <meta name="description" content="Turn any documentation website into a queryable knowledge base in four steps:">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/recipe-rag">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/recipe-rag">
+  <meta property="og:title" content="Build a RAG Knowledge Base — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Turn any documentation website into a queryable knowledge base in four steps:">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Build a RAG Knowledge Base — CRW Docs">
+  <meta name="twitter:description" content="Turn any documentation website into a queryable knowledge base in four steps:">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/recipe-rag">https://docs.fastcrw.com/recipe-rag</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-recipe-rag-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/recipe-rag">https://docs.fastcrw.com/recipe-rag</a>.</p><h1 id="recipe-build-a-rag-knowledge-base-from-a-docs-site">Recipe: Build a RAG Knowledge Base from a Docs Site</h1>
+<p>Turn any documentation website into a queryable knowledge base in four steps:
+map the site to discover all URLs, scrape every page with built-in topic chunking,
+embed the chunks with a local or hosted embeddings model, then store and query them
+in a vector database.</p>
+<p><strong>Target site used in this recipe:</strong> <code>https://docs.pydantic.dev/latest/</code> (~120 pages,
+publicly crawlable, no JS required, good real-world docs structure).</p>
+<p><strong>What you will build:</strong></p>
+<pre><code>docs site  →  map URLs  →  scrape each URL + chunk  →  embed  →  Chroma / pgvector  →  query</code></pre>
+<p><strong>Prerequisites:</strong></p>
+<pre data-lang="bash"><code class="language-bash">pip install crw chromadb openai          # vector DB + embeddings
+# or: pip install crw psycopg2-binary    # if you prefer pgvector
+export CRW_API_KEY=&quot;crw-...&quot;
+export OPENAI_API_KEY=&quot;sk-...&quot;           # for text-embedding-3-small</code></pre>
+<hr>
+<h2 id="step-1-discover-all-documentation-urls">Step 1: Discover all documentation URLs</h2>
+<p>Use <code>/v1/map</code> to find every URL on the site before fetching any content. This is
+faster and cheaper than crawling blind — you know the full scope up front and can
+filter before spending credits on scrapes.</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python</button><button class="code-tab" data-tab="1">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">import os
+from crw import CrwClient
+
+client = CrwClient(api_key=os.environ[&quot;CRW_API_KEY&quot;])
+
+urls = client.map(
+    &quot;https://docs.pydantic.dev/latest/&quot;,
+    max_depth=3,
+    use_sitemap=True,           # try sitemap.xml first, BFS as fallback
+)
+
+# Keep only docs pages (drop anchors, changelogs, API refs if unwanted)
+doc_urls = [u for u in urls if &quot;/api/&quot; not in u and &quot;#&quot; not in u]
+print(f&quot;Found {len(doc_urls)} documentation pages&quot;)
+# Found 87 documentation pages</code></pre><p>::</div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/v1/map \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://docs.pydantic.dev/latest/&quot;,
+    &quot;maxDepth&quot;: 3,
+    &quot;useSitemap&quot;: true
+  }' | jq '.data.links | length'
+# 87</code></pre></p>
+<p>::</div>
+    </div></p>
+<p><strong>Expected response shape:</strong></p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: {
+    &quot;links&quot;: [
+      &quot;https://docs.pydantic.dev/latest/&quot;,
+      &quot;https://docs.pydantic.dev/latest/concepts/models/&quot;,
+      &quot;...&quot;
+    ]
+  }
+}</code></pre>
+<hr>
+<h2 id="step-2-scrape-pages-and-chunk-each-one">Step 2: Scrape pages and chunk each one</h2>
+<p>Scrape each discovered URL with <code>POST /v1/scrape</code>, passing <code>chunkStrategy</code> to
+split the page server-side (one chunk per heading section). The engine returns a
+<code>chunks</code> array on each result — no text-splitting library needed.</p>
+<blockquote>
+<p><strong>Why not batch_scrape?</strong> <code>POST /firecrawl/v2/batch/scrape</code> does not forward
+<code>chunkStrategy</code> to the engine and never returns a <code>chunks</code> field. Use
+individual <code>/v1/scrape</code> calls (looped) to get chunked output.</p>
+</blockquote>
+<p><strong><code>chunkStrategy</code> options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>type</th>
+<th>splits on</th>
+<th>best for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&quot;topic&quot;</code></td>
+<td>markdown headings (<code>#</code>, <code>##</code>, ...)</td>
+<td>documentation, wikis</td>
+</tr>
+<tr>
+<td><code>&quot;sentence&quot;</code></td>
+<td>sentence boundaries <code>.!?</code></td>
+<td>articles, prose</td>
+</tr>
+<tr>
+<td><code>&quot;regex&quot;</code></td>
+<td>custom pattern</td>
+<td>custom separators</td>
+</tr>
+</tbody></table>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python</button><button class="code-tab" data-tab="1">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python"># POST /v1/scrape for each URL — chunkStrategy is a v1 parameter
+pages = []
+for url in doc_urls[:50]:          # start small; remove slice for full run
+    page = client.scrape(
+        url,
+        formats=[&quot;markdown&quot;],
+        chunkStrategy={              # split on markdown headings
+            &quot;type&quot;: &quot;topic&quot;,
+            &quot;maxChars&quot;: 1500,        # hard-cap each chunk at 1500 chars
+            &quot;overlapChars&quot;: 0,
+            &quot;dedupe&quot;: True,          # drop near-duplicate chunks (Jaccard &gt; 85%)
+        },
+        # only_main_content=True is the default — no need to pass it explicitly
+    )
+    pages.append(page)
+
+print(f&quot;Scraped {len(pages)} pages&quot;)
+# Scraped 50 pages</code></pre><p>::</div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash"># POST /v1/scrape with chunkStrategy (one call per URL)
+curl -s -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://docs.pydantic.dev/latest/concepts/models/&quot;,
+    &quot;formats&quot;: [&quot;markdown&quot;],
+    &quot;chunkStrategy&quot;: { &quot;type&quot;: &quot;topic&quot;, &quot;maxChars&quot;: 1500, &quot;dedupe&quot;: true },
+    &quot;onlyMainContent&quot;: true
+  }' | jq '.data.chunks | length'
+# 3</code></pre></p>
+<p>::</div>
+    </div></p>
+<p><strong>Expected shape of one page result:</strong></p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;markdown&quot;: &quot;# Models\n\nPydantic models are...&quot;,
+  &quot;chunks&quot;: [
+    { &quot;index&quot;: 0, &quot;content&quot;: &quot;# Models\n\nPydantic models are the primary way...&quot;, &quot;score&quot;: null },
+    { &quot;index&quot;: 1, &quot;content&quot;: &quot;## Basic Model Usage\n\nThe simplest Pydantic model...&quot;, &quot;score&quot;: null },
+    { &quot;index&quot;: 2, &quot;content&quot;: &quot;## Field Definitions\n\nFields are defined as class attributes...&quot;, &quot;score&quot;: null }
+  ],
+  &quot;metadata&quot;: {
+    &quot;title&quot;: &quot;Models - Pydantic&quot;,
+    &quot;sourceURL&quot;: &quot;https://docs.pydantic.dev/latest/concepts/models/&quot;,
+    &quot;statusCode&quot;: 200
+  }
+}</code></pre>
+<blockquote>
+<p><strong>Note:</strong> <code>score</code> is <code>null</code> when no <code>query</code> + <code>filterMode</code> are passed. Scores
+appear when you do server-side BM25/cosine filtering — useful for one-shot QA but
+not for building a knowledge base (you want all chunks indexed).</p>
+</blockquote>
+<hr>
+<h2 id="step-3-embed-the-chunks">Step 3: Embed the chunks</h2>
+<p>Flatten all chunks from all pages into a single list, then embed them in batches.
+This recipe uses OpenAI <code>text-embedding-3-small</code> (1536 dims, cheap), but any
+embeddings API works.</p>
+<pre data-lang="python"><code class="language-python">from openai import OpenAI
+
+embed_client = OpenAI(api_key=os.environ[&quot;OPENAI_API_KEY&quot;])
+
+def embed_batch(texts: list[str], model: str = &quot;text-embedding-3-small&quot;) -&gt; list[list[float]]:
+    &quot;&quot;&quot;Embed up to 2048 texts in one API call.&quot;&quot;&quot;
+    resp = embed_client.embeddings.create(input=texts, model=model)
+    return [item.embedding for item in resp.data]
+
+# Flatten: collect (chunk_text, source_url, chunk_index) for every page
+records: list[dict] = []
+for page in pages:
+    source = page.get(&quot;metadata&quot;, {}).get(&quot;sourceURL&quot;, &quot;&quot;)
+    for chunk in page.get(&quot;chunks&quot;) or []:
+        records.append({
+            &quot;text&quot;:   chunk[&quot;content&quot;],
+            &quot;url&quot;:    source,
+            &quot;index&quot;:  chunk[&quot;index&quot;],
+        })
+
+print(f&quot;Total chunks to embed: {len(records)}&quot;)
+# Total chunks to embed: 312
+
+# Embed in batches of 200 to stay within API limits
+BATCH = 200
+vectors: list[list[float]] = []
+for i in range(0, len(records), BATCH):
+    batch_texts = [r[&quot;text&quot;] for r in records[i : i + BATCH]]
+    vectors.extend(embed_batch(batch_texts))
+
+print(f&quot;Embedded {len(vectors)} vectors (dim={len(vectors[0])})&quot;)
+# Embedded 312 vectors (dim=1536)</code></pre>
+<hr>
+<h2 id="step-4-store-in-chroma-and-query">Step 4: Store in Chroma and query</h2>
+<pre data-lang="python"><code class="language-python">import chromadb
+
+chroma = chromadb.Client()
+collection = chroma.get_or_create_collection(
+    name=&quot;pydantic_docs&quot;,
+    metadata={&quot;hnsw:space&quot;: &quot;cosine&quot;},
+)
+
+# Upsert all chunks — Chroma needs string IDs
+collection.upsert(
+    ids=[f&quot;{r['url']}#{r['index']}&quot; for r in records],
+    embeddings=vectors,
+    documents=[r[&quot;text&quot;] for r in records],
+    metadatas=[{&quot;url&quot;: r[&quot;url&quot;], &quot;chunk_index&quot;: r[&quot;index&quot;]} for r in records],
+)
+
+print(f&quot;Stored {collection.count()} chunks in Chroma&quot;)
+# Stored 312 chunks in Chroma
+
+# --- Query ---
+QUERY = &quot;How do I define a field with a default value in Pydantic?&quot;
+
+q_vec = embed_batch([QUERY])[0]
+results = collection.query(
+    query_embeddings=[q_vec],
+    n_results=3,
+    include=[&quot;documents&quot;, &quot;metadatas&quot;, &quot;distances&quot;],
+)
+
+for doc, meta, dist in zip(
+    results[&quot;documents&quot;][0],
+    results[&quot;metadatas&quot;][0],
+    results[&quot;distances&quot;][0],
+):
+    print(f&quot;[score={1 - dist:.3f}] {meta['url']}&quot;)
+    print(doc[:200])
+    print()</code></pre>
+<p><strong>Expected query output:</strong></p>
+<pre><code>[score=0.871] https://docs.pydantic.dev/latest/concepts/fields/
+## Default Values
+
+Fields can have default values set either directly or via `Field(default=...)`:</code></pre>
+<p>python
+from pydantic import BaseModel, Field</p>
+<p>class User(BaseModel):
+    name: str
+    age: int = 0          # direct default
+    bio: str = Field(default=&quot;&quot;, description=&quot;Short bio&quot;)</p>
+<pre><code>[score=0.843] https://docs.pydantic.dev/latest/concepts/models/
+## Field Definitions
+
+Fields are defined as class attributes with type annotations. A field without a
+default is required; a field with a default is optional...
+
+[score=0.801] https://docs.pydantic.dev/latest/concepts/validators/
+## Field Validators
+
+Use `@field_validator` to add validation logic. Validators run after the default...</code></pre>
+<hr>
+<h2 id="pgvector-alternative-step-4b">pgvector alternative (Step 4b)</h2>
+<p>If you are already running Postgres, use pgvector instead of Chroma:</p>
+<pre data-lang="python"><code class="language-python">import psycopg2
+import json
+
+conn = psycopg2.connect(&quot;postgresql://localhost/mydb&quot;)
+cur  = conn.cursor()
+
+cur.execute(&quot;CREATE EXTENSION IF NOT EXISTS vector&quot;)
+cur.execute(&quot;&quot;&quot;
+    CREATE TABLE IF NOT EXISTS doc_chunks (
+        id          TEXT PRIMARY KEY,
+        url         TEXT,
+        chunk_index INT,
+        content     TEXT,
+        embedding   vector(1536)
+    )
+&quot;&quot;&quot;)
+
+for rec, vec in zip(records, vectors):
+    cur.execute(
+        &quot;&quot;&quot;
+        INSERT INTO doc_chunks (id, url, chunk_index, content, embedding)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (id) DO UPDATE SET embedding = EXCLUDED.embedding
+        &quot;&quot;&quot;,
+        (f&quot;{rec['url']}#{rec['index']}&quot;, rec[&quot;url&quot;], rec[&quot;index&quot;],
+         rec[&quot;text&quot;], json.dumps(vec)),
+    )
+
+conn.commit()
+
+# Query
+cur.execute(
+    &quot;&quot;&quot;
+    SELECT url, content, 1 - (embedding &lt;=&gt; %s::vector) AS score
+    FROM   doc_chunks
+    ORDER BY embedding &lt;=&gt; %s::vector
+    LIMIT  3
+    &quot;&quot;&quot;,
+    (json.dumps(q_vec), json.dumps(q_vec)),
+)
+
+for url, content, score in cur.fetchall():
+    print(f&quot;[score={score:.3f}] {url}&quot;)
+    print(content[:200])
+    print()</code></pre>
+<hr>
+<h2 id="complete-script">Complete script</h2>
+<pre data-lang="python"><code class="language-python">&quot;&quot;&quot;
+recipe_rag.py — build a RAG knowledge base from a docs site with fastCRW.
+Run: python recipe_rag.py
+Requires: pip install crw chromadb openai
+Env:      CRW_API_KEY, OPENAI_API_KEY
+&quot;&quot;&quot;
+import os
+from crw import CrwClient
+from openai import OpenAI
+import chromadb
+
+TARGET  = &quot;https://docs.pydantic.dev/latest/&quot;
+MAX_PAGES = 50
+
+client       = CrwClient(api_key=os.environ[&quot;CRW_API_KEY&quot;])
+embed_client = OpenAI(api_key=os.environ[&quot;OPENAI_API_KEY&quot;])
+
+# 1. Discover URLs
+urls = client.map(TARGET, max_depth=3, use_sitemap=True)
+doc_urls = [u for u in urls if &quot;/api/&quot; not in u and &quot;#&quot; not in u][:MAX_PAGES]
+print(f&quot;Discovered {len(doc_urls)} pages&quot;)
+
+# 2. Scrape + chunk (POST /v1/scrape per URL — chunkStrategy is a v1 parameter)
+pages = []
+for url in doc_urls:
+    page = client.scrape(
+        url,
+        formats=[&quot;markdown&quot;],
+        chunkStrategy={&quot;type&quot;: &quot;topic&quot;, &quot;maxChars&quot;: 1500, &quot;dedupe&quot;: True},
+    )
+    pages.append(page)
+print(f&quot;Scraped {len(pages)} pages&quot;)
+
+# 3. Flatten chunks
+records = [
+    {&quot;text&quot;: ch[&quot;content&quot;], &quot;url&quot;: pg.get(&quot;metadata&quot;, {}).get(&quot;sourceURL&quot;, &quot;&quot;), &quot;index&quot;: ch[&quot;index&quot;]}
+    for pg in pages for ch in (pg.get(&quot;chunks&quot;) or [])
+]
+print(f&quot;Total chunks: {len(records)}&quot;)
+
+# 4. Embed
+def embed_batch(texts: list[str]) -&gt; list[list[float]]:
+    resp = embed_client.embeddings.create(input=texts, model=&quot;text-embedding-3-small&quot;)
+    return [item.embedding for item in resp.data]
+
+BATCH   = 200
+vectors = []
+for i in range(0, len(records), BATCH):
+    vectors.extend(embed_batch([r[&quot;text&quot;] for r in records[i:i+BATCH]]))
+print(f&quot;Embedded {len(vectors)} vectors&quot;)
+
+# 5. Store
+chroma      = chromadb.Client()
+collection  = chroma.get_or_create_collection(&quot;pydantic_docs&quot;, metadata={&quot;hnsw:space&quot;: &quot;cosine&quot;})
+collection.upsert(
+    ids=[f&quot;{r['url']}#{r['index']}&quot; for r in records],
+    embeddings=vectors,
+    documents=[r[&quot;text&quot;] for r in records],
+    metadatas=[{&quot;url&quot;: r[&quot;url&quot;]} for r in records],
+)
+print(f&quot;Stored {collection.count()} chunks&quot;)
+
+# 6. Query
+QUERY   = &quot;How do I define a field with a default value in Pydantic?&quot;
+q_vec   = embed_batch([QUERY])[0]
+results = collection.query(query_embeddings=[q_vec], n_results=3,
+                           include=[&quot;documents&quot;, &quot;metadatas&quot;, &quot;distances&quot;])
+for doc, meta, dist in zip(results[&quot;documents&quot;][0], results[&quot;metadatas&quot;][0], results[&quot;distances&quot;][0]):
+    print(f&quot;\n[score={1-dist:.3f}] {meta['url']}\n{doc[:300]}&quot;)</code></pre>
+<hr>
+<h2 id="key-parameters">Key parameters</h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Where</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>chunkStrategy.type</code></td>
+<td><code>POST /v1/scrape</code> only</td>
+<td><code>&quot;topic&quot;</code> splits on headings; <code>&quot;sentence&quot;</code> on <code>.!?</code>; <code>&quot;regex&quot;</code> on a custom pattern</td>
+</tr>
+<tr>
+<td><code>chunkStrategy.maxChars</code></td>
+<td><code>POST /v1/scrape</code> only</td>
+<td>Hard cap per chunk in characters</td>
+</tr>
+<tr>
+<td><code>chunkStrategy.dedupe</code></td>
+<td><code>POST /v1/scrape</code> only</td>
+<td>Drop near-duplicate chunks (Jaccard similarity &gt; 85%)</td>
+</tr>
+<tr>
+<td><code>query</code> + <code>filterMode</code></td>
+<td><code>POST /v1/scrape</code> only</td>
+<td>Server-side BM25/cosine ranking — useful for one-shot QA; skip when indexing all chunks</td>
+</tr>
+<tr>
+<td><code>onlyMainContent</code></td>
+<td><code>POST /v1/scrape</code>, <code>/firecrawl/v2/batch/scrape</code></td>
+<td>Strip nav/footer before chunking — strongly recommended</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong><code>chunkStrategy</code> on batch/crawl:</strong> <code>POST /firecrawl/v2/batch/scrape</code> and <code>POST /v1/crawl</code> do
+not forward <code>chunkStrategy</code> to the engine and never return a <code>chunks</code> field.
+Always use <code>client.scrape()</code> (looped) when you need per-page chunks, as shown above.</p>
+</blockquote>
+<h2 id="scaling-tips">Scaling tips</h2>
+<ul>
+<li><strong>Large sites (&gt; 500 pages):</strong> loop <code>client.scrape()</code> with <code>asyncio.gather</code> or a
+thread pool to parallelize requests. Each call is a synchronous <code>POST /v1/scrape</code>
+that returns immediately with the result.</li>
+<li><strong>Embedding cost:</strong> <code>text-embedding-3-small</code> costs ~$0.02 per 1M tokens. A 500-page
+docs site with 1500-char chunks produces roughly 400–600 chunks × ~300 tokens each =
+~180 K tokens → under $0.01 total.</li>
+<li><strong>Re-indexing:</strong> use the <code>changeTracking</code> format on re-scrapes to detect changed pages
+before re-embedding — avoids re-embedding unchanged content.</li>
+<li><strong>Persistent Chroma:</strong> replace <code>chromadb.Client()</code> with
+<code>chromadb.PersistentClient(path=&quot;./chroma_db&quot;)</code> to survive restarts.</li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-recipe-rag-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "recipe-rag";</script>
+</body>
 </html>

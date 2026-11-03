@@ -1,6 +1,6 @@
 # fastCRW — Full Context for AI Agents
 # Single-fetch reference: API routes, MCP tools, patterns, formats, errors.
-# Version: 0.16.0 | Updated: 2026-06-15
+# Updated: 2026-11-03
 # Compact index: https://docs.fastcrw.com/llms.txt
 
 ================================================================================
@@ -865,8 +865,9 @@ NEVER use "pending", "running", "queued", "processing" — they are not valid va
 ================================================================================
 
 Official SDKs:
-  Python:     pip install crw               # version 0.16.0; PyPI: pypi.org/project/crw/
-  TypeScript: npm install crw-sdk           # version 0.16.0; npm: npmjs.com/package/crw-sdk
+  Python:     pip install crw               # PyPI: pypi.org/project/crw/
+  TypeScript: npm install crw-sdk           # npm: npmjs.com/package/crw-sdk
+  Reference:  https://docs.fastcrw.com/sdk-reference/
 
 Framework extras (NOT standalone packages):
   crw[langchain]  — pip install crw[langchain]
@@ -879,15 +880,16 @@ Other integrations:
 
 Python SDK minimal example:
   from crw import CrwClient
-  client = CrwClient(api_key="crw_live_YOUR_KEY")
-  result = client.scrape("https://example.com", formats=["markdown"])
-  print(result.data.markdown)
+  client = CrwClient()  # reads CRW_API_KEY; or CrwClient(api_key="crw_live_YOUR_KEY")
+  page = client.scrape("https://example.com", formats=["markdown", "links"])
+  print(page["markdown"])  # plain dict, no .data wrapper
+  print(page["links"])     # list[str] of absolute URLs
 
 TypeScript SDK minimal example:
   import { CrwClient } from "crw-sdk";
   const client = new CrwClient({ apiKey: "crw_live_YOUR_KEY" });
-  const result = await client.scrape("https://example.com", { formats: ["markdown"] });
-  console.log(result.data.markdown);
+  const page = await client.scrape("https://example.com", { formats: ["markdown"] });
+  console.log(page.markdown);
 
 
 ================================================================================

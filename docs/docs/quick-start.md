@@ -46,6 +46,18 @@ curl -X POST https://api.fastcrw.com/v1/scrape \
   }'
 ```
 
+**Python SDK** (`pip install crw`):
+
+```python
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY, defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown"])
+print(page["markdown"])  # page is a plain dict: markdown, links, metadata
+```
+
+The TypeScript SDK is `npm install crw-sdk`. Both are documented in the [SDK reference](/sdk-reference).
+
 **Windows (PowerShell / Command Prompt)**:
 
 ```powershell

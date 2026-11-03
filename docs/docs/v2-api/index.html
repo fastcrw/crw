@@ -1,12 +1,1509 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/v2-api">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firecrawl v2 Compatibility — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/v2-api">
-  <script>location.replace("https://docs.fastcrw.com/v2-api");</script>
+  <meta name="description" content="Reference for CRW's /firecrawl/v2/* compatibility routes. New CRW integrations should start with native /v1 ; use /firecrawl/v2 for Firecrawl SDK migrations, batch scraping, PDF parsing, and deprecate">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/v2-api">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/v2-api">
+  <meta property="og:title" content="Firecrawl v2 Compatibility — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Reference for CRW's /firecrawl/v2/* compatibility routes. New CRW integrations should start with native /v1 ; use /firecrawl/v2 for Firecrawl SDK migrations, batch scraping, PDF parsing, and deprecate">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Firecrawl v2 Compatibility — CRW Docs">
+  <meta name="twitter:description" content="Reference for CRW's /firecrawl/v2/* compatibility routes. New CRW integrations should start with native /v1 ; use /firecrawl/v2 for Firecrawl SDK migrations, batch scraping, PDF parsing, and deprecate">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/v2-api">https://docs.fastcrw.com/v2-api</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-v2-api-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/v2-api">https://docs.fastcrw.com/v2-api</a>.</p><div class="page-intro">
+  <div class="page-kicker">API Reference</div>
+  <h1 id="firecrawl-v2-compatibility-reference">Firecrawl v2 Compatibility Reference</h1>
+  <p class="page-subtitle">Reference for CRW's <code>/firecrawl/v2/*</code> compatibility routes. New CRW integrations should start with native <code>/v1</code>; use <code>/firecrawl/v2</code> for Firecrawl SDK migrations, batch scraping, PDF parsing, and deprecated extract compatibility.</p>
+  <div class="page-capabilities">
+    <div class="page-capability"><strong>Base URL:</strong> <code>https://api.fastcrw.com</code></div>
+    <div class="page-capability"><strong>Self-hosted:</strong> <code>http://localhost:3000</code></div>
+    <div class="page-capability"><strong>Version:</strong> 0.16.0</div>
+  </div>
+  <div class="page-actions">
+    <a class="page-btn primary" href="#post-v2scrape">Start with Scrape</a>
+    <a class="page-btn secondary" href="#v2document-response-shape">Response Shape</a>
+  </div>
+</div><h2 id="routes-at-a-glance">Routes at a glance</h2>
+<p><code>/firecrawl/v2</code> is a compatibility layer, not the recommended API for new CRW builds. Start with <code>/v1</code> unless you are migrating existing Firecrawl v2 SDK code.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Route</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/scrape</code></td>
+<td>Scrape one URL synchronously</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/scrape/{job_id}</code></td>
+<td>Stub — always 404 (scrape is synchronous)</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/crawl</code></td>
+<td>Start an async recursive crawl</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/crawl/active</code></td>
+<td>List in-progress crawl job IDs</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/crawl/{id}</code></td>
+<td>Poll crawl status and paginated results</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/firecrawl/v2/crawl/{id}</code></td>
+<td>Cancel a running crawl</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/crawl/{id}/errors</code></td>
+<td>Fetch per-URL errors for a crawl job</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/map</code></td>
+<td>Discover URLs, returns link objects</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/search</code></td>
+<td>Web search with optional per-result scrape</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/parse</code></td>
+<td>Upload a PDF, get markdown or structured JSON</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/batch/scrape</code></td>
+<td>Start an async batch scrape over a URL list</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/batch/scrape/{id}</code></td>
+<td>Poll batch status and paginated results</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/firecrawl/v2/batch/scrape/{id}</code></td>
+<td>Cancel a running batch</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/batch/scrape/{id}/errors</code></td>
+<td>Fetch per-URL errors for a batch job</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/firecrawl/v2/extract</code></td>
+<td><strong>DEPRECATED</strong> — async multi-URL LLM extraction</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/extract/{id}</code></td>
+<td><strong>DEPRECATED</strong> — poll extract job status</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/firecrawl/v2/capabilities</code></td>
+<td>Alias of <code>/v1/capabilities</code></td>
+</tr>
+</tbody></table>
+<h2 id="v2-vs-v1-key-differences">v2 vs v1: key differences</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>v1</th>
+<th>v2</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>formats</code> field</td>
+<td><code>string[]</code> only</td>
+<td><code>string[]</code> or <code>{&quot;type&quot;:&quot;...&quot;, &quot;schema&quot;:...}[]</code></td>
+</tr>
+<tr>
+<td>Map response</td>
+<td><code>links: string[]</code></td>
+<td><code>links: [{url, title?, description?}[]}</code></td>
+</tr>
+<tr>
+<td>Crawl/batch status</td>
+<td>flat</td>
+<td>paginated with <code>next</code> cursor</td>
+</tr>
+<tr>
+<td>Document shape</td>
+<td>engine-internal</td>
+<td><code>V2Document</code> with <code>metadata.proxyUsed</code>, <code>cacheState</code>, <code>creditsUsed</code>, <code>scrapeId</code></td>
+</tr>
+<tr>
+<td>Crawl status strings</td>
+<td>varies</td>
+<td><code>&quot;scraping&quot;</code> | <code>&quot;completed&quot;</code> | <code>&quot;failed&quot;</code></td>
+</tr>
+<tr>
+<td><code>scrapeOptions</code> in crawl</td>
+<td>not present</td>
+<td>nested object accepted</td>
+</tr>
+<tr>
+<td>File parsing</td>
+<td>not present</td>
+<td><code>POST /firecrawl/v2/parse</code> multipart</td>
+</tr>
+<tr>
+<td>Batch scrape</td>
+<td>not present</td>
+<td><code>POST /firecrawl/v2/batch/scrape</code></td>
+</tr>
+</tbody></table>
+<h2 id="authentication">Authentication</h2>
+<pre data-lang="http"><code class="language-http">Authorization: Bearer YOUR_API_KEY</code></pre>
+<ul>
+<li>Hosted API (<code>https://api.fastcrw.com</code>): always required.</li>
+<li>Self-hosted: only required when <code>auth.api_keys</code> is configured.</li>
+<li><code>/health</code> is always public.</li>
+</ul>
+<hr>
+<h2 id="post-firecrawlv2scrape"><code>POST /firecrawl/v2/scrape</code></h2>
+<p>Scrape one URL synchronously. Returns immediately with a <code>V2Document</code>.</p>
+<h3 id="request-body">Request body</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>url</code></td>
+<td><code>string</code></td>
+<td><strong>required</strong></td>
+<td>Target page URL</td>
+</tr>
+<tr>
+<td><code>formats</code></td>
+<td><code>(string | FormatObject)[]</code></td>
+<td><code>[&quot;markdown&quot;]</code></td>
+<td>Output formats — see <a href="#v2-formats">Formats</a></td>
+</tr>
+<tr>
+<td><code>onlyMainContent</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>Strip nav, footer, sidebar</td>
+</tr>
+<tr>
+<td><code>includeTags</code></td>
+<td><code>string[]</code></td>
+<td><code>[]</code></td>
+<td>Restrict to these HTML tags</td>
+</tr>
+<tr>
+<td><code>excludeTags</code></td>
+<td><code>string[]</code></td>
+<td><code>[]</code></td>
+<td>Remove these HTML tags</td>
+</tr>
+<tr>
+<td><code>waitFor</code></td>
+<td><code>number</code></td>
+<td>—</td>
+<td>Milliseconds to wait after JS load</td>
+</tr>
+<tr>
+<td><code>headers</code></td>
+<td><code>Record&lt;string, string&gt;</code></td>
+<td><code>{}</code></td>
+<td>Custom HTTP headers forwarded to the target</td>
+</tr>
+<tr>
+<td><code>location</code></td>
+<td><code>{ country?: string, languages?: string[] }</code></td>
+<td>—</td>
+<td>Proxy egress country (2-letter ISO) and <code>Accept-Language</code> hint</td>
+</tr>
+<tr>
+<td><code>proxy</code></td>
+<td><code>string</code></td>
+<td><code>&quot;auto&quot;</code></td>
+<td><code>&quot;auto&quot;</code> or <code>&quot;stealth&quot;</code> (residential Chrome tier)</td>
+</tr>
+<tr>
+<td><code>proxyList</code></td>
+<td><code>string[]</code></td>
+<td><code>[]</code></td>
+<td>BYOP proxy URLs (rotated per <code>proxyRotation</code>)</td>
+</tr>
+<tr>
+<td><code>proxyRotation</code></td>
+<td><code>&quot;round_robin&quot; | &quot;random&quot;</code></td>
+<td>—</td>
+<td>Rotation strategy for <code>proxyList</code></td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td><code>number</code></td>
+<td>server default</td>
+<td>Request deadline in milliseconds</td>
+</tr>
+<tr>
+<td><code>renderer</code></td>
+<td><code>&quot;auto&quot; | &quot;lightpanda&quot; | &quot;chrome&quot; | &quot;chrome_proxy&quot;</code></td>
+<td>—</td>
+<td>Pin a renderer tier. Self-hosted instances may also configure <code>&quot;playwright&quot;</code>; the managed cloud does not run it</td>
+</tr>
+<tr>
+<td><code>renderJs</code></td>
+<td><code>boolean</code></td>
+<td>—</td>
+<td><code>true</code> forces JS rendering, <code>false</code> keeps the request HTTP-only, omitted uses auto-detection. Same semantics as on <code>/v1/scrape</code>, see <a href="js-rendering.md">JS Rendering</a></td>
+</tr>
+<tr>
+<td><code>parsers</code></td>
+<td><code>ParserSpec[]</code></td>
+<td>—</td>
+<td>Document parser directives (e.g. <code>[&quot;pdf&quot;]</code>)</td>
+</tr>
+<tr>
+<td><code>llmApiKey</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Per-request LLM API key (required for <code>summary</code> / <code>json</code> if no server key)</td>
+</tr>
+<tr>
+<td><code>llmProvider</code></td>
+<td><code>&quot;anthropic&quot; | &quot;openai&quot; | &quot;openai-responses&quot; | &quot;deepseek&quot; | &quot;azure&quot; | &quot;openai-compatible&quot;</code></td>
+<td>—</td>
+<td>Per-request LLM provider</td>
+</tr>
+<tr>
+<td><code>llmModel</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Per-request LLM model name</td>
+</tr>
+<tr>
+<td><code>summaryPrompt</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Custom prompt for the <code>summary</code> format</td>
+</tr>
+</tbody></table>
+<h3 id="response">Response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: { &quot;...V2Document...&quot; },
+  &quot;warning&quot;: &quot;optional — formats not yet supported by this engine&quot;
+}</code></pre>
+<p>See <a href="#v2document-response-shape">V2Document Response Shape</a> below.</p>
+<h3 id="example">Example</h3>
+<pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/firecrawl/v2/scrape \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://example.com&quot;,
+    &quot;formats&quot;: [&quot;markdown&quot;, &quot;links&quot;]
+  }'</code></pre>
+<p>Structured extraction with an object format:</p>
+<pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/firecrawl/v2/scrape \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://news.ycombinator.com&quot;,
+    &quot;formats&quot;: [
+      { &quot;type&quot;: &quot;json&quot;, &quot;schema&quot;: { &quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: { &quot;title&quot;: { &quot;type&quot;: &quot;string&quot; } } } }
+    ]
+  }'</code></pre>
+<h3 id="typescript-sdk">TypeScript SDK</h3>
+<pre data-lang="typescript"><code class="language-typescript">import { CrwClient } from &quot;crw-sdk&quot;;
+const crw = new CrwClient({ apiKey: process.env.CRW_API_KEY });
+
+// Simple markdown scrape
+const result = await crw.scrape(&quot;https://example.com&quot;, {
+  formats: [&quot;markdown&quot;],
+});
+console.log(result.markdown);
+
+// Structured extraction
+const data = await crw.scrape(&quot;https://example.com/product&quot;, {
+  formats: [&quot;json&quot;],
+  jsonSchema: {
+    type: &quot;object&quot;,
+    properties: { title: { type: &quot;string&quot; }, price: { type: &quot;string&quot; } },
+  },
+});</code></pre>
+<p>Note: the TypeScript SDK&#39;s <code>scrape()</code> method calls <code>/v1/scrape</code> under the hood; use <code>batchScrape()</code> or direct <code>fetch</code> to reach the v2 routes explicitly. The <code>parseFile()</code> method calls <code>POST /firecrawl/v2/parse</code>.</p>
+<hr>
+<h2 id="get-firecrawlv2scrapejob_id"><code>GET /firecrawl/v2/scrape/{job_id}</code></h2>
+<p>Always returns HTTP 404. CRW scrape is synchronous — there is no deferred job to poll. The endpoint exists only for SDK compatibility; use <code>POST /firecrawl/v2/scrape</code> and read the response directly.</p>
+<hr>
+<h2 id="post-firecrawlv2crawl"><code>POST /firecrawl/v2/crawl</code></h2>
+<p>Start an asynchronous recursive crawl. Returns a job ID immediately; poll <code>GET /firecrawl/v2/crawl/{id}</code> until <code>status</code> is <code>&quot;completed&quot;</code> or <code>&quot;failed&quot;</code>.</p>
+<h3 id="request-body-1">Request body</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>url</code></td>
+<td><code>string</code></td>
+<td><strong>required</strong></td>
+<td>Seed URL</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>number</code></td>
+<td>—</td>
+<td>Maximum pages to crawl</td>
+</tr>
+<tr>
+<td><code>maxDiscoveryDepth</code></td>
+<td><code>number</code></td>
+<td>—</td>
+<td>Maximum link-follow depth from the seed</td>
+</tr>
+<tr>
+<td><code>scrapeOptions</code></td>
+<td><code>object</code></td>
+<td>—</td>
+<td>Per-page scrape settings (<code>formats</code>, <code>onlyMainContent</code>, <code>waitFor</code>, <code>renderJs</code>)</td>
+</tr>
+<tr>
+<td><code>renderer</code></td>
+<td><code>RequestedRenderer</code></td>
+<td>—</td>
+<td>Pin a renderer tier for all pages</td>
+</tr>
+<tr>
+<td><code>country</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>2-letter ISO country for proxy egress</td>
+</tr>
+<tr>
+<td><code>proxyList</code></td>
+<td><code>string[]</code></td>
+<td><code>[]</code></td>
+<td>BYOP proxy pool</td>
+</tr>
+<tr>
+<td><code>proxyRotation</code></td>
+<td><code>&quot;round_robin&quot; | &quot;random&quot;</code></td>
+<td>—</td>
+<td>Rotation strategy for <code>proxyList</code></td>
+</tr>
+</tbody></table>
+<h3 id="start-response">Start response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;id&quot;: &quot;550e8400-e29b-41d4-a716-446655440000&quot;,
+  &quot;url&quot;: &quot;https://api.fastcrw.com/firecrawl/v2/crawl/550e8400-e29b-41d4-a716-446655440000&quot;
+}</code></pre>
+<h3 id="example-1">Example</h3>
+<pre data-lang="bash"><code class="language-bash"># Start the crawl
+curl -X POST https://api.fastcrw.com/firecrawl/v2/crawl \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://docs.example.com&quot;,
+    &quot;limit&quot;: 50,
+    &quot;maxDiscoveryDepth&quot;: 2,
+    &quot;scrapeOptions&quot;: { &quot;formats&quot;: [&quot;markdown&quot;], &quot;onlyMainContent&quot;: true }
+  }'</code></pre>
+<hr>
+<h2 id="get-firecrawlv2crawlid"><code>GET /firecrawl/v2/crawl/{id}</code></h2>
+<p>Poll crawl status and retrieve completed documents. Supports cursor-based pagination for large crawls.</p>
+<h3 id="query-parameters">Query parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>skip</code></td>
+<td><code>number</code></td>
+<td><code>0</code></td>
+<td>Zero-based document offset</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>number</code></td>
+<td><code>100</code></td>
+<td>Maximum documents per page (soft 10 MB byte cap also applies)</td>
+</tr>
+</tbody></table>
+<h3 id="status-response">Status response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;status&quot;: &quot;scraping&quot;,
+  &quot;total&quot;: 50,
+  &quot;completed&quot;: 12,
+  &quot;creditsUsed&quot;: 12,
+  &quot;expiresAt&quot;: &quot;2026-06-16T10:00:00.000Z&quot;,
+  &quot;next&quot;: &quot;https://api.fastcrw.com/firecrawl/v2/crawl/JOB_ID?skip=100&quot;,
+  &quot;data&quot;: [ { &quot;...V2Document...&quot; } ]
+}</code></pre>
+<p><code>status</code> values: <code>&quot;scraping&quot;</code> (in progress) | <code>&quot;completed&quot;</code> | <code>&quot;failed&quot;</code>.</p>
+<p><code>next</code> is <code>null</code> once the job is <code>&quot;completed&quot;</code> and there are no further pages. While the job is still running, <code>next</code> is always present so clients keep polling forward.</p>
+<h3 id="polling-pattern">Polling pattern</h3>
+<pre data-lang="bash"><code class="language-bash"># Poll until completed
+JOB_ID=&quot;550e8400-e29b-41d4-a716-446655440000&quot;
+
+while true; do
+  RESP=$(curl -s https://api.fastcrw.com/firecrawl/v2/crawl/$JOB_ID \
+    -H &quot;Authorization: Bearer YOUR_API_KEY&quot;)
+  STATUS=$(echo $RESP | jq -r '.status')
+  echo &quot;Status: $STATUS, completed: $(echo $RESP | jq '.completed')&quot;
+  if [ &quot;$STATUS&quot; = &quot;completed&quot; ] || [ &quot;$STATUS&quot; = &quot;failed&quot; ]; then break; fi
+  sleep 3
+done</code></pre>
+<hr>
+<h2 id="delete-firecrawlv2crawlid"><code>DELETE /firecrawl/v2/crawl/{id}</code></h2>
+<p>Cancel a running crawl. Returns an error if the job has already finished.</p>
+<pre data-lang="json"><code class="language-json">{ &quot;success&quot;: true, &quot;status&quot;: &quot;cancelled&quot;, &quot;message&quot;: &quot;Crawl job &lt;id&gt; cancelled&quot; }</code></pre>
+<hr>
+<h2 id="get-firecrawlv2crawlactive"><code>GET /firecrawl/v2/crawl/active</code></h2>
+<p>List the IDs of all currently in-progress crawl jobs on this engine instance.</p>
+<pre data-lang="json"><code class="language-json">{ &quot;success&quot;: true, &quot;crawls&quot;: [&quot;550e8400-...&quot;, &quot;6ba7b810-...&quot;] }</code></pre>
+<hr>
+<h2 id="get-firecrawlv2crawliderrors"><code>GET /firecrawl/v2/crawl/{id}/errors</code></h2>
+<p>Return the job-level failure, if any, followed by one entry per URL the job
+could not turn into a document. Job-level entries carry the job id; per-URL
+entries carry the job id with the document&#39;s position appended (stable across
+polls) and the <code>url</code>. Crawl entries appear once the crawl has finished; batch
+entries appear as each URL settles.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;errors&quot;: [
+    { &quot;id&quot;: &quot;550e8400-...&quot;, &quot;error&quot;: &quot;Server is overloaded, try again later&quot; },
+    { &quot;id&quot;: &quot;550e8400-...-3&quot;, &quot;url&quot;: &quot;https://example.com/slow-page&quot;, &quot;error&quot;: &quot;Target unreachable: Could not reach https://example.com/slow-page&quot; }
+  ],
+  &quot;robotsBlocked&quot;: []
+}</code></pre>
+<hr>
+<h2 id="post-firecrawlv2map"><code>POST /firecrawl/v2/map</code></h2>
+<p>Discover URLs under a domain without scraping their content. The key v2 change from v1: <code>links</code> is an array of <strong>objects</strong> (<code>{url, title?, description?}</code>), not bare strings.</p>
+<h3 id="request-body-2">Request body</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>url</code></td>
+<td><code>string</code></td>
+<td><strong>required</strong></td>
+<td>Base URL to map</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>number</code></td>
+<td>—</td>
+<td>Maximum links to return</td>
+</tr>
+<tr>
+<td><code>includePaths</code></td>
+<td><code>string[]</code></td>
+<td><code>[]</code></td>
+<td>Substring filters — only keep matching URLs</td>
+</tr>
+<tr>
+<td><code>excludePaths</code></td>
+<td><code>string[]</code></td>
+<td><code>[]</code></td>
+<td>Substring filters — remove matching URLs</td>
+</tr>
+<tr>
+<td><code>search</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Substring search filter applied after discovery</td>
+</tr>
+<tr>
+<td><code>sitemap</code></td>
+<td><code>&quot;include&quot; | &quot;only&quot; | &quot;skip&quot;</code></td>
+<td><code>&quot;include&quot;</code></td>
+<td>Sitemap strategy</td>
+</tr>
+<tr>
+<td><code>maxDiscoveryDepth</code></td>
+<td><code>number</code></td>
+<td>server default</td>
+<td>Link-follow depth</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td><code>number</code></td>
+<td><code>120000</code></td>
+<td>Milliseconds (capped at 300 000)</td>
+</tr>
+</tbody></table>
+<h3 id="response-1">Response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;links&quot;: [
+    { &quot;url&quot;: &quot;https://example.com/about&quot;, &quot;title&quot;: null, &quot;description&quot;: null },
+    { &quot;url&quot;: &quot;https://example.com/pricing&quot;, &quot;title&quot;: null, &quot;description&quot;: null }
+  ]
+}</code></pre>
+<p>Note: <code>title</code> and <code>description</code> are always <code>null</code> in the current engine version (they are reserved for future sitemap-sourced enrichment).</p>
+<h3 id="example-2">Example</h3>
+<pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/firecrawl/v2/map \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://docs.example.com&quot;,
+    &quot;limit&quot;: 200,
+    &quot;includePaths&quot;: [&quot;/api&quot;, &quot;/reference&quot;]
+  }'</code></pre>
+<hr>
+<h2 id="post-firecrawlv2search"><code>POST /firecrawl/v2/search</code></h2>
+<p>Web search returning grouped results (<code>web</code>, <code>news</code>, <code>images</code>). Reuses the same engine as <code>/v1/search</code> with a different response envelope.</p>
+<h3 id="request-body-3">Request body</h3>
+<p>Accepts the same fields as <code>POST /v1/search</code>. <code>scrapeOptions.formats</code> may be objects (v2 style) or strings (v1 style) — the engine normalizes them automatically.</p>
+<h3 id="response-2">Response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: {
+    &quot;web&quot;: [
+      {
+        &quot;url&quot;: &quot;https://example.com/article&quot;,
+        &quot;title&quot;: &quot;Article Title&quot;,
+        &quot;description&quot;: &quot;Search snippet&quot;,
+        &quot;position&quot;: 1
+      }
+    ],
+    &quot;news&quot;: null,
+    &quot;images&quot;: null
+  },
+  &quot;creditsUsed&quot;: 0,
+  &quot;id&quot;: &quot;f47ac10b-58cc-4372-a567-0e02b2c3d479&quot;
+}</code></pre>
+<p><code>web</code>, <code>news</code>, <code>images</code> are omitted when the source did not return results for that category.</p>
+<h3 id="example-3">Example</h3>
+<pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/firecrawl/v2/search \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;query&quot;: &quot;fastCRW web scraper&quot;, &quot;limit&quot;: 5}'</code></pre>
+<hr>
+<h2 id="post-firecrawlv2parse"><code>POST /firecrawl/v2/parse</code></h2>
+<p>Upload a PDF file and receive its content as markdown, plain text, or structured JSON. Accepts <code>multipart/form-data</code>.</p>
+<ul>
+<li>Maximum upload size: <strong>50 MB</strong></li>
+<li>Only PDF is supported. Non-PDF uploads receive HTTP 400.</li>
+</ul>
+<h3 id="multipart-fields">Multipart fields</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>file</code></td>
+<td>binary</td>
+<td>yes</td>
+<td>PDF file bytes</td>
+</tr>
+<tr>
+<td><code>options</code></td>
+<td>JSON string</td>
+<td>no</td>
+<td>Serialized <code>ParseOptions</code> (see below)</td>
+</tr>
+</tbody></table>
+<h3 id="parseoptions-json-string-in-the-options-field">ParseOptions (JSON string in the <code>options</code> field)</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>formats</code></td>
+<td><code>(string | FormatObject)[]</code></td>
+<td><code>[&quot;markdown&quot;]</code></td>
+<td>Output formats</td>
+</tr>
+<tr>
+<td><code>jsonSchema</code></td>
+<td><code>object</code></td>
+<td>—</td>
+<td>JSON Schema for structured extraction</td>
+</tr>
+<tr>
+<td><code>parsers</code></td>
+<td><code>ParserSpec[]</code></td>
+<td>—</td>
+<td>Parser directives</td>
+</tr>
+<tr>
+<td><code>summaryPrompt</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Custom prompt for <code>summary</code> format</td>
+</tr>
+<tr>
+<td><code>maxContentChars</code></td>
+<td><code>number</code></td>
+<td>—</td>
+<td>Truncate extracted text before LLM steps</td>
+</tr>
+</tbody></table>
+<h3 id="response-3">Response</h3>
+<p>Same <code>{ success, data, warning? }</code> envelope as <code>POST /firecrawl/v2/scrape</code>. The <code>data.metadata.sourceFilename</code> field carries the original filename; <code>data.metadata.numPages</code> carries the page count.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: {
+    &quot;markdown&quot;: &quot;# Document Title\n\n...&quot;,
+    &quot;metadata&quot;: {
+      &quot;sourceURL&quot;: &quot;upload://report.pdf&quot;,
+      &quot;url&quot;: &quot;upload://report.pdf&quot;,
+      &quot;statusCode&quot;: 200,
+      &quot;proxyUsed&quot;: &quot;basic&quot;,
+      &quot;cacheState&quot;: &quot;miss&quot;,
+      &quot;concurrencyLimited&quot;: false,
+      &quot;creditsUsed&quot;: 1,
+      &quot;scrapeId&quot;: &quot;a3bb189e-8bf9-3888-9912-ace4e6543002&quot;,
+      &quot;numPages&quot;: 12,
+      &quot;sourceFilename&quot;: &quot;report.pdf&quot;
+    }
+  }
+}</code></pre>
+<h3 id="example-4">Example</h3>
+<pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/firecrawl/v2/parse \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -F &quot;file=@report.pdf&quot; \
+  -F 'options={&quot;formats&quot;:[&quot;markdown&quot;]}'</code></pre>
+<h3 id="typescript-sdk-1">TypeScript SDK</h3>
+<pre data-lang="typescript"><code class="language-typescript">import { readFileSync } from &quot;fs&quot;;
+import { CrwClient } from &quot;crw-sdk&quot;;
+const crw = new CrwClient({ apiKey: process.env.CRW_API_KEY });
+
+const pdf = readFileSync(&quot;report.pdf&quot;);
+const result = await crw.parseFile(pdf, { filename: &quot;report.pdf&quot; });
+console.log(result.markdown);</code></pre>
+<hr>
+<h2 id="post-firecrawlv2batchscrape"><code>POST /firecrawl/v2/batch/scrape</code></h2>
+<p>Start an async job that scrapes a list of URLs with the same scrape options. The job uses the same crawl-job machinery as <code>/firecrawl/v2/crawl</code>; the status envelope is identical.</p>
+<h3 id="request-body-4">Request body</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>urls</code></td>
+<td><code>string[]</code></td>
+<td><strong>required</strong></td>
+<td>URLs to scrape (at least 1)</td>
+</tr>
+<tr>
+<td><code>formats</code></td>
+<td><code>(string | FormatObject)[]</code></td>
+<td><code>[&quot;markdown&quot;]</code></td>
+<td>Per-page output formats</td>
+</tr>
+<tr>
+<td><code>ignoreInvalidURLs</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>Skip invalid URLs instead of failing</td>
+</tr>
+<tr>
+<td><em>(any scrape option)</em></td>
+<td>—</td>
+<td>—</td>
+<td>Other v2 scrape fields (<code>onlyMainContent</code>, <code>waitFor</code>, etc.) applied to every page</td>
+</tr>
+</tbody></table>
+<h3 id="start-response-1">Start response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;id&quot;: &quot;7c9e6679-7425-40de-944b-e07fc1f90ae7&quot;,
+  &quot;url&quot;: &quot;https://api.fastcrw.com/firecrawl/v2/batch/scrape/7c9e6679-...&quot;,
+  &quot;invalidURLs&quot;: []
+}</code></pre>
+<h3 id="example-5">Example</h3>
+<pre data-lang="bash"><code class="language-bash"># Start the batch
+curl -X POST https://api.fastcrw.com/firecrawl/v2/batch/scrape \
+  -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;urls&quot;: [
+      &quot;https://example.com/page-1&quot;,
+      &quot;https://example.com/page-2&quot;,
+      &quot;https://example.com/page-3&quot;
+    ],
+    &quot;formats&quot;: [&quot;markdown&quot;],
+    &quot;onlyMainContent&quot;: true
+  }'</code></pre>
+<h3 id="typescript-sdk-2">TypeScript SDK</h3>
+<pre data-lang="typescript"><code class="language-typescript">import { CrwClient } from &quot;crw-sdk&quot;;
+const crw = new CrwClient({ apiKey: process.env.CRW_API_KEY });
+
+const results = await crw.batchScrape(
+  [&quot;https://example.com/a&quot;, &quot;https://example.com/b&quot;],
+  { formats: [&quot;markdown&quot;] }
+);
+// results is V2Document[]</code></pre>
+<hr>
+<h2 id="get-firecrawlv2batchscrapeid"><code>GET /firecrawl/v2/batch/scrape/{id}</code></h2>
+<p>Poll batch status. Identical envelope to <code>GET /firecrawl/v2/crawl/{id}</code> — same <code>skip</code>/<code>limit</code> query parameters and same <code>next</code> cursor pattern.</p>
+<hr>
+<h2 id="delete-firecrawlv2batchscrapeid"><code>DELETE /firecrawl/v2/batch/scrape/{id}</code></h2>
+<p>Cancel a running batch. Delegates to the same handler as <code>DELETE /firecrawl/v2/crawl/{id}</code>.</p>
+<hr>
+<h2 id="get-firecrawlv2batchscrapeiderrors"><code>GET /firecrawl/v2/batch/scrape/{id}/errors</code></h2>
+<p>Fetch per-URL errors. Same response shape as <code>GET /firecrawl/v2/crawl/{id}/errors</code>.</p>
+<hr>
+<h2 id="batch-start-poll-collect-pattern">Batch start → poll → collect pattern</h2>
+<pre><code>POST /firecrawl/v2/batch/scrape          →  { id }
+GET  /firecrawl/v2/batch/scrape/{id}     →  { status, data[], next }
+GET  /firecrawl/v2/batch/scrape/{id}?skip=100  →  { status, data[], next }
+... (follow `next` until null and status = &quot;completed&quot;)</code></pre>
+<p>The SDK&#39;s <code>batchScrape()</code> handles this loop automatically. When driving it manually:</p>
+<ol>
+<li>Start the job, record <code>id</code>.</li>
+<li>Poll <code>GET /firecrawl/v2/batch/scrape/{id}</code> every 2–5 seconds.</li>
+<li>Accumulate <code>data[]</code> from each page.</li>
+<li>If <code>next</code> is non-null, follow it; if <code>next</code> is null and <code>status</code> is <code>&quot;completed&quot;</code>, stop.</li>
+<li>On <code>status: &quot;failed&quot;</code>, inspect <code>/errors</code>.</li>
+</ol>
+<hr>
+<h2 id="post-firecrawlv2extract-deprecated"><code>POST /firecrawl/v2/extract</code> (DEPRECATED)</h2>
+<blockquote>
+<p><strong>Deprecated.</strong> Use <code>POST /firecrawl/v2/scrape</code> with <code>formats: [{&quot;type&quot;: &quot;json&quot;, &quot;schema&quot;: {...}}]</code> instead. <code>/firecrawl/v2/extract</code> will remain available but the engine emits a <code>warnings</code> entry on every response advising the replacement.</p>
+</blockquote>
+<p>Async multi-URL LLM extraction. Starts a job that scrapes each URL with <code>formats: [&quot;json&quot;]</code> and the supplied schema, then merges per-URL JSON objects.</p>
+<h3 id="request-body-5">Request body</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>urls</code></td>
+<td><code>string[]</code></td>
+<td><strong>required</strong></td>
+<td>URLs to extract from</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Free-text extraction instruction (no schema required)</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td><code>object</code></td>
+<td>—</td>
+<td>JSON Schema for structured output</td>
+</tr>
+</tbody></table>
+<p><code>systemPrompt</code> is a Firecrawl field this engine does not implement yet; sending a
+non-empty value returns a 400. Fold your instruction into <code>prompt</code> instead.</p>
+<h3 id="start-response-2">Start response</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;id&quot;: &quot;3fa85f64-5717-4562-b3fc-2c963f66afa6&quot;,
+  &quot;urlTrace&quot;: [],
+  &quot;warnings&quot;: [&quot;/v2/extract is deprecated. Use /v2/scrape with formats including a 'json' format object.&quot;],
+  &quot;replacement&quot;: &quot;/firecrawl/v2/scrape&quot;
+}</code></pre>
+<h3 id="typescript-sdk-3">TypeScript SDK</h3>
+<pre data-lang="typescript"><code class="language-typescript">import { CrwClient } from &quot;crw-sdk&quot;;
+const crw = new CrwClient({ apiKey: process.env.CRW_API_KEY });
+
+// Deprecated path — prefer batchScrape with a json format object
+const result = await crw.extract({
+  urls: [&quot;https://example.com/product&quot;],
+  schema: { type: &quot;object&quot;, properties: { title: { type: &quot;string&quot; } } },
+});</code></pre>
+<hr>
+<h2 id="get-firecrawlv2extractid-deprecated"><code>GET /firecrawl/v2/extract/{id}</code> (DEPRECATED)</h2>
+<p>Poll an extract job.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;status&quot;: &quot;completed&quot;,
+  &quot;data&quot;: { &quot;title&quot;: &quot;Example Product&quot; },
+  &quot;expiresAt&quot;: &quot;2026-06-16T10:00:00.000Z&quot;,
+  &quot;creditsUsed&quot;: 1,
+  &quot;tokensUsed&quot;: 412
+}</code></pre>
+<p><code>status</code> values: <code>&quot;processing&quot;</code> (in progress) | <code>&quot;completed&quot;</code> | <code>&quot;failed&quot;</code>.</p>
+<hr>
+<h2 id="v2document-response-shape">V2Document response shape</h2>
+<p>Every v2 scrape and batch/crawl document follows this shape. Fields are omitted (not null) when not requested.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;markdown&quot;: &quot;# Page Title\n\n...&quot;,
+  &quot;html&quot;: &quot;&lt;h1&gt;Page Title&lt;/h1&gt;...&quot;,
+  &quot;rawHtml&quot;: &quot;&lt;!doctype html&gt;...&quot;,
+  &quot;links&quot;: [&quot;https://example.com/about&quot;],
+  &quot;json&quot;: { &quot;title&quot;: &quot;Page Title&quot; },
+  &quot;summary&quot;: &quot;A one-paragraph summary...&quot;,
+  &quot;changeTracking&quot;: { &quot;...ChangeTrackingResult...&quot; },
+  &quot;warning&quot;: &quot;optional per-document warning&quot;,
+  &quot;metadata&quot;: {
+    &quot;title&quot;: &quot;Page Title&quot;,
+    &quot;description&quot;: &quot;Page meta description&quot;,
+    &quot;language&quot;: &quot;en&quot;,
+    &quot;sourceURL&quot;: &quot;https://example.com&quot;,
+    &quot;url&quot;: &quot;https://example.com&quot;,
+    &quot;statusCode&quot;: 200,
+    &quot;contentType&quot;: &quot;text/html; charset=utf-8&quot;,
+    &quot;proxyUsed&quot;: &quot;basic&quot;,
+    &quot;cacheState&quot;: &quot;miss&quot;,
+    &quot;concurrencyLimited&quot;: false,
+    &quot;creditsUsed&quot;: 1,
+    &quot;scrapeId&quot;: &quot;a3bb189e-8bf9-3888-9912-ace4e6543002&quot;
+  }
+}</code></pre>
+<blockquote>
+<p><strong>Note on <code>numPages</code> and <code>sourceFilename</code>:</strong> These fields carry <code>skip_serializing_if = &quot;Option::is_none&quot;</code> in the engine source, so they are <strong>omitted entirely</strong> from web-scrape responses — they never appear as <code>null</code>. They only appear in <code>/firecrawl/v2/parse</code> PDF upload responses, and only when the value is actually known.</p>
+</blockquote>
+<h3 id="v2document-vs-v1-scrapedata">V2Document vs v1 ScrapeData</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>v1</th>
+<th>v2</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>metadata.proxyUsed</code></td>
+<td>not present</td>
+<td><code>&quot;basic&quot;</code> or <code>&quot;stealth&quot;</code></td>
+</tr>
+<tr>
+<td><code>metadata.cacheState</code></td>
+<td><code>cached</code> (omitted when false)</td>
+<td><code>&quot;hit&quot;</code> or <code>&quot;miss&quot;</code></td>
+</tr>
+<tr>
+<td><code>metadata.concurrencyLimited</code></td>
+<td>not present</td>
+<td>always <code>false</code></td>
+</tr>
+<tr>
+<td><code>metadata.creditsUsed</code></td>
+<td>not present</td>
+<td>integer (≥ 1)</td>
+</tr>
+<tr>
+<td><code>metadata.scrapeId</code></td>
+<td>not present</td>
+<td>per-document UUID</td>
+</tr>
+<tr>
+<td><code>metadata.numPages</code></td>
+<td>not present</td>
+<td>page count for PDFs</td>
+</tr>
+<tr>
+<td><code>metadata.sourceFilename</code></td>
+<td>not present</td>
+<td>filename for <code>/firecrawl/v2/parse</code> uploads</td>
+</tr>
+<tr>
+<td><code>links</code></td>
+<td><code>string[]</code> flat</td>
+<td><code>string[]</code> inside Document (Map uses objects)</td>
+</tr>
+</tbody></table>
+<h3 id="proxyused-values"><code>proxyUsed</code> values</h3>
+<ul>
+<li><code>&quot;basic&quot;</code> — default path (lightweight or chrome renderer).</li>
+<li><code>&quot;stealth&quot;</code> — residential Chrome proxy tier, activated by <code>proxy: &quot;stealth&quot;</code>.</li>
+</ul>
+<h3 id="cachestate"><code>cacheState</code></h3>
+<p><code>&quot;hit&quot;</code> when the page was replayed from the fetch cache, <code>&quot;miss&quot;</code> when it was
+fetched. <code>maxAge</code> and <code>storeInCache</code> are honoured on this surface: see
+<a href="scraping.md#caching">Caching</a> for what is cached and what never is.</p>
+<hr>
+<h2 id="v2-formats">V2 formats</h2>
+<p>v2 <code>formats</code> accepts a mix of bare strings and typed objects.</p>
+<h3 id="supported-format-strings">Supported format strings</h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&quot;markdown&quot;</code></td>
+<td>Cleaned markdown (default)</td>
+</tr>
+<tr>
+<td><code>&quot;html&quot;</code></td>
+<td>Cleaned HTML</td>
+</tr>
+<tr>
+<td><code>&quot;rawHtml&quot;</code></td>
+<td>Raw full HTML</td>
+</tr>
+<tr>
+<td><code>&quot;plainText&quot;</code></td>
+<td>Plain text — <strong>note:</strong> the engine computes plain text internally, but <code>V2Document</code> has no <code>plainText</code> field; requesting this format currently produces no visible output (the value is silently dropped in the v2 serialization layer).</td>
+</tr>
+<tr>
+<td><code>&quot;links&quot;</code></td>
+<td>Array of discovered URLs</td>
+</tr>
+<tr>
+<td><code>&quot;json&quot;</code></td>
+<td>Structured JSON (requires schema or LLM key)</td>
+</tr>
+<tr>
+<td><code>&quot;summary&quot;</code></td>
+<td>LLM-generated summary</td>
+</tr>
+<tr>
+<td><code>&quot;changeTracking&quot;</code></td>
+<td>Diff against a previous snapshot</td>
+</tr>
+</tbody></table>
+<h3 id="object-format-for-json-extraction">Object format for JSON extraction</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;type&quot;: &quot;json&quot;,
+  &quot;schema&quot;: {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: { &quot;title&quot;: { &quot;type&quot;: &quot;string&quot; } }
+  }
+}</code></pre>
+<h3 id="object-format-for-changetracking">Object format for changeTracking</h3>
+<pre data-lang="json"><code class="language-json">{
+  &quot;type&quot;: &quot;changeTracking&quot;,
+  &quot;modes&quot;: [&quot;gitDiff&quot;],
+  &quot;tag&quot;: &quot;optional-snapshot-tag&quot;
+}</code></pre>
+<h3 id="unsupported-formats-graceful-warning">Unsupported formats (graceful warning)</h3>
+<p>The following formats are recognized but not produced by this engine. The request succeeds with the other requested formats; a <code>warning</code> field explains what was skipped:</p>
+<p><code>images</code>, <code>attributes</code>, <code>branding</code>, <code>audio</code>, <code>query</code>.</p>
+<p><code>screenshot</code> IS produced (returned as a <code>data:image/png;base64,…</code> URL), but it needs a capture-capable browser tier — Chrome (<code>chrome</code>, <code>chrome_proxy</code>) or Playwright. Check <code>screenshot.supported</code> on <code>GET /v1/capabilities</code> first.</p>
+<hr>
+<h2 id="v2crawlstatus-shared-by-crawl-and-batch">V2CrawlStatus (shared by crawl and batch)</h2>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;status&quot;: &quot;scraping&quot;,
+  &quot;total&quot;: 50,
+  &quot;completed&quot;: 12,
+  &quot;creditsUsed&quot;: 12,
+  &quot;expiresAt&quot;: &quot;2026-06-16T10:00:00.000Z&quot;,
+  &quot;next&quot;: &quot;https://api.fastcrw.com/firecrawl/v2/crawl/JOB_ID?skip=100&quot;,
+  &quot;data&quot;: [ { &quot;...V2Document...&quot; } ],
+  &quot;error&quot;: null
+}</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>status</code></td>
+<td><code>&quot;scraping&quot;</code> | <code>&quot;completed&quot;</code> | <code>&quot;failed&quot;</code></td>
+</tr>
+<tr>
+<td><code>total</code></td>
+<td>Estimated total pages (grows as new URLs are discovered)</td>
+</tr>
+<tr>
+<td><code>completed</code></td>
+<td>Pages fully scraped so far</td>
+</tr>
+<tr>
+<td><code>creditsUsed</code></td>
+<td>Sum of per-page credit costs</td>
+</tr>
+<tr>
+<td><code>expiresAt</code></td>
+<td>RFC3339 UTC timestamp when the job record expires</td>
+</tr>
+<tr>
+<td><code>next</code></td>
+<td>URL for the next result page; <code>null</code> when there are no more pages</td>
+</tr>
+<tr>
+<td><code>data</code></td>
+<td>This page&#39;s V2Documents (≤ <code>limit</code> documents, soft 10 MB cap)</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>Set on <code>&quot;failed&quot;</code> status</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="sdk-support">SDK support</h2>
+<p>The <strong>TypeScript SDK (<code>crw-sdk</code>)</strong> uses v2 by default for the routes it covers:</p>
+<table>
+<thead>
+<tr>
+<th>SDK method</th>
+<th>Underlying route</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>crw.parseFile()</code></td>
+<td><code>POST /firecrawl/v2/parse</code></td>
+</tr>
+<tr>
+<td><code>crw.batchScrape()</code></td>
+<td><code>POST /firecrawl/v2/batch/scrape</code> + poll</td>
+</tr>
+<tr>
+<td><code>crw.extract()</code></td>
+<td><code>POST /firecrawl/v2/extract</code> + poll <em>(deprecated)</em></td>
+</tr>
+</tbody></table>
+<p>Other methods (<code>scrape</code>, <code>crawl</code>, <code>map</code>, <code>search</code>) call v1 routes. Use direct <code>fetch</code> or pass <code>apiUrl</code> to target <code>/firecrawl/v2/scrape</code> explicitly.</p>
+<p>The <strong>Python SDK</strong> exposes the same surface. Pass <code>base_url=&quot;https://api.fastcrw.com&quot;</code> to the client constructor.</p>
+<hr>
+<h2 id="common-mistakes">Common mistakes</h2>
+<p><strong>Forgetting to poll.</strong> <code>POST /firecrawl/v2/crawl</code> and <code>POST /firecrawl/v2/batch/scrape</code> return a job ID, not results. The results live in <code>GET .../{ id }</code>.</p>
+<p><strong>Expecting <code>next</code> to be absent on the last page while the job is running.</strong> <code>next</code> is always emitted while <code>status</code> is <code>&quot;scraping&quot;</code>, even when all buffered pages have been returned. Stop only when <code>status</code> is <code>&quot;completed&quot;</code> (or <code>&quot;failed&quot;</code>) AND <code>next</code> is null.</p>
+<p><strong>Sending <code>formats: [&quot;screenshot&quot;]</code> without a capture-capable browser.</strong> Screenshots need a Chrome or Playwright tier; LightPanda and Camoufox cannot capture. Check <code>screenshot.supported</code> on <code>GET /v1/capabilities</code> before you rely on it.</p>
+<p><strong>Using <code>/firecrawl/v2/extract</code>.</strong> It works, but the engine warns you to use <code>POST /firecrawl/v2/scrape</code> with a <code>json</code> format object. Switch over to avoid future breakage.</p>
+<p><strong>Missing <code>Content-Type: application/json</code>.</strong> All JSON endpoints require it. <code>/firecrawl/v2/parse</code> is multipart — do not set <code>Content-Type</code> manually; let the HTTP client set it with the boundary.</p>
+<hr>
+<h2 id="what-to-read-next">What to read next</h2>
+<ul>
+<li><a href="/output-formats">Output Formats</a> — full format reference</li>
+<li><a href="/scraping">Scrape</a> — v1 scrape guide (same engine)</li>
+<li><a href="/crawling">Crawl</a> — v1 crawl guide</li>
+<li><a href="/extract">Extract</a> — structured extraction patterns</li>
+<li><a href="/map">Map</a> — URL discovery</li>
+<li><a href="/search">Search</a> — web search</li>
+<li><a href="/response-shapes">Response Shapes</a> — v1 shapes</li>
+<li><a href="/error-codes">Error Codes</a></li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-v2-api-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "v2-api";</script>
+</body>
 </html>

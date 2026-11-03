@@ -103,6 +103,33 @@
       <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
     </blockquote>
 
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
     <h2 id="copy-paste-run">Quick: copy this and run</h2>
     <p><strong>Auth (hosted only):</strong>
       <code>Authorization: Bearer $CRW_API_KEY</code>.
@@ -182,7 +209,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
       <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
       <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
       <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
-      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonOptions.schema</code> — structured extract</li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
     </ul>
 
     <h2>Install (local setup only)</h2>
@@ -313,7 +340,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>Self-hosted: only required when <code>auth.api_keys</code> is configured</li>
 </ul>
 <h3 id="installation">Installation</h3>
-<p>CRW is HTTP-first. You can start with cURL immediately and then move to your existing Python or Node.js HTTP client without installing a dedicated SDK. See the <a href="#basic-usage">Basic usage</a> tabs below for ready-to-run Python (<code>requests</code>), Node.js (<code>fetch</code>), and cURL examples.</p>
+<p>Official SDKs: <code>pip install crw</code> (Python) and <code>npm install crw-sdk</code> (TypeScript). Both wrap every endpoint and return plain objects; see the <a href="/sdk-reference">SDK reference</a>. Plain HTTP works too: the <a href="#basic-usage">Basic usage</a> tabs below show the SDK, <code>requests</code>, <code>fetch</code>, and cURL.</p>
 <h3 id="basic-usage">Basic usage</h3>
 <p>Start with this request:</p>
 <pre data-lang="json"><code class="language-json">{
@@ -323,8 +350,15 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
   &quot;renderJs&quot;: null
 }</code></pre>
 <div class="code-tabs">
-      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python</button><button class="code-tab" data-tab="1">Node.js</button><button class="code-tab" data-tab="2">cURL</button></div>
-      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">import requests
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python SDK</button><button class="code-tab" data-tab="1">Python</button><button class="code-tab" data-tab="2">Node.js</button><button class="code-tab" data-tab="3">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY
+page = client.scrape(&quot;https://example.com&quot;, formats=[&quot;markdown&quot;, &quot;links&quot;])
+
+print(page[&quot;markdown&quot;])  # str
+print(page[&quot;links&quot;])     # list[str] of absolute URLs</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="python"><code class="language-python">import requests
 
 resp = requests.post(
     &quot;https://api.fastcrw.com/v1/scrape&quot;,
@@ -339,7 +373,7 @@ resp = requests.post(
     },
 )
 
-print(resp.json()[&quot;data&quot;][&quot;markdown&quot;])</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="javascript"><code class="language-javascript">const resp = await fetch(&quot;https://api.fastcrw.com/v1/scrape&quot;, {
+print(resp.json()[&quot;data&quot;][&quot;markdown&quot;])</code></pre></div><div class="code-tab-panel" data-panel="2"><pre data-lang="javascript"><code class="language-javascript">const resp = await fetch(&quot;https://api.fastcrw.com/v1/scrape&quot;, {
   method: &quot;POST&quot;,
   headers: {
     &quot;Authorization&quot;: &quot;Bearer YOUR_API_KEY&quot;,
@@ -353,7 +387,7 @@ print(resp.json()[&quot;data&quot;][&quot;markdown&quot;])</code></pre></div><di
 });
 
 const body = await resp.json();
-console.log(body.data.markdown);</code></pre></div><div class="code-tab-panel" data-panel="2"><pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/scrape \
+console.log(body.data.markdown);</code></pre></div><div class="code-tab-panel" data-panel="3"><pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/scrape \
   -H &quot;Authorization: Bearer YOUR_API_KEY&quot; \
   -H &quot;Content-Type: application/json&quot; \
   -d '{
@@ -631,9 +665,9 @@ a discount.</p>
 <ul>
 <li><code>markdown</code> is the default and best first request for most pipelines.</li>
 <li><code>html</code> or <code>rawHtml</code> is useful when downstream systems need original structure.</li>
-<li><code>links</code> is useful when you want lightweight discovery without page bodies.</li>
+<li><code>links</code> is useful when you want lightweight discovery without page bodies. It returns <code>data.links</code> as a flat <code>string[]</code> of absolute URLs (no anchor text); when you need each link&#39;s text, read it from <code>markdown</code>, where links stay inline as <code>[text](url)</code>.</li>
 <li><code>summary</code> is the LLM-prose path — needs <code>llmApiKey</code> or a server <code>[extraction.llm]</code> config. Optional <code>summaryPrompt</code> lets the caller pick language/tone without weakening the safety wrapper.</li>
-<li><code>json</code> is the extraction path and should be paired with <code>jsonSchema</code>.</li>
+<li><code>json</code> is the extraction path and should be paired with <code>jsonSchema</code>. On the hosted API, <code>json</code> and <code>summary</code> run a managed LLM and need a paid plan (Hobby or above); the FREE plan returns an error for them, so parse <code>markdown</code> or <code>links</code> there.</li>
 </ul>
 <p>If you ask for multiple formats, only those formats are populated in the response.</p>
 <h2 id="structured-extraction">Structured extraction</h2>

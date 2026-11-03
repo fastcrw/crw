@@ -1,12 +1,798 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/recipe-pdf">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parse PDF Reports — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/recipe-pdf">
-  <script>location.replace("https://docs.fastcrw.com/recipe-pdf");</script>
+  <meta name="description" content="add a `jsonSchema` to extract structured fields (title, date, totals, parties)">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/recipe-pdf">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/recipe-pdf">
+  <meta property="og:title" content="Parse PDF Reports — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="add a `jsonSchema` to extract structured fields (title, date, totals, parties)">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Parse PDF Reports — CRW Docs">
+  <meta name="twitter:description" content="add a `jsonSchema` to extract structured fields (title, date, totals, parties)">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/recipe-pdf">https://docs.fastcrw.com/recipe-pdf</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-recipe-pdf-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/recipe-pdf">https://docs.fastcrw.com/recipe-pdf</a>.</p><h1 id="recipe-parse-pdf-reports-to-markdown-extract-fields">Recipe: Parse PDF Reports to Markdown + Extract Fields</h1>
+<p><strong>Goal:</strong> Upload a PDF file to fastCRW and get clean markdown back. Optionally
+add a <code>jsonSchema</code> to extract structured fields (title, date, totals, parties)
+from the same PDF in one request — no extra OCR pipeline, no intermediate files.</p>
+<p><strong>Target file used in this recipe:</strong> A public SEC 10-K filing —
+<code>https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm</code>
+— but any PDF on disk works. The examples use a local file
+<code>annual_report.pdf</code> (replace with your own path).</p>
+<p><strong>What you will build:</strong></p>
+<pre><code>annual_report.pdf  →  POST /firecrawl/v2/parse  →  { markdown, json, metadata }</code></pre>
+<p><strong>Prerequisites:</strong></p>
+<pre data-lang="bash"><code class="language-bash">pip install crw
+export CRW_API_KEY=&quot;crw-...&quot;</code></pre>
+<hr>
+<h2 id="part-1-pdf-to-markdown">Part 1 — PDF to Markdown</h2>
+<p>The simplest call: upload a PDF, get markdown back. Default when no <code>formats</code>
+option is set is <code>[&quot;markdown&quot;]</code>.</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python (SDK)</button><button class="code-tab" data-tab="1">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">import os
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY from env
+
+# From a file path — SDK reads the bytes and POSTs multipart for you.
+result = client.parse_file(path=&quot;annual_report.pdf&quot;)
+
+md = result[&quot;markdown&quot;]
+meta = result[&quot;metadata&quot;]
+
+print(f&quot;Pages : {meta['numPages']}&quot;)
+print(f&quot;Source: {meta['sourceFilename']}&quot;)
+print()
+print(md[:600])</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/firecrawl/v2/parse \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -F &quot;file=@annual_report.pdf;type=application/pdf&quot; \
+  | jq '{ pages: .data.metadata.numPages, preview: .data.markdown[:300] }'</code></pre></div>
+    </div><p><strong>Expected response:</strong></p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: {
+    &quot;markdown&quot;: &quot;# Annual Report 2025\n\nRevenue grew 18% year-over-year...&quot;,
+    &quot;metadata&quot;: {
+      &quot;sourceURL&quot;: &quot;upload://annual_report.pdf&quot;,
+      &quot;sourceFilename&quot;: &quot;annual_report.pdf&quot;,
+      &quot;numPages&quot;: 42,
+      &quot;statusCode&quot;: 200,
+      &quot;proxyUsed&quot;: &quot;basic&quot;,
+      &quot;scrapeId&quot;: &quot;a1b2c3d4-...&quot;
+    }
+  }
+}</code></pre>
+<p>Key metadata fields for parse responses:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>numPages</code></td>
+<td>Total pages in the document</td>
+</tr>
+<tr>
+<td><code>sourceFilename</code></td>
+<td>Filename you uploaded</td>
+</tr>
+<tr>
+<td><code>sourceURL</code></td>
+<td>Always <code>upload://&lt;filename&gt;</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="part-2-extract-structured-fields-with-jsonschema">Part 2 — Extract structured fields with <code>jsonSchema</code></h2>
+<p>Add <code>formats: [&quot;json&quot;]</code> and a <code>jsonSchema</code> to pull typed fields out of the
+document in one shot. The engine parses the PDF to text first, then runs LLM
+extraction over that text using your schema. Requires an LLM configured on the
+engine (or your cloud account has one).</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python (SDK)</button><button class="code-tab" data-tab="1">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">import os
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY from env
+
+SCHEMA = {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+        &quot;companyName&quot;:    {&quot;type&quot;: &quot;string&quot;},
+        &quot;fiscalYear&quot;:     {&quot;type&quot;: &quot;string&quot;},
+        &quot;totalRevenue&quot;:   {&quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Total revenue with currency symbol&quot;},
+        &quot;netIncome&quot;:      {&quot;type&quot;: &quot;string&quot;},
+        &quot;reportingPeriod&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;auditor&quot;:        {&quot;type&quot;: &quot;string&quot;},
+    },
+    &quot;required&quot;: [&quot;companyName&quot;, &quot;fiscalYear&quot;, &quot;totalRevenue&quot;],
+}
+
+result = client.parse_file(
+    path=&quot;annual_report.pdf&quot;,
+    formats=[&quot;markdown&quot;, &quot;json&quot;],  # both: prose + structured fields
+    json_schema=SCHEMA,
+)
+
+# markdown is available too
+print(&quot;Pages:&quot;, result[&quot;metadata&quot;][&quot;numPages&quot;])
+print()
+# Extracted structured fields
+fields = result.get(&quot;json&quot;, {})
+print(f&quot;Company : {fields.get('companyName')}&quot;)
+print(f&quot;FY      : {fields.get('fiscalYear')}&quot;)
+print(f&quot;Revenue : {fields.get('totalRevenue')}&quot;)
+print(f&quot;Net Inc : {fields.get('netIncome')}&quot;)
+print(f&quot;Auditor : {fields.get('auditor')}&quot;)</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash">curl -s -X POST https://api.fastcrw.com/firecrawl/v2/parse \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -F &quot;file=@annual_report.pdf;type=application/pdf&quot; \
+  -F 'options={
+    &quot;formats&quot;: [&quot;markdown&quot;, &quot;json&quot;],
+    &quot;jsonSchema&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;properties&quot;: {
+        &quot;companyName&quot;:    { &quot;type&quot;: &quot;string&quot; },
+        &quot;fiscalYear&quot;:     { &quot;type&quot;: &quot;string&quot; },
+        &quot;totalRevenue&quot;:   { &quot;type&quot;: &quot;string&quot; },
+        &quot;netIncome&quot;:      { &quot;type&quot;: &quot;string&quot; },
+        &quot;auditor&quot;:        { &quot;type&quot;: &quot;string&quot; }
+      },
+      &quot;required&quot;: [&quot;companyName&quot;, &quot;fiscalYear&quot;, &quot;totalRevenue&quot;]
+    }
+  }' \
+  | jq '.data.json'</code></pre></div>
+    </div><p><strong>Expected response (<code>.data</code> excerpt):</strong></p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;markdown&quot;: &quot;# Apple Inc. Form 10-K\n\nFor the fiscal year ended...&quot;,
+  &quot;json&quot;: {
+    &quot;companyName&quot;: &quot;Apple Inc.&quot;,
+    &quot;fiscalYear&quot;: &quot;2024&quot;,
+    &quot;totalRevenue&quot;: &quot;$391.0 billion&quot;,
+    &quot;netIncome&quot;: &quot;$93.7 billion&quot;,
+    &quot;reportingPeriod&quot;: &quot;October 2023 – September 2024&quot;,
+    &quot;auditor&quot;: &quot;Ernst &amp; Young LLP&quot;
+  },
+  &quot;metadata&quot;: {
+    &quot;numPages&quot;: 88,
+    &quot;sourceFilename&quot;: &quot;annual_report.pdf&quot;
+  }
+}</code></pre>
+<hr>
+<h2 id="part-3-limit-pages-strip-markdown-client-side">Part 3 — Limit pages + strip Markdown client-side</h2>
+<p>For large documents where you only need the executive summary (first N pages),
+pass a <code>parsers</code> directive with <code>maxPages</code>. To get whitespace-stripped prose
+(e.g. as token-efficient LLM context), request <code>markdown</code> and strip the
+Markdown syntax client-side — <code>/firecrawl/v2/parse</code> does not return a <code>plainText</code> field
+(that field exists in the internal engine type but is not included in the
+<code>V2Document</code> response shape).</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"><button class="code-tab active" data-tab="0">Python (SDK)</button><button class="code-tab" data-tab="1">cURL</button></div>
+      <div class="code-tab-panel active" data-panel="0"><pre data-lang="python"><code class="language-python">import os
+import re
+from crw import CrwClient
+
+client = CrwClient()
+
+result = client.parse_file(
+    path=&quot;annual_report.pdf&quot;,
+    formats=[&quot;markdown&quot;],
+    parsers=[{&quot;type&quot;: &quot;pdf&quot;, &quot;maxPages&quot;: 10}],  # first 10 pages only
+)
+
+print(f&quot;Pages parsed: {result['metadata']['numPages']}&quot;)
+print()
+
+md = result[&quot;markdown&quot;] or &quot;&quot;
+
+# Strip Markdown syntax to get clean plain text for LLM context.
+plain = re.sub(r&quot;#{1,6}\s*&quot;, &quot;&quot;, md)          # headings
+plain = re.sub(r&quot;\*{1,2}(.+?)\*{1,2}&quot;, r&quot;\1&quot;, plain)  # bold / italic
+plain = re.sub(r&quot;`{1,3}[^`]*`{1,3}&quot;, &quot;&quot;, plain)        # inline / fenced code
+plain = re.sub(r&quot;\[([^\]]+)\]\([^)]+\)&quot;, r&quot;\1&quot;, plain) # links
+plain = re.sub(r&quot;\n{3,}&quot;, &quot;\n\n&quot;, plain).strip()        # excess blank lines
+
+print(plain[:400])</code></pre></div><div class="code-tab-panel" data-panel="1"><pre data-lang="bash"><code class="language-bash"># /firecrawl/v2/parse does not return a plainText field — request markdown and
+# post-process with jq or sed to remove Markdown syntax.
+curl -s -X POST https://api.fastcrw.com/firecrawl/v2/parse \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -F &quot;file=@annual_report.pdf;type=application/pdf&quot; \
+  -F 'options={&quot;formats&quot;:[&quot;markdown&quot;],&quot;parsers&quot;:[{&quot;type&quot;:&quot;pdf&quot;,&quot;maxPages&quot;:10}]}' \
+  | jq '{ pages: .data.metadata.numPages, markdown_preview: .data.markdown[:300] }'</code></pre></div>
+    </div><blockquote>
+<p><strong>Note — <code>parsers=</code> accepts strings or objects.</strong> The SDK type annotation is
+<code>parsers: list[str | dict] | None</code>, matching the server&#39;s <code>ParserSpec</code>
+deserializer.  Pass a bare string (<code>[&quot;pdf&quot;]</code>) when no extra options are needed,
+or a parser-spec dict (<code>[{&quot;type&quot;: &quot;pdf&quot;, &quot;maxPages&quot;: 10}]</code>) to set options such
+as <code>maxPages</code>.</p>
+</blockquote>
+<hr>
+<h2 id="part-4-parse-from-bytes-in-memory">Part 4 — Parse from bytes in memory</h2>
+<p>When you download the PDF over HTTP rather than reading from disk, pass raw bytes
+directly so you avoid writing a temp file.</p>
+<pre data-lang="python"><code class="language-python">import os
+import urllib.request
+from crw import CrwClient
+
+client = CrwClient()
+
+# Download any publicly accessible PDF
+PDF_URL = &quot;https://www.w3.org/WAI/WCAG21/wcag21.pdf&quot;
+with urllib.request.urlopen(PDF_URL) as resp:
+    pdf_bytes = resp.read()
+
+result = client.parse_file(
+    content=pdf_bytes,
+    filename=&quot;wcag21.pdf&quot;,         # shown in metadata.sourceFilename
+    formats=[&quot;markdown&quot;],
+)
+
+print(f&quot;Downloaded {len(pdf_bytes):,} bytes&quot;)
+print(f&quot;Pages: {result['metadata']['numPages']}&quot;)
+print(result[&quot;markdown&quot;][:400])</code></pre>
+<hr>
+<h2 id="complete-script">Complete script</h2>
+<pre data-lang="python"><code class="language-python">&quot;&quot;&quot;
+recipe_pdf.py — parse a PDF report and extract structured fields with fastCRW.
+Run:     python recipe_pdf.py annual_report.pdf
+Requires: pip install crw
+Env:      CRW_API_KEY
+&quot;&quot;&quot;
+import os
+import sys
+from crw import CrwClient
+
+PDF_PATH = sys.argv[1] if len(sys.argv) &gt; 1 else &quot;annual_report.pdf&quot;
+
+SCHEMA = {
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;properties&quot;: {
+        &quot;companyName&quot;:  {&quot;type&quot;: &quot;string&quot;},
+        &quot;fiscalYear&quot;:   {&quot;type&quot;: &quot;string&quot;},
+        &quot;totalRevenue&quot;: {&quot;type&quot;: &quot;string&quot;},
+        &quot;netIncome&quot;:    {&quot;type&quot;: &quot;string&quot;},
+        &quot;auditor&quot;:      {&quot;type&quot;: &quot;string&quot;},
+    },
+    &quot;required&quot;: [&quot;companyName&quot;, &quot;fiscalYear&quot;, &quot;totalRevenue&quot;],
+}
+
+client = CrwClient()  # CRW_API_KEY from env
+
+result = client.parse_file(
+    path=PDF_PATH,
+    formats=[&quot;markdown&quot;, &quot;json&quot;],
+    json_schema=SCHEMA,
+)
+
+meta   = result[&quot;metadata&quot;]
+fields = result.get(&quot;json&quot;, {})
+
+print(f&quot;File   : {meta['sourceFilename']}&quot;)
+print(f&quot;Pages  : {meta['numPages']}&quot;)
+print()
+print(&quot;--- Extracted fields ---&quot;)
+for key, val in fields.items():
+    print(f&quot;  {key:&lt;20} {val}&quot;)
+print()
+print(&quot;--- Markdown preview (first 500 chars) ---&quot;)
+print(result[&quot;markdown&quot;][:500])</code></pre>
+<hr>
+<h2 id="options-reference">Options reference</h2>
+<p>The <code>options</code> multipart field accepts a JSON string with these keys:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>formats</code></td>
+<td><code>string[]</code></td>
+<td><code>[&quot;markdown&quot;]</code></td>
+<td>Output formats. See below.</td>
+</tr>
+<tr>
+<td><code>jsonSchema</code></td>
+<td><code>object</code></td>
+<td>—</td>
+<td>JSON Schema for LLM extraction. Requires <code>&quot;json&quot;</code> in <code>formats</code>.</td>
+</tr>
+<tr>
+<td><code>parsers</code></td>
+<td><code>array</code></td>
+<td>auto</td>
+<td>Parser directives (see <a href="pdf-parsing.md#parsers">PDF Parsing — parsers[]</a>).</td>
+</tr>
+<tr>
+<td><code>summaryPrompt</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>Custom prompt for <code>&quot;summary&quot;</code> format.</td>
+</tr>
+<tr>
+<td><code>maxContentChars</code></td>
+<td><code>number</code></td>
+<td>—</td>
+<td>Truncate each content field to this many characters.</td>
+</tr>
+</tbody></table>
+<p><strong>Supported formats for <code>/firecrawl/v2/parse</code>:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>markdown</code></td>
+<td>Extracted text as Markdown (default)</td>
+</tr>
+<tr>
+<td><code>links</code></td>
+<td>Array of URLs found in the PDF</td>
+</tr>
+<tr>
+<td><code>json</code></td>
+<td>Structured fields via LLM + <code>jsonSchema</code></td>
+</tr>
+<tr>
+<td><code>summary</code></td>
+<td>LLM-generated prose summary</td>
+</tr>
+</tbody></table>
+<p><code>plainText</code> is not returned by <code>/firecrawl/v2/parse</code> — the <code>V2Document</code> response shape
+does not include that field. Strip Markdown syntax client-side if you need
+plain text (see Part 3 above).</p>
+<p>Renderer-dependent formats (<code>html</code>, <code>rawHtml</code>, <code>changeTracking</code>) are not
+applicable to uploaded documents and return a warning if requested.</p>
+<hr>
+<h2 id="error-reference">Error reference</h2>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>400</code></td>
+<td>Missing <code>file</code> part</td>
+<td>Include <code>file</code> in the multipart form</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>File does not start with <code>%PDF-</code></td>
+<td>Confirm the file is a real PDF, not renamed HTML/text</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td><code>formats: [&quot;json&quot;]</code> without an LLM configured</td>
+<td>Set <code>[extraction.llm]</code> in <code>config.toml</code> or use the cloud</td>
+</tr>
+<tr>
+<td><code>413</code></td>
+<td>Body exceeds 50 MiB</td>
+<td>Split the PDF or trim pages with <code>parsers.maxPages</code> before uploading</td>
+</tr>
+<tr>
+<td><code>422</code></td>
+<td>Corrupt, encrypted, or password-protected PDF</td>
+<td>Verify the PDF opens locally and is not locked</td>
+</tr>
+<tr>
+<td><code>503</code></td>
+<td>Document parsing disabled on this server</td>
+<td>Set <code>[document] enabled = true</code> in <code>config.toml</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="notes">Notes</h2>
+<p><strong>Text-layer only.</strong> fastCRW performs text extraction from the PDF&#39;s embedded
+text layer. Scanned (image-only) PDFs with no text layer return empty or
+near-empty markdown. Check <code>numPages</code> vs the length of <code>markdown</code> to detect
+this — if <code>numPages</code> is large but <code>markdown</code> is short, the PDF is likely scanned.</p>
+<p><strong>50 MiB limit.</strong> The route enforces a hard 50 MiB body cap server-side.
+Requests above this size receive <code>413 Content Too Large</code> before the body
+is fully read.</p>
+<p><strong>Both modes.</strong> <code>client.parse_file()</code> works in HTTP mode (cloud or self-hosted
+server) and in local subprocess mode (<code>CRW_LOCAL=1</code>). In subprocess mode the
+SDK base64-encodes the bytes and calls the <code>crw_parse_file</code> MCP tool
+automatically — you do not change your call.</p>
+<hr>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="pdf-parsing.md">PDF Parsing reference</a> — full options, <code>parsers[]</code> config, self-hosted tuning</li>
+<li><a href="scraping.md">Scraping</a> — when the document is a web page, not a binary file</li>
+<li><a href="extract.md">Extract</a> — structured LLM extraction from URLs (no file upload)</li>
+<li><a href="recipe-rag.md">Recipe: RAG Knowledge Base</a> — scrape a docs site, chunk, embed, and query</li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-recipe-pdf-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "recipe-pdf";</script>
+</body>
 </html>

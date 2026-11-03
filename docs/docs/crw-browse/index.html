@@ -1,12 +1,762 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/crw-browse">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser Automation (crw-browse) — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/crw-browse">
-  <script>location.replace("https://docs.fastcrw.com/crw-browse");</script>
+  <meta name="description" content="`crw-browse` is a **separate MCP server** (since v0.4.0) that drives a real Chrome-family browser over the Chrome DevTools Protocol (CDP) for stateful, multi-step interaction. It complements `crw-mcp`">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/crw-browse">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/crw-browse">
+  <meta property="og:title" content="Browser Automation (crw-browse) — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="`crw-browse` is a **separate MCP server** (since v0.4.0) that drives a real Chrome-family browser over the Chrome DevTools Protocol (CDP) for stateful, multi-step interaction. It complements `crw-mcp`">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Browser Automation (crw-browse) — CRW Docs">
+  <meta name="twitter:description" content="`crw-browse` is a **separate MCP server** (since v0.4.0) that drives a real Chrome-family browser over the Chrome DevTools Protocol (CDP) for stateful, multi-step interaction. It complements `crw-mcp`">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/crw-browse">https://docs.fastcrw.com/crw-browse</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-crw-browse-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/crw-browse">https://docs.fastcrw.com/crw-browse</a>.</p><h1 id="crw-browse-browser-automation-mcp-server">crw-browse: Browser Automation MCP Server</h1>
+<p><code>crw-browse</code> is a <strong>separate MCP server</strong> (since v0.4.0) that drives a real Chrome-family browser over the Chrome DevTools Protocol (CDP) for stateful, multi-step interaction. It complements <code>crw-mcp</code>&#39;s one-shot scraping tools with an interactive session that persists state across tool calls.</p>
+<h2 id="when-to-use-crw-browse">When to use crw-browse</h2>
+<p><code>crw_scrape</code> (from <code>crw-mcp</code>) is a one-shot tool: navigate, render, return content, done. That covers the vast majority of agent web tasks. Use <code>crw-browse</code> when you need something <code>crw_scrape</code> cannot do:</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>crw_scrape</th>
+<th>crw-browse</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Read article / extract text</td>
+<td>Yes</td>
+<td>Unnecessary</td>
+</tr>
+<tr>
+<td>JS-gated SPA that returns empty on HTTP request</td>
+<td><code>renderJs: true</code> usually works</td>
+<td>Use when <code>renderJs</code> still returns empty</td>
+</tr>
+<tr>
+<td>Multi-step flow (login → fill form → submit)</td>
+<td>No — one-shot only</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td>Click a button and observe the result</td>
+<td>No</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td>Read the DOM or accessibility tree after interaction</td>
+<td>No</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td>Maintain session state (cookies, auth) across requests</td>
+<td>No</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr>
+<td>Take a screenshot of the current state</td>
+<td>No</td>
+<td><strong>Yes</strong> (requires Chrome; see below)</td>
+</tr>
+</tbody></table>
+<p>The short rule: if your agent needs to <em>interact</em> (click, type, fill) or read the DOM <em>after</em> interaction, use <code>crw-browse</code>. If it only needs to <em>read</em> a URL — even a JS-heavy one — try <code>crw_scrape</code> with <code>renderJs: true</code> first.</p>
+<h2 id="how-it-differs-from-crw-mcp">How it differs from crw-mcp</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>crw-mcp</th>
+<th>crw-browse</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Purpose</strong></td>
+<td>Bulk scrape / crawl / search</td>
+<td>Stateful browser interaction</td>
+</tr>
+<tr>
+<td><strong>Session</strong></td>
+<td>Stateless (each call independent)</td>
+<td>Persistent session across calls</td>
+</tr>
+<tr>
+<td><strong>State</strong></td>
+<td>None carried between calls</td>
+<td>Cookies, auth, DOM state, scroll position all persist</td>
+</tr>
+<tr>
+<td><strong>Tools</strong></td>
+<td><code>crw_scrape</code>, <code>crw_crawl</code>, <code>crw_map</code>, <code>crw_extract</code>, <code>crw_check_extract_status</code>, <code>crw_cancel_extract</code>, <code>crw_search</code>, <code>crw_parse_file</code>, <code>crw_check_crawl_status</code></td>
+<td><code>goto</code>, <code>tree</code>, <code>click</code>, <code>fill</code>, <code>type_text</code>, <code>evaluate</code>, <code>text</code>, <code>html</code>, <code>wait</code>, <code>console</code>, <code>network</code>, <code>storage</code>, <code>screenshot</code>, <code>script</code></td>
+</tr>
+<tr>
+<td><strong>Browser required?</strong></td>
+<td>Optional (HTTP-only mode works without CDP)</td>
+<td>Required (must have Chrome or Lightpanda running separately)</td>
+</tr>
+<tr>
+<td><strong>Cloud option</strong></td>
+<td>fastcrw.com</td>
+<td>Self-hosted only</td>
+</tr>
+<tr>
+<td><strong>Availability</strong></td>
+<td>All modes (embedded + proxy + HTTP)</td>
+<td>Self-hosted binary only</td>
+</tr>
+</tbody></table>
+<h2 id="architecture">Architecture</h2>
+<p><code>crw-browse</code> builds on <code>crw-renderer</code>&#39;s persistent <code>CdpConnection</code> primitive — the same CDP machinery the scrape pipeline uses — so it inherits tested session management, event routing, and browser-pool code.</p>
+<pre><code>Agent (MCP client)
+  → stdin JSON-RPC 2.0
+  → crw-browse process
+  → CDP WebSocket (ws://localhost:9222)
+  → Chrome / Lightpanda</code></pre>
+<p>A <code>SessionRegistry</code> holds named <code>BrowserSession</code> objects keyed by UUID, with 4-char base62 <code>short_id</code> tokens returned to the agent. Session state is automatically swept after an idle TTL.</p>
+<h2 id="prerequisites-start-a-cdp-browser-first">Prerequisites: start a CDP browser first</h2>
+<p><code>crw-browse</code> does <strong>not</strong> launch a browser. You must start one yourself and point <code>crw-browse</code> at its CDP endpoint.</p>
+<pre data-lang="bash"><code class="language-bash"># Chrome/Chromium — macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --headless=new \
+  --user-data-dir=/tmp/crw-chrome
+
+# Chrome/Chromium — Linux
+google-chrome \
+  --remote-debugging-port=9222 \
+  --headless=new \
+  --user-data-dir=/tmp/crw-chrome
+
+# Lightpanda (faster and lighter — no screenshots)
+lightpanda serve --host 127.0.0.1 --port 9222 --block-private-networks</code></pre>
+<h2 id="install">Install</h2>
+<pre data-lang="bash"><code class="language-bash"># From crates.io
+cargo install crw-browse
+
+# Or build from the workspace
+cargo build -p crw-browse --release
+# Binary: target/release/crw-browse</code></pre>
+<p>Prebuilt binaries are attached to the <a href="https://github.com/fastcrw/crw/releases/tag/v0.4.0">v0.4.0 GitHub release</a> and later.</p>
+<h2 id="start-crw-browse">Start crw-browse</h2>
+<pre data-lang="bash"><code class="language-bash"># Default: CDP at ws://localhost:9222
+crw-browse
+
+# Explicit endpoint
+crw-browse --ws-url ws://localhost:9222
+
+# Lightpanda as interactive browser + separate Chrome for screenshots
+crw-browse \
+  --ws-url ws://lightpanda:9222 \
+  --chrome-ws-url ws://chrome:9223</code></pre>
+<h3 id="environment-variables">Environment variables</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CRW_BROWSE_WS_URL</code></td>
+<td><code>ws://localhost:9222</code></td>
+<td>CDP WebSocket endpoint for interactive tools</td>
+</tr>
+<tr>
+<td><code>CRW_BROWSE_PAGE_TIMEOUT_MS</code></td>
+<td><code>30000</code></td>
+<td>Per-page load timeout (ms)</td>
+</tr>
+<tr>
+<td><code>CRW_BROWSE_CHROME_WS_URL</code></td>
+<td>unset</td>
+<td>Chrome-only fallback for <code>screenshot</code>; when unset <code>crw-browse</code> reuses <code>CRW_BROWSE_WS_URL</code></td>
+</tr>
+<tr>
+<td><code>CRW_BROWSE_SCREENSHOT_DIR</code></td>
+<td>unset</td>
+<td>Directory for screenshot disk output; inline base64 when unset</td>
+</tr>
+<tr>
+<td><code>RUST_LOG</code></td>
+<td>unset</td>
+<td>Tracing filter, e.g. <code>crw_browse=debug</code></td>
+</tr>
+</tbody></table>
+<h3 id="ws-url-vs-chrome-ws-url"><code>--ws-url</code> vs <code>--chrome-ws-url</code></h3>
+<ul>
+<li><strong><code>--ws-url</code></strong> backs every interactive tool (<code>goto</code>, <code>tree</code>, <code>click</code>, <code>type_text</code>, <code>fill</code>, <code>wait</code>, …). It accepts Chrome <strong>or</strong> Lightpanda. Lightpanda is faster and lighter — use it when you do not need screenshots.</li>
+<li><strong><code>--chrome-ws-url</code></strong> is a screenshot-only fallback that <strong>must</strong> point at real Chrome/Chromium. Lightpanda&#39;s <code>Page.captureScreenshot</code> returns a stub, so screenshot calls are routed to a separate Chrome connection when one is configured.</li>
+</ul>
+<p>Three common setups:</p>
+<table>
+<thead>
+<tr>
+<th>Setup</th>
+<th><code>--ws-url</code></th>
+<th><code>--chrome-ws-url</code></th>
+<th>Tradeoff</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Lightpanda + Chrome screenshots</td>
+<td><code>ws://lightpanda:9222</code></td>
+<td><code>ws://chrome:9223</code></td>
+<td>Fast interactive, working screenshots</td>
+</tr>
+<tr>
+<td>Chrome only (simplest)</td>
+<td><code>ws://chrome:9222</code></td>
+<td><code>ws://chrome:9222</code></td>
+<td>Single browser, screenshots work</td>
+</tr>
+<tr>
+<td>Lightpanda only (no screenshots)</td>
+<td><code>ws://lightpanda:9222</code></td>
+<td><em>(unset)</em></td>
+<td>Lightest; <code>screenshot</code> returns <code>NOT_IMPLEMENTED</code></td>
+</tr>
+</tbody></table>
+<p>Both flags may point at the <strong>same</strong> Chrome instance — there is no harm in doing so.</p>
+<h2 id="wire-into-your-mcp-client">Wire into your MCP client</h2>
+<p><code>crw-browse</code> uses stdio transport, same as <code>crw-mcp</code>. The JSON config is the same shape:</p>
+<h3 id="claude-code">Claude Code</h3>
+<pre data-lang="bash"><code class="language-bash">claude mcp add crw-browse -- crw-browse --ws-url ws://localhost:9222</code></pre>
+<p>Or via config file (<code>~/.claude/mcp.json</code> / <code>.mcp.json</code>):</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;crw-browse&quot;: {
+      &quot;command&quot;: &quot;crw-browse&quot;,
+      &quot;args&quot;: [&quot;--ws-url&quot;, &quot;ws://localhost:9222&quot;]
+    }
+  }
+}</code></pre>
+<h3 id="claude-desktop">Claude Desktop</h3>
+<p><code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS):</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;crw-browse&quot;: {
+      &quot;command&quot;: &quot;crw-browse&quot;,
+      &quot;args&quot;: [&quot;--ws-url&quot;, &quot;ws://localhost:9222&quot;]
+    }
+  }
+}</code></pre>
+<h2 id="available-tools">Available tools</h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>goto</code></td>
+<td>Navigate to an <code>http</code>/<code>https</code> URL and wait for <code>Page.loadEventFired</code>. Creates a default session on first call. Returns session token, URL, HTTP status, and <code>elapsed_ms</code>.</td>
+</tr>
+<tr>
+<td><code>tree</code></td>
+<td>Snapshot the current page as an indented accessibility tree. Each line is <code>@e&lt;N&gt; role: name</code>; <code>@e&lt;N&gt;</code> ref tokens are accepted by interaction tools until the next <code>tree</code> call.</td>
+</tr>
+<tr>
+<td><code>click</code></td>
+<td>Click an element by CSS <code>selector</code> or <code>@e&lt;N&gt;</code> ref from <code>tree</code>. Dispatches a synthetic <code>click</code> event so framework handlers (React, Vue) fire.</td>
+</tr>
+<tr>
+<td><code>fill</code></td>
+<td>Set an input&#39;s value and dispatch <code>input</code> + <code>change</code> events. Pass <code>selector</code> or <code>ref</code>.</td>
+</tr>
+<tr>
+<td><code>type_text</code></td>
+<td>Type characters into the focused element via <code>Input.dispatchKeyEvent</code>. Use <code>click</code> first to focus.</td>
+</tr>
+<tr>
+<td><code>wait</code></td>
+<td>Block until a CSS selector is visible/present, or until <code>load</code>/<code>networkidle</code>.</td>
+</tr>
+<tr>
+<td><code>evaluate</code></td>
+<td>Run a JavaScript expression on the current page (<code>Runtime.evaluate</code>, <code>awaitPromise: true</code>).</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>Read visible text: <code>document.body.innerText</code> or a specific <code>selector</code>. Capped at 50 KB.</td>
+</tr>
+<tr>
+<td><code>html</code></td>
+<td>Read raw HTML: full <code>outerHTML</code> or a specific <code>selector</code>. Capped at 200 KB.</td>
+</tr>
+<tr>
+<td><code>console</code></td>
+<td>Drain the session&#39;s console-message ring buffer (up to 200 entries). Filter by <code>level</code>; set <code>clear: true</code> to wipe.</td>
+</tr>
+<tr>
+<td><code>network</code></td>
+<td>Drain the session&#39;s network-event ring buffer (up to 500 entries). Filter by <code>all</code>/<code>failed</code>/<code>requests</code>/<code>responses</code>.</td>
+</tr>
+<tr>
+<td><code>storage</code></td>
+<td>Read or write browser storage: <code>action</code> ∈ {<code>get</code>, <code>set</code>, <code>clear</code>}, <code>kind</code> ∈ {<code>cookie</code>, <code>local</code>, <code>session</code>}.</td>
+</tr>
+<tr>
+<td><code>screenshot</code></td>
+<td>Capture the page as PNG/JPEG. Requires <code>--chrome-ws-url</code> (or Chrome at <code>--ws-url</code>). Pass <code>path</code> to write to disk or omit for inline base64.</td>
+</tr>
+<tr>
+<td><code>script</code></td>
+<td>Run up to 50 tool calls in one request; steps execute sequentially, first error aborts remaining.</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><code>goto</code> only accepts <code>http</code> and <code>https</code> schemes. Attempts to navigate to <code>file://</code>, <code>javascript:</code>, <code>data:</code>, or internal network addresses are rejected with <code>INVALID_ARGS</code>.</p>
+</blockquote>
+<h2 id="basic-example-login-flow">Basic example: login flow</h2>
+<p>A complete agent flow navigating a login page:</p>
+<pre data-lang="json"><code class="language-json">// 1. Navigate to login page
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;goto&quot;, &quot;arguments&quot;: {&quot;url&quot;: &quot;https://example.com/login&quot;}}}
+// → {&quot;ok&quot;: true, &quot;session&quot;: &quot;a3f1&quot;, &quot;url&quot;: &quot;https://example.com/login&quot;, &quot;data&quot;: {&quot;status&quot;: 200}}
+
+// 2. Snapshot accessibility tree to find input refs
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;tree&quot;, &quot;arguments&quot;: {&quot;max_nodes&quot;: 50}}}
+// → data.tree = &quot;[1] WebArea: Login\n  [2] textbox: Email\n  [3] textbox: Password\n  [4] button: Sign in\n...&quot;
+
+// 3. Fill the email field by CSS selector
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;fill&quot;, &quot;arguments&quot;: {&quot;selector&quot;: &quot;input[type=email]&quot;, &quot;value&quot;: &quot;user@example.com&quot;}}}
+
+// 4. Fill the password field
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;fill&quot;, &quot;arguments&quot;: {&quot;selector&quot;: &quot;input[type=password]&quot;, &quot;value&quot;: &quot;secret&quot;}}}
+
+// 5. Click Sign in
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;click&quot;, &quot;arguments&quot;: {&quot;selector&quot;: &quot;button[type=submit]&quot;}}}
+
+// 6. Wait for the dashboard to appear
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;wait&quot;, &quot;arguments&quot;: {&quot;selector&quot;: &quot;#dashboard&quot;, &quot;condition&quot;: &quot;visible&quot;}}}
+
+// 7. Read the authenticated content
+{&quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;text&quot;, &quot;arguments&quot;: {}}}</code></pre>
+<p>The same flow using <code>script</code> in a single round-trip:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;method&quot;: &quot;tools/call&quot;,
+  &quot;params&quot;: {
+    &quot;name&quot;: &quot;script&quot;,
+    &quot;arguments&quot;: {
+      &quot;actions&quot;: [
+        {&quot;act&quot;: &quot;goto&quot;, &quot;url&quot;: &quot;https://example.com/login&quot;},
+        {&quot;act&quot;: &quot;fill&quot;, &quot;selector&quot;: &quot;input[type=email]&quot;, &quot;value&quot;: &quot;user@example.com&quot;},
+        {&quot;act&quot;: &quot;fill&quot;, &quot;selector&quot;: &quot;input[type=password]&quot;, &quot;value&quot;: &quot;secret&quot;},
+        {&quot;act&quot;: &quot;click&quot;, &quot;selector&quot;: &quot;button[type=submit]&quot;},
+        {&quot;act&quot;: &quot;wait&quot;, &quot;selector&quot;: &quot;#dashboard&quot;, &quot;condition&quot;: &quot;visible&quot;},
+        {&quot;act&quot;: &quot;text&quot;}
+      ]
+    }
+  }
+}</code></pre>
+<h2 id="verify-installation">Verify installation</h2>
+<pre data-lang="bash"><code class="language-bash">echo '{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;initialize&quot;,&quot;params&quot;:{&quot;clientInfo&quot;:{&quot;name&quot;:&quot;test&quot;},&quot;protocolVersion&quot;:&quot;2024-11-05&quot;}}' \
+  | crw-browse 2&gt;/dev/null</code></pre>
+<p>Expected:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;jsonrpc&quot;: &quot;2.0&quot;,
+  &quot;id&quot;: 1,
+  &quot;result&quot;: {
+    &quot;protocolVersion&quot;: &quot;2024-11-05&quot;,
+    &quot;capabilities&quot;: {&quot;tools&quot;: {}},
+    &quot;serverInfo&quot;: {&quot;name&quot;: &quot;crw-browse&quot;, &quot;version&quot;: &quot;&lt;current&gt;&quot;},
+    &quot;instructions&quot;: &quot;Interactive browser automation over CDP. Call `goto` to navigate, then `tree` to inspect the rendered accessibility tree.&quot;
+  }
+}</code></pre>
+<h2 id="current-limitations">Current limitations</h2>
+<ul>
+<li><strong>Single default session per process.</strong> If two MCP clients connect to the same <code>crw-browse</code> process, they share browser state. Multi-session isolation (via <code>session.new</code> / <code>session.close</code>) is on the roadmap.</li>
+<li><strong>No cloud option.</strong> <code>crw-browse</code> is self-hosted only — you manage the browser process.</li>
+<li><strong>Screenshots require Chrome.</strong> Lightpanda returns a stub from <code>Page.captureScreenshot</code>; <code>crw-browse</code> routes screenshot calls to a separate Chrome connection (<code>--chrome-ws-url</code>) when configured.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="/docs/mcp">MCP Server</a> — <code>crw-mcp</code> and its 8 scraping tools</li>
+<li><a href="/docs/mcp-clients">MCP Client Setup</a> — host-by-host config for Claude Code, Cursor, Windsurf, Cline, Continue</li>
+<li><a href="/docs/js-rendering">JS Rendering</a> — when <code>crw_scrape</code> with <code>renderJs: true</code> is enough</li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-crw-browse-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "crw-browse";</script>
+</body>
 </html>

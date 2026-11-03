@@ -1,12 +1,1030 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/monitoring">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/monitoring">
-  <script>location.replace("https://docs.fastcrw.com/monitoring");</script>
+  <meta name="description" content="Schedule recurring scrapes or crawls, detect when a page actually changes, and notify your agent by signed webhook or email — with a structured diff and an optional LLM judge that filters out noise. A">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/monitoring">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/monitoring">
+  <meta property="og:title" content="Monitoring — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Schedule recurring scrapes or crawls, detect when a page actually changes, and notify your agent by signed webhook or email — with a structured diff and an optional LLM judge that filters out noise. A">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Monitoring — CRW Docs">
+  <meta name="twitter:description" content="Schedule recurring scrapes or crawls, detect when a page actually changes, and notify your agent by signed webhook or email — with a structured diff and an optional LLM judge that filters out noise. A">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/monitoring">https://docs.fastcrw.com/monitoring</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-monitoring-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/monitoring">https://docs.fastcrw.com/monitoring</a>.</p><div class="page-intro">
+  <div class="page-kicker">More APIs</div>
+  <h1 id="monitoring">Monitoring</h1>
+  <p class="page-subtitle">Schedule recurring scrapes or crawls, detect when a page actually changes, and notify your agent by signed webhook or email — with a structured diff and an optional LLM judge that filters out noise. A Firecrawl-compatible alternative to <code>/monitor</code>.</p>
+  <div class="page-capabilities">
+    <div class="page-capability"><strong>Best for:</strong> change detection on pages you rely on</div>
+    <div class="page-capability"><strong>Hosted:</strong> fastcrw.com (full scheduler + notifications)</div>
+    <div class="page-capability"><strong>Self-hosted:</strong> stateless changeTracking primitive + <code>/v1/change-tracking/diff</code></div>
+    <div class="page-capability"><strong>Start with:</strong> one scrape target, daily schedule</div>
+  </div>
+  <div class="page-actions">
+    <a class="page-btn primary" href="https://fastcrw.com/register?ref=docs-monitoring-inline" target="_blank" rel="noopener">Get API Key</a>
+    <a class="page-btn secondary" href="/crawling">View Crawl</a>
+  </div>
+</div><h2 id="what-this-is-for">What this is for</h2>
+<p>Use monitoring when you need to know the moment a page changes and only care about the changes that matter — competitor pricing, product catalogs, job listings, docs, changelogs, research papers, or government filings. A monitor runs scheduled scrapes or crawls, diffs each result against the last retained snapshot, classifies every page (<code>same</code>, <code>new</code>, <code>changed</code>, <code>removed</code>, or <code>error</code>), and delivers a structured diff. The output is just the change, so your agent ingests far fewer tokens than re-scraping everything.</p>
+<p>Reach for <code>monitoring</code> instead of polling <code>/v1/scrape</code> yourself when you want the schedule, snapshot storage, diffing, retries, and noise filtering handled for you.</p>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">**Self-hosted users**: the scheduler, durable state, notifications, and billing are part of the hosted product. The open-core engine ships the **stateless `changeTracking` primitive** (diff one scrape against a snapshot you supply) and `/v1/change-tracking/diff`, both default-on, to drive your own scheduling loop. See [self-hosting monitoring](#self-hosting-monitoring) below.</div></div><div class="callout callout-info"><div class="callout-icon"></div><div class="callout-content">**Two-namespace split**<p><strong>Monitor CRUD</strong> (<code>/v1/monitor</code> and all sub-resources) is a <strong>SaaS-only control-plane feature</strong> served at <code>https://fastcrw.com/api</code>. It is not present in the open-source engine — no <code>/v1/monitor</code> route ships in <code>crw-server</code>.</p>
+<p><strong>Engine endpoints</strong> (scrape, crawl, map, search, change-tracking) are served at <code>https://api.fastcrw.com</code> on the hosted product and at your own origin when self-hosting.</p>
+<p><strong>Self-hosted installs have no monitor management API.</strong> Use the stateless <code>changeTracking</code> primitive and <code>/v1/change-tracking/diff</code> with your own scheduler — see <a href="#self-hosting-monitoring">Self-hosting monitoring</a> below.</div></div></p>
+<h2 id="endpoints">Endpoints</h2>
+<p>All monitor endpoints require a Bearer API key on the hosted API.</p>
+<pre data-lang="http"><code class="language-http">POST   /v1/monitor                          # create
+GET    /v1/monitor                          # list
+GET    /v1/monitor/{id}                      # get
+PATCH  /v1/monitor/{id}                      # update
+DELETE /v1/monitor/{id}                      # delete
+POST   /v1/monitor/{id}/run                  # run now (409 if a check is in flight)
+GET    /v1/monitor/{id}/checks               # list checks
+GET    /v1/monitor/{id}/checks/{checkId}     # get one check + its pages</code></pre>
+<p>Base URL: <code>https://fastcrw.com/api</code> (hosted).</p>
+<h2 id="create-a-monitor">Create a monitor</h2>
+<p>Describe what to watch and how often. A <code>goal</code> enables the LLM judge so you are only alerted on meaningful changes.</p>
+<div class="code-tabs">
+      <div class="code-tabs-header"></div><pre><code>&lt;/div&gt;
+</code></pre>
+<p>The response returns the monitor with its normalized cron, computed <code>nextRunAt</code>, and <code>estimatedCreditsPerMonth</code> (an upper bound when judging is enabled). When the monitor has a webhook, the signing secret is returned <strong>once</strong> here as <code>webhookSecret</code>.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;data&quot;: {
+    &quot;id&quot;: &quot;019df960-06e7-7383-9d89-82c0113dc31a&quot;,
+    &quot;name&quot;: &quot;Pricing monitor&quot;,
+    &quot;status&quot;: &quot;active&quot;,
+    &quot;schedule&quot;: { &quot;cron&quot;: &quot;*/30 * * * *&quot;, &quot;timezone&quot;: &quot;UTC&quot;, &quot;text&quot;: &quot;every 30 minutes&quot; },
+    &quot;nextRunAt&quot;: &quot;2026-05-30T16:00:00.000Z&quot;,
+    &quot;lastRunAt&quot;: null,
+    &quot;currentCheckId&quot;: null,
+    &quot;goal&quot;: &quot;Alert when a pricing tier, price, or headline feature changes.&quot;,
+    &quot;judgeEnabled&quot;: true,
+    &quot;targets&quot;: [
+      { &quot;type&quot;: &quot;scrape&quot;, &quot;urls&quot;: [&quot;https://example.com/pricing&quot;], &quot;changeMode&quot;: &quot;markdown&quot; }
+    ],
+    &quot;webhook&quot;: null,
+    &quot;notification&quot;: { &quot;emails&quot;: [&quot;alerts@example.com&quot;], &quot;includeDiffs&quot;: true },
+    &quot;retentionDays&quot;: 30,
+    &quot;estimatedCreditsPerMonth&quot;: 2880,
+    &quot;lastCheckSummary&quot;: null,
+    &quot;createdAt&quot;: &quot;2026-05-30T15:30:00.000Z&quot;,
+    &quot;updatedAt&quot;: &quot;2026-05-30T15:30:00.000Z&quot;
+  }
+}</code></pre>
+<h2 id="schedules">Schedules</h2>
+<p>Provide a schedule as cron <strong>or</strong> as natural-language <code>text</code>. The minimum interval is 15 minutes; responses always return the normalized cron. <code>timezone</code> is an IANA zone (DST-correct — &quot;daily at 9am&quot; tracks 9:00 wall-clock across transitions). Text schedules are spread by monitor id so many monitors don&#39;t all fire at the same instant.</p>
+<p>Supported natural-language forms: <code>every 30 minutes</code>, <code>every 15 minutes starting at :07</code>, <code>hourly</code>, <code>every 2 hours</code>, <code>daily</code>, <code>daily at 9:00</code>, <code>daily at 9am</code>, <code>daily at 5:30 PM</code>, <code>weekly</code>.</p>
+<h2 id="targets">Targets</h2>
+<p>Each monitor takes 1–50 targets:</p>
+<ul>
+<li><strong><code>scrape</code></strong> — runs one scrape per URL in <code>urls</code> (≤50 distinct URLs across all targets).</li>
+<li><strong><code>crawl</code></strong> — runs a full crawl for <code>url</code> on each check, then diffs every discovered page. Use <code>maxPages</code> to bound cost.</li>
+</ul>
+<p><code>scrapeOptions</code> / <code>crawlOptions</code> pass through to the underlying jobs. Monitor scrapes always fetch fresh.</p>
+<h2 id="goals-and-judging">Goals and judging</h2>
+<p>Add a plain-language <code>goal</code> to be alerted only on meaningful changes. When <code>goal</code> is set and <code>judgeEnabled</code> is omitted, judging is enabled automatically. The judge runs only on <strong>changed</strong> pages and returns a judgment with <code>meaningful</code>, <code>confidence</code> (<code>low</code> / <code>medium</code> / <code>high</code>), <code>reason</code>, and <code>meaningfulChanges</code>. Set <code>judgeEnabled: false</code> to store a goal without judging.</p>
+<p>On the self-hosted engine the judge is <strong>opt-in</strong>: <code>/v1/scrape</code> runs it only when you pass both <code>goal</code> and <code>judgeEnabled: true</code> alongside the <code>changeTracking</code> format. Auto-on-when-<code>goal</code>-is-set is a managed-monitor convenience, not engine behaviour.</p>
+<h2 id="change-tracking-modes">Change tracking modes</h2>
+<p>By default each page&#39;s markdown is diffed and reported as <code>same</code> / <code>changed</code> / <code>new</code> / <code>removed</code> / <code>error</code>. To track specific structured fields, set a <code>changeMode</code> on the target:</p>
+<ul>
+<li><strong><code>markdown</code></strong> (default) — a unified text diff plus a parse-diff-style AST.</li>
+<li><strong><code>json</code></strong> — supply a <code>jsonSchema</code>; CRW extracts those fields each check and emits a per-field diff keyed by JSON path (<code>plans[0].price → {previous, current}</code>) plus a full <code>snapshot</code>.</li>
+<li><strong><code>mixed</code></strong> — both surfaces; a page is <code>changed</code> if <strong>either</strong> the markdown or a tracked field changed.</li>
+</ul>
+<h2 id="notifications">Notifications</h2>
+<h3 id="webhooks">Webhooks</h3>
+<p>Configure a <code>webhook</code> to receive two events:</p>
+<ul>
+<li><strong><code>monitor.page</code></strong> — sent as each monitored page finishes; includes <code>isMeaningful</code> + <code>judgment</code> when judging ran.</li>
+<li><strong><code>monitor.check.completed</code></strong> — sent after the full check reconciles, with summary counts.</li>
+</ul>
+<p>Deliveries are signed (<code>X-CRW-Signature: t=&lt;unix&gt;,v1=&lt;hmac-sha256&gt;</code> over <code>&lt;t&gt;.&lt;body&gt;</code>), support custom headers + metadata and per-event subscription, retry with backoff, and dead-letter after repeated failures (with a one-time failure email). Webhook URLs are SSRF-guarded (https-only, private/loopback/metadata ranges blocked).</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;webhook&quot;: {
+    &quot;url&quot;: &quot;https://example.com/webhooks/crw&quot;,
+    &quot;events&quot;: [&quot;monitor.page&quot;, &quot;monitor.check.completed&quot;],
+    &quot;headers&quot;: { &quot;Authorization&quot;: &quot;Bearer your-secret&quot; },
+    &quot;metadata&quot;: { &quot;environment&quot;: &quot;production&quot; }
+  }
+}</code></pre>
+<h3 id="email">Email</h3>
+<p>Email summaries are sent only when a check has <code>changed</code> / <code>new</code> / <code>removed</code> / <code>error</code> pages. With a goal + judging, noise-only checks are suppressed. New recipients receive a confirmation link (double opt-in) before any alert; up to 25 confirmed recipients per monitor. Set <code>includeDiffs: true</code> to embed the diff in the message.</p>
+<h2 id="check-results">Check results</h2>
+<p>List checks with <code>GET /v1/monitor/{id}/checks</code> (filter by <code>status</code>: <code>queued</code>, <code>running</code>, <code>completed</code>, <code>failed</code>, <code>partial</code>, <code>skipped_overlap</code>) and inspect one with <code>GET /v1/monitor/{id}/checks/{checkId}</code>. Both auto-paginate via an opaque <code>next</code> cursor. A check detail returns <code>estimatedCredits</code>, <code>actualCredits</code>, summary counts, and a paginated <code>pages[]</code> array; each changed page carries inline <code>diff</code> data and (json mode) a <code>snapshot</code>.</p>
+<pre data-lang="bash"><code class="language-bash">curl &quot;https://fastcrw.com/api/v1/monitor/$MONITOR_ID/checks/$CHECK_ID?status=changed&quot; \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot;</code></pre>
+<h2 id="parameters">Parameters</h2>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>name</code></td>
+<td>string</td>
+<td>required</td>
+<td>Human-readable monitor name</td>
+</tr>
+<tr>
+<td><code>schedule.cron</code></td>
+<td>string</td>
+<td>--</td>
+<td>Cron expression (provide this or <code>schedule.text</code>)</td>
+</tr>
+<tr>
+<td><code>schedule.text</code></td>
+<td>string</td>
+<td>--</td>
+<td>Natural-language schedule (e.g. <code>&quot;every 30 minutes&quot;</code>)</td>
+</tr>
+<tr>
+<td><code>schedule.timezone</code></td>
+<td>string</td>
+<td><code>&quot;UTC&quot;</code></td>
+<td>IANA timezone for text/cron evaluation</td>
+</tr>
+<tr>
+<td><code>goal</code></td>
+<td>string</td>
+<td>--</td>
+<td>Plain-language alert intent; enables the judge (≤2 KB)</td>
+</tr>
+<tr>
+<td><code>judgeEnabled</code></td>
+<td>boolean</td>
+<td>auto</td>
+<td>Force judging on/off; auto-on when <code>goal</code> is set</td>
+</tr>
+<tr>
+<td><code>targets</code></td>
+<td>object[]</td>
+<td>required</td>
+<td>1–50 targets (<code>scrape</code> or <code>crawl</code>)</td>
+</tr>
+<tr>
+<td><code>targets[].type</code></td>
+<td>string</td>
+<td>required</td>
+<td><code>&quot;scrape&quot;</code> or <code>&quot;crawl&quot;</code></td>
+</tr>
+<tr>
+<td><code>targets[].urls</code></td>
+<td>string[]</td>
+<td>--</td>
+<td>Scrape target URLs (≤50 distinct across targets)</td>
+</tr>
+<tr>
+<td><code>targets[].url</code></td>
+<td>string</td>
+<td>--</td>
+<td>Crawl target root URL</td>
+</tr>
+<tr>
+<td><code>targets[].changeMode</code></td>
+<td>string</td>
+<td><code>&quot;markdown&quot;</code></td>
+<td><code>markdown</code>, <code>json</code>, or <code>mixed</code></td>
+</tr>
+<tr>
+<td><code>targets[].jsonSchema</code></td>
+<td>object</td>
+<td>--</td>
+<td>Fields to track in <code>json</code> / <code>mixed</code> mode</td>
+</tr>
+<tr>
+<td><code>targets[].maxPages</code></td>
+<td>number</td>
+<td><code>1000</code></td>
+<td>Crawl page cap</td>
+</tr>
+<tr>
+<td><code>webhook</code></td>
+<td>object</td>
+<td>--</td>
+<td>Signed webhook config (see Notifications)</td>
+</tr>
+<tr>
+<td><code>notification.email</code></td>
+<td>object</td>
+<td>--</td>
+<td><code>{ enabled, recipients[], includeDiffs }</code></td>
+</tr>
+<tr>
+<td><code>retentionDays</code></td>
+<td>number</td>
+<td><code>30</code></td>
+<td>Snapshot/check retention (1–365)</td>
+</tr>
+</tbody></table>
+<h2 id="pricing">Pricing</h2>
+<p>Monitors have no per-monitor fee. Each check pays for the scrapes or crawl it performs, plus an optional judge credit per changed page.</p>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Credits</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Scrape monitor</td>
+<td>1 credit per URL per check</td>
+</tr>
+<tr>
+<td>Crawl monitor</td>
+<td>1 credit per discovered page per check</td>
+</tr>
+<tr>
+<td>Meaningful-change judging</td>
+<td>+1 credit per changed page the judge validates</td>
+</tr>
+</tbody></table>
+<p>Checks with no changed pages use no judge credits. When a monitor runs out of credits its checks pause (<code>paused_no_credits</code>) and resume automatically once the balance recovers.</p>
+<h2 id="self-hosting-monitoring">Self-hosting monitoring</h2>
+<p>The open-core engine gives self-hosters the building blocks:</p>
+<ul>
+<li><strong><code>changeTracking</code> scrape format</strong> — add it to <code>/v1/scrape</code> <code>formats</code> with the diff <code>modes</code> and a <code>previous</code> snapshot you persist between checks. opencore is stateless: it returns the diff + the new snapshot for you to store.</li>
+<li><strong><code>POST /v1/change-tracking/diff</code></strong> — diff a page (or a batch) against a supplied <code>previous</code> snapshot. The workhorse for crawl-based monitoring. Deterministic and diff-only: it never calls an LLM.</li>
+<li><strong>Optional LLM judge on scrape</strong> — pass <code>goal</code> + <code>judgeEnabled</code> alongside the <code>changeTracking</code> format on <code>/v1/scrape</code> to have a changed page judged for meaningfulness with your own LLM key.</li>
+</ul>
+<p>Persist the snapshot yourself and drive the loop from your own cron or scheduler. The engine stores nothing.</p>
+<pre data-lang="bash"><code class="language-bash"># diff the current scrape against your stored snapshot
+curl -s -X POST &quot;http://localhost:3000/v1/change-tracking/diff&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;modes&quot;: [&quot;gitDiff&quot;],
+    &quot;previous&quot;: { &quot;markdown&quot;: &quot;Starter $19&quot;, &quot;contentHash&quot;: &quot;abc&quot; },
+    &quot;current&quot;:  { &quot;markdown&quot;: &quot;Starter $24&quot; }
+  }'</code></pre>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">The engine keeps no monitor state, no scheduler, and no database — self-host monitoring is your scheduler plus these stateless primitives, with your own LLM key for judging.</div></div><h2 id="change-tracking">Change Tracking</h2>
+<p>Change tracking is a <strong>stateless</strong> primitive: you supply the current scraped content and the previous snapshot; the engine returns the diff and the new snapshot to persist as the next baseline. The engine stores nothing.</p>
+<p>Two entry points exist depending on whether you are running a single-page scrape or driving a custom orchestration loop:</p>
+<table>
+<thead>
+<tr>
+<th>Entry point</th>
+<th>When to use</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&quot;changeTracking&quot;</code> in <code>formats</code> on <code>/v1/scrape</code></td>
+<td>Single-URL scrape + diff in one call</td>
+</tr>
+<tr>
+<td><code>POST /v1/change-tracking/diff</code> (engine)</td>
+<td>Batch diffs, custom crawl loops, separate fetch and diff steps</td>
+</tr>
+</tbody></table>
+<h3 id="changetracking-format-on-v1scrape"><code>changeTracking</code> format on <code>/v1/scrape</code></h3>
+<p>Add <code>&quot;changeTracking&quot;</code> to <code>formats</code> and pass a sibling <code>changeTracking</code> object with the options. The alias <code>&quot;change-tracking&quot;</code> is also accepted on the wire.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;url&quot;: &quot;https://example.com/pricing&quot;,
+  &quot;formats&quot;: [&quot;markdown&quot;, &quot;changeTracking&quot;],
+  &quot;changeTracking&quot;: {
+    &quot;modes&quot;: [&quot;gitDiff&quot;],
+    &quot;previous&quot;: {
+      &quot;markdown&quot;: &quot;Starter $19\n\nPro $49&quot;,
+      &quot;contentHash&quot;: &quot;a3f8...&quot;
+    }
+  }
+}</code></pre>
+<p>The <code>changeTracking</code> field is <strong>not</strong> valid as an object inside the <code>formats</code> array — it must be the plain string <code>&quot;changeTracking&quot;</code> there; options ride on the top-level sibling field.</p>
+<h4 id="changetracking-options"><code>changeTracking</code> options</h4>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>modes</code></td>
+<td>string[]</td>
+<td><code>[&quot;gitDiff&quot;]</code></td>
+<td>Diff surfaces to compute. <code>&quot;gitDiff&quot;</code> = markdown unified diff + AST; <code>&quot;json&quot;</code> = per-field structured diff; <code>[&quot;gitDiff&quot;,&quot;json&quot;]</code> = mixed (both). Alias <code>&quot;git-diff&quot;</code> accepted on input; canonical serialization is <code>&quot;gitDiff&quot;</code>.</td>
+</tr>
+<tr>
+<td><code>previous</code></td>
+<td>object</td>
+<td>—</td>
+<td>Prior <code>ChangeTrackingSnapshot</code> to diff against. <code>null</code> or omitted = first observation.</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td>object</td>
+<td>—</td>
+<td>JSON Schema describing fields to track (<code>json</code> / <code>mixed</code> mode).</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td>string</td>
+<td>—</td>
+<td>Natural-language extraction prompt (alternative to <code>schema</code>; <code>json</code> / <code>mixed</code> mode).</td>
+</tr>
+<tr>
+<td><code>tag</code></td>
+<td>string</td>
+<td>—</td>
+<td>Opaque caller label echoed back on the result (e.g. a target or monitor ID).</td>
+</tr>
+<tr>
+<td><code>contentType</code></td>
+<td>string</td>
+<td>—</td>
+<td>MIME type of the fetched resource. Binary types (<code>application/pdf</code>, <code>image/*</code>, <code>application/octet-stream</code>) are hashed by extracted text only — no text diff is produced. Unset = treat as text.</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>Judge fields are top-level — not inside <code>changeTracking</code>.</strong>
+To use the meaningful-change judge from <code>/v1/scrape</code>, set <code>goal</code> and <code>judgeEnabled</code> as top-level fields of the scrape request body — siblings of <code>url</code>, <code>formats</code>, and <code>changeTracking</code> — not inside the <code>changeTracking</code> object:</p>
+</blockquote>
+<pre data-lang="json"><code class="language-json">&gt; {
+&gt;   &quot;url&quot;: &quot;https://example.com&quot;,
+&gt;   &quot;formats&quot;: [&quot;changeTracking&quot;],
+&gt;   &quot;changeTracking&quot;: { &quot;modes&quot;: [&quot;gitDiff&quot;], &quot;previous&quot;: { &quot;...&quot; : &quot;...&quot; } },
+&gt;   &quot;goal&quot;: &quot;Alert when pricing changes&quot;,
+&gt;   &quot;judgeEnabled&quot;: true
+&gt; }
+&gt;</code></pre>
+<h3 id="post-v1change-trackingdiff"><code>POST /v1/change-tracking/diff</code></h3>
+<p>A dedicated stateless endpoint served at the <strong>engine</strong> base URL: <code>https://api.fastcrw.com</code> (hosted) or your own origin when self-hosting.</p>
+<pre><code>POST https://api.fastcrw.com/v1/change-tracking/diff
+Content-Type: application/json
+Authorization: Bearer $CRW_API_KEY</code></pre>
+<p>The endpoint accepts two wire shapes on one route, discriminated by the presence of the <code>batch</code> key.</p>
+<h4 id="single-item">Single item</h4>
+<pre data-lang="json"><code class="language-json">{
+  &quot;modes&quot;: [&quot;gitDiff&quot;],
+  &quot;previous&quot;: { &quot;markdown&quot;: &quot;Starter $19&quot;, &quot;contentHash&quot;: &quot;a3f8...&quot; },
+  &quot;current&quot;:  { &quot;markdown&quot;: &quot;Starter $24&quot; }
+}</code></pre>
+<p>Response: <code>{ &quot;success&quot;: true, &quot;data&quot;: &lt;ChangeTrackingResult&gt; }</code></p>
+<h4 id="batch">Batch</h4>
+<p>Supply a <code>batch</code> array. Top-level <code>modes</code>, <code>schema</code>, <code>prompt</code>, and <code>contentType</code> act as shared defaults; individual items may override them.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;modes&quot;: [&quot;gitDiff&quot;],
+  &quot;batch&quot;: [
+    {
+      &quot;url&quot;: &quot;https://example.com/pricing&quot;,
+      &quot;previous&quot;: { &quot;markdown&quot;: &quot;Starter $19&quot;, &quot;contentHash&quot;: &quot;a3f8...&quot; },
+      &quot;current&quot;:  { &quot;markdown&quot;: &quot;Starter $24&quot; }
+    },
+    {
+      &quot;url&quot;: &quot;https://example.com/docs&quot;,
+      &quot;previous&quot;: { &quot;markdown&quot;: &quot;# Intro&quot;, &quot;contentHash&quot;: &quot;b9c1...&quot; },
+      &quot;current&quot;:  { &quot;markdown&quot;: &quot;# Intro&quot; }
+    }
+  ]
+}</code></pre>
+<p>Response: <code>{ &quot;success&quot;: true, &quot;data&quot;: [&lt;ChangeTrackingResult&gt;, ...] }</code> — an array in the same order as <code>batch</code>.</p>
+<p>The <code>batch</code> array must contain at least one item; an empty array returns <code>400 Bad Request</code>.</p>
+<h4 id="request-fields">Request fields</h4>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>current</code></td>
+<td>object</td>
+<td>required</td>
+<td>Current scrape content: <code>{ markdown?, json? }</code>. At least one sub-field is expected.</td>
+</tr>
+<tr>
+<td><code>current.markdown</code></td>
+<td>string</td>
+<td>—</td>
+<td>Current markdown text (used by <code>gitDiff</code> and <code>mixed</code> modes).</td>
+</tr>
+<tr>
+<td><code>current.json</code></td>
+<td>object</td>
+<td>—</td>
+<td>Current extracted JSON (used by <code>json</code> and <code>mixed</code> modes; caller pre-extracts it).</td>
+</tr>
+<tr>
+<td><code>previous</code></td>
+<td>object</td>
+<td>—</td>
+<td>Prior snapshot (see <code>ChangeTrackingSnapshot</code> shape below). Omit for first observation.</td>
+</tr>
+<tr>
+<td><code>modes</code></td>
+<td>string[]</td>
+<td><code>[&quot;gitDiff&quot;]</code></td>
+<td>Same as the <code>changeTracking.modes</code> option above.</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td>object</td>
+<td>—</td>
+<td>JSON Schema for <code>json</code> / <code>mixed</code> mode field tracking.</td>
+</tr>
+<tr>
+<td><code>prompt</code></td>
+<td>string</td>
+<td>—</td>
+<td>Natural-language extraction prompt for <code>json</code> / <code>mixed</code> mode.</td>
+</tr>
+<tr>
+<td><code>contentType</code></td>
+<td>string</td>
+<td>—</td>
+<td>MIME type; binary content is hashed only, no diff emitted.</td>
+</tr>
+<tr>
+<td><code>tag</code></td>
+<td>string</td>
+<td>—</td>
+<td>Opaque label echoed on the result.</td>
+</tr>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>—</td>
+<td>Informational URL label (batch items only; not used in diff computation).</td>
+</tr>
+<tr>
+<td><code>batch</code></td>
+<td>object[]</td>
+<td>—</td>
+<td>Array of items; presence selects batch mode.</td>
+</tr>
+<tr>
+<td><code>goal</code></td>
+<td>string</td>
+<td>—</td>
+<td>Accepted and ignored by this endpoint. <code>/v1/change-tracking/diff</code> is deterministic and never calls an LLM; the judge runs only on <code>/v1/scrape</code>.</td>
+</tr>
+<tr>
+<td><code>judgeEnabled</code></td>
+<td>boolean</td>
+<td>—</td>
+<td>Accepted and ignored by this endpoint. To judge a change, use the <code>changeTracking</code> format on <code>/v1/scrape</code> with <code>goal</code> + <code>judgeEnabled: true</code>.</td>
+</tr>
+</tbody></table>
+<h3 id="changetrackingsnapshot"><code>ChangeTrackingSnapshot</code></h3>
+<p>The snapshot is the baseline the engine diffs the current scrape against, and also the value you must persist between checks as the next baseline. The engine returns the current snapshot on every result.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;markdown&quot;: &quot;Starter $19\n\nPro $49&quot;,
+  &quot;json&quot;: { &quot;price&quot;: &quot;$19&quot; },
+  &quot;contentHash&quot;: &quot;a3f8c2d...&quot;,
+  &quot;capturedAt&quot;: &quot;2026-06-15T12:00:00Z&quot;
+}</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>markdown</code></td>
+<td>string</td>
+<td>Normalized markdown stored for <code>gitDiff</code> / <code>mixed</code> mode. Omitted in <code>json</code>-only snapshots.</td>
+</tr>
+<tr>
+<td><code>json</code></td>
+<td>object</td>
+<td>Extracted JSON stored for <code>json</code> / <code>mixed</code> mode. Omitted in <code>gitDiff</code>-only snapshots.</td>
+</tr>
+<tr>
+<td><code>contentHash</code></td>
+<td>string</td>
+<td>Hex SHA-256 of the content — normalized markdown in <code>gitDiff</code>/<code>mixed</code> mode; canonicalized JSON in <code>json</code>-only mode. The SaaS store-skip short-circuit keys off this hash. Always supply the hash returned from the previous result; the engine does not re-derive it from a string you provide.</td>
+</tr>
+<tr>
+<td><code>capturedAt</code></td>
+<td>string</td>
+<td>Optional ISO 8601 timestamp. Caller-stamped; echoed back untouched.</td>
+</tr>
+</tbody></table>
+<h3 id="changetrackingresult"><code>ChangeTrackingResult</code></h3>
+<p>Returned in <code>ScrapeData.changeTracking</code> (when <code>changeTracking</code> is in <code>formats</code>) and in <code>data</code> of <code>POST /v1/change-tracking/diff</code>.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;status&quot;: &quot;changed&quot;,
+  &quot;firstObservation&quot;: false,
+  &quot;contentHash&quot;: &quot;b7e2a1f...&quot;,
+  &quot;snapshot&quot;: { &quot;markdown&quot;: &quot;Starter $24&quot;, &quot;contentHash&quot;: &quot;b7e2a1f...&quot; },
+  &quot;diff&quot;: {
+    &quot;text&quot;: &quot;--- previous\n+++ current\n@@ -1 +1 @@\n-Starter $19\n+Starter $24\n&quot;,
+    &quot;json&quot;: {
+      &quot;files&quot;: [
+        {
+          &quot;from&quot;: &quot;previous&quot;,
+          &quot;to&quot;: &quot;current&quot;,
+          &quot;additions&quot;: 1,
+          &quot;deletions&quot;: 1,
+          &quot;chunks&quot;: [
+            {
+              &quot;content&quot;: &quot;@@ -1,1 +1,1 @@&quot;,
+              &quot;oldStart&quot;: 1, &quot;oldLines&quot;: 1, &quot;newStart&quot;: 1, &quot;newLines&quot;: 1,
+              &quot;changes&quot;: [
+                { &quot;type&quot;: &quot;del&quot;, &quot;content&quot;: &quot;Starter $19&quot;, &quot;ln&quot;: 1 },
+                { &quot;type&quot;: &quot;add&quot;, &quot;content&quot;: &quot;Starter $24&quot;, &quot;ln&quot;: 1 }
+              ]
+            }
+          ]
+        }
+      ],
+      &quot;additions&quot;: 1,
+      &quot;deletions&quot;: 1
+    }
+  }
+  // tag and truncated are omitted when absent/false
+}</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>status</code></td>
+<td>string</td>
+<td><code>&quot;same&quot;</code> or <code>&quot;changed&quot;</code>. First observations always return <code>&quot;changed&quot;</code>.</td>
+</tr>
+<tr>
+<td><code>firstObservation</code></td>
+<td>boolean</td>
+<td><code>true</code> when no <code>previous</code> was supplied. The caller maps this to <code>new</code> at the set level.</td>
+</tr>
+<tr>
+<td><code>contentHash</code></td>
+<td>string</td>
+<td>Mode-aware SHA-256 of the current content (see <code>ChangeTrackingSnapshot.contentHash</code>).</td>
+</tr>
+<tr>
+<td><code>snapshot</code></td>
+<td>object</td>
+<td>The current snapshot to persist as the next baseline. Always present.</td>
+</tr>
+<tr>
+<td><code>diff</code></td>
+<td>object</td>
+<td>The diff envelope; <code>null</code> when <code>status == &quot;same&quot;</code> or for binary content.</td>
+</tr>
+<tr>
+<td><code>diff.text</code></td>
+<td>string</td>
+<td>Unified text diff (present in <code>gitDiff</code> and <code>mixed</code> modes).</td>
+</tr>
+<tr>
+<td><code>diff.json</code></td>
+<td>object</td>
+<td>Mode-polymorphic: the parse-diff AST (<code>gitDiff</code>-only) or the per-field path map (<code>json</code> / <code>mixed</code>).</td>
+</tr>
+<tr>
+<td><code>judgment</code></td>
+<td>object</td>
+<td>LLM meaningful-change judgment; populated by the orchestration layer, not the engine directly. <code>null</code> when judging is not enabled or has not run.</td>
+</tr>
+<tr>
+<td><code>tag</code></td>
+<td>string</td>
+<td>Echoed caller label from the request.</td>
+</tr>
+<tr>
+<td><code>truncated</code></td>
+<td>boolean</td>
+<td><code>true</code> when the diff AST was capped at the <code>max_diff_changes</code> limit (5 000 change-lines). The full snapshot is retained; only the AST is trimmed.</td>
+</tr>
+</tbody></table>
+<h4 id="diffjson-gitdiff-only-mode-parse-diff-ast"><code>diff.json</code> — <code>gitDiff</code>-only mode (parse-diff AST)</h4>
+<p>When <code>modes</code> is <code>[&quot;gitDiff&quot;]</code> (or omitted), <code>diff.json</code> is a parse-diff-style AST:</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;files&quot;: [ { &quot;from&quot;: &quot;previous&quot;, &quot;to&quot;: &quot;current&quot;, &quot;additions&quot;: 1, &quot;deletions&quot;: 1, &quot;chunks&quot;: [...] } ],
+  &quot;additions&quot;: 1,
+  &quot;deletions&quot;: 1
+  // truncated only appears when true (AST was capped at max_diff_changes)
+}</code></pre>
+<p>Each chunk entry in <code>changes[]</code> carries <code>type</code> (<code>&quot;add&quot;</code> / <code>&quot;del&quot;</code> / <code>&quot;normal&quot;</code>), <code>content</code> (the line without newline), and line numbers (<code>ln</code> for <code>add</code> (new-file line) and <code>del</code> (old-file line); <code>ln1</code> (old-file) + <code>ln2</code> (new-file) for <code>normal</code> context lines).</p>
+<h4 id="diffjson-json-and-mixed-modes-per-field-map"><code>diff.json</code> — <code>json</code> and <code>mixed</code> modes (per-field map)</h4>
+<p>When <code>modes</code> includes <code>&quot;json&quot;</code>, <code>diff.json</code> is a flat object keyed by dot-notation / bracket-notation JSON path, with each entry carrying <code>{ &quot;previous&quot;: &lt;value&gt;, &quot;current&quot;: &lt;value&gt; }</code>. Added fields have <code>&quot;previous&quot;: null</code>; removed fields have <code>&quot;current&quot;: null</code>.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;plans[0].price&quot;: { &quot;previous&quot;: &quot;$19&quot;, &quot;current&quot;: &quot;$24&quot; },
+  &quot;plans[1].name&quot;:  { &quot;previous&quot;: &quot;Pro&quot;,  &quot;current&quot;: null }
+}</code></pre>
+<p>In <code>mixed</code> mode, both <code>diff.text</code> and <code>diff.json</code> (per-field map) are present.</p>
+<h3 id="normalization-and-hashing">Normalization and hashing</h3>
+<p>The engine normalizes markdown before hashing and diffing so cosmetic churn never flips a page from <code>same</code> to <code>changed</code>:</p>
+<ul>
+<li>CRLF and bare CR normalized to LF</li>
+<li>Trailing whitespace stripped from every line</li>
+<li>Runs of two or more blank lines collapsed to one</li>
+<li>Leading and trailing blank lines trimmed</li>
+</ul>
+<p>The <code>contentHash</code> is the hex SHA-256 of the normalized markdown (<code>gitDiff</code> / <code>mixed</code>) or the canonicalized JSON string with object keys sorted recursively (<code>json</code>-only). Whitespace-only edits and JSON key-order changes do not produce a <code>&quot;changed&quot;</code> result.</p>
+<h3 id="binary-and-non-text-content">Binary and non-text content</h3>
+<p>When <code>contentType</code> indicates a binary resource (e.g. <code>application/pdf</code>, <code>image/png</code>, <code>application/octet-stream</code>), the engine hashes the extracted text and returns <code>&quot;same&quot;</code> or <code>&quot;changed&quot;</code> with no <code>diff</code> object. Text types (anything matching <code>text/*</code>, <code>*json*</code>, <code>*xml*</code>, <code>*html*</code>, <code>*markdown*</code>, <code>*javascript*</code>, <code>*csv*</code>, <code>*yaml*</code>) are always diffed. Omitting <code>contentType</code> defaults to text behavior.</p>
+<h2 id="common-mistakes">Common mistakes</h2>
+<ul>
+<li><strong>Passing <code>changeTracking</code> as an object in <code>formats</code></strong> — on the engine it is the plain string <code>&quot;changeTracking&quot;</code>; the options ride on the sibling <code>changeTracking</code> field.</li>
+<li><strong>Expecting <code>removed</code> from a scrape target</strong> — <code>new</code> / <code>removed</code> are set-level states for <strong>crawl</strong> targets; a fixed <code>urls[]</code> entry that fails is <code>error</code>, never <code>removed</code>.</li>
+<li><strong>Intervals under 15 minutes</strong> — rejected. Use <code>every 15 minutes</code> or longer.</li>
+<li><strong>Forgetting the webhook secret</strong> — it is shown once on create; store it to verify the <code>X-CRW-Signature</code> header.</li>
+</ul>
+<h2 id="what-to-read-next">What to read next</h2>
+<ul>
+<li><a href="/scraping">Scrape</a> — the single-page primitive monitors run under the hood.</li>
+<li><a href="/crawling">Crawl</a> — multi-page discovery for crawl targets.</li>
+<li><a href="/credit-costs">Credit Costs</a> — how checks are metered.</li>
+<li><a href="/self-hosting">Self-Hosting</a> — run the engine yourself.</li>
+</ul>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-monitoring-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "monitoring";</script>
+</body>
 </html>

@@ -1,12 +1,830 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/troubleshooting">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Troubleshooting / FAQ — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/troubleshooting">
-  <script>location.replace("https://docs.fastcrw.com/troubleshooting");</script>
+  <meta name="description" content="Eight common failure patterns with verified causes and fixes — from empty markdown to MCP server visibility issues.">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/troubleshooting">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/troubleshooting">
+  <meta property="og:title" content="Troubleshooting / FAQ — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Eight common failure patterns with verified causes and fixes — from empty markdown to MCP server visibility issues.">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Troubleshooting / FAQ — CRW Docs">
+  <meta name="twitter:description" content="Eight common failure patterns with verified causes and fixes — from empty markdown to MCP server visibility issues.">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/troubleshooting">https://docs.fastcrw.com/troubleshooting</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-troubleshooting-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/troubleshooting">https://docs.fastcrw.com/troubleshooting</a>.</p><div class="page-intro">
+  <div class="page-kicker">Reference</div>
+  <h1 id="troubleshooting-faq">Troubleshooting / FAQ</h1>
+  <p class="page-subtitle">Eight common failure patterns with verified causes and fixes — from empty markdown to MCP server visibility issues.</p>
+  <div class="page-capabilities">
+    <div class="page-capability"><strong>Covers:</strong> scrape, search, MCP, auth, rate limits, credits</div>
+    <div class="page-capability"><strong>Verified against:</strong> crw-core/src/error.rs · crw-server/src/middleware.rs · crw-server/src/app.rs</div>
+  </div>
+</div><h2 id="quick-diagnosis-checklist">Quick diagnosis checklist</h2>
+<p>Before diving into individual patterns:</p>
+<ol>
+<li>Check <code>success</code> in the response body — <code>false</code> means a hard failure.</li>
+<li>Check <code>errorCode</code> (a snake_case string) for the machine-readable cause.</li>
+<li>Check <code>data.warnings[]</code> when <code>success: true</code>: soft issues like truncation, unsupported formats, and renderer fallbacks surface there. Anti-bot blocks are <strong>not</strong> in <code>data.warnings[]</code>; they always return <code>success: false</code> + <code>errorCode: &quot;anti_bot&quot;</code> (see pattern 2). A page the origin answered with a <code>&gt;= 400</code> status returns <code>success: false</code>; if it is a plain origin error page the code is <code>&quot;http_error&quot;</code> and the page stays in <code>data</code>, but when the anti-bot classifier recognises it as a wall (Cloudflare and friends serve their challenge with a 403) the code is <code>&quot;anti_bot&quot;</code> and the challenge shell is stripped from <code>data</code>.</li>
+<li>Check <code>metadata.statusCode</code> — this is the <strong>target site&#39;s</strong> HTTP status, not fastCRW&#39;s.</li>
+<li>Check the fastCRW HTTP status separately: <code>401</code>/<code>402</code>/<code>422</code>/<code>429</code> all mean different things.</li>
+</ol>
+<hr>
+<h2 id="1-empty-or-minimal-markdown">1. Empty or minimal markdown</h2>
+<p><strong>Symptom:</strong> Response is <code>success: true</code> but <code>data.markdown</code> is an empty string or fewer than 100 characters. The page renders fine in a browser.</p>
+<p><strong>Cause:</strong> The page is a JavaScript Single-Page Application (SPA). The HTTP-only fetcher receives the shell HTML before React/Vue/Next.js mounts content into the DOM. No JavaScript executes, so <code>readability</code> sees an empty container.</p>
+<p><strong>Fix:</strong> Set <code>renderJs: true</code> to force a headless browser render:</p>
+<pre data-lang="bash"><code class="language-bash"># cURL
+curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://app.example.com/dashboard&quot;,
+    &quot;renderJs&quot;: true,
+    &quot;waitFor&quot;: 1500
+  }'</code></pre>
+<pre data-lang="python"><code class="language-python"># Python — pip install crw
+from crw import CrwClient
+
+client = CrwClient(api_key=&quot;crw_live_YOUR_KEY&quot;)
+result = client.scrape(
+    &quot;https://app.example.com/dashboard&quot;,
+    render_js=True,
+    wait_for=1500,
+)
+print(result[&quot;markdown&quot;][:300])</code></pre>
+<p><strong>Self-hosted:</strong> <code>renderJs: true</code> requires a configured CDP renderer (LightPanda or Chrome). If neither is running you will get a warning <code>&quot;JS rendering was requested but no renderer is available&quot;</code> and the engine falls back to HTTP. Check <code>GET /health</code> and <code>GET /metrics/renderer-breakers</code>.</p>
+<p><strong><code>wait_for</code> guidance:</strong> Start with <code>1000</code>–<code>2000</code> ms for most SPAs. Complex hydration (Next.js App Router, React 18 concurrent mode) may need <code>3000</code>–<code>5000</code> ms.</p>
+<hr>
+<h2 id="2-anti-bot-block-cloudflare-challenge-page">2. Anti-bot block / Cloudflare challenge page</h2>
+<p><strong>Symptom:</strong> Response contains <code>success: false</code>, <code>errorCode: &quot;anti_bot&quot;</code>, and the error message names the protection class (e.g., <code>&quot;Blocked by anti-bot (cloudflare): ...&quot;</code> or <code>&quot;Blocked by anti-bot (datadome): ...&quot;</code>).</p>
+<p><strong>Cause:</strong> The target site fingerprints the request as non-browser traffic. Common triggers: missing <code>User-Agent</code>, no <code>Sec-Fetch-*</code> headers, a datacenter IP, or a detectable headless browser.</p>
+<blockquote>
+<p><strong>Not a block: <code>&quot;No usable content could be extracted (...)&quot;</code>.</strong> That case has
+its own code, <code>errorCode: &quot;no_usable_content&quot;</code>: we fetched the page fine but
+it held nothing usable: a handful of visible characters, no content
+elements. That is usually a broken TLS certificate serving an error stub, a
+parked domain, or a JS shell that never hydrated. The staged anti-bot fixes
+below will not help it. Check the URL in a browser first; if it renders a real
+page there, raise <code>waitFor</code> or try <code>renderJs: true</code>. Either way you are not
+charged for it.</p>
+</blockquote>
+<p><strong>Fix (staged):</strong></p>
+<ol>
+<li>Add <code>&quot;stealth&quot;: true</code> to route through randomized headers and a pooled real-browser UA.</li>
+<li>Switch renderer to <code>&quot;chrome_proxy&quot;</code> to egress through residential IPs (fastcrw.com managed tier only):</li>
+</ol>
+<pre data-lang="bash"><code class="language-bash"># cURL — step 1: stealth headers
+curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://www.example-protected.com/product/123&quot;,
+    &quot;renderJs&quot;: true,
+    &quot;stealth&quot;: true
+  }'</code></pre>
+<pre data-lang="bash"><code class="language-bash"># cURL — step 2: residential proxy Chrome tier
+curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://www.example-protected.com/product/123&quot;,
+    &quot;renderer&quot;: &quot;chrome_proxy&quot;,
+    &quot;stealth&quot;: true,
+    &quot;country&quot;: &quot;us&quot;
+  }'</code></pre>
+<pre data-lang="python"><code class="language-python"># Python — residential proxy tier
+from crw import CrwClient
+
+client = CrwClient(api_key=&quot;crw_live_YOUR_KEY&quot;)
+result = client.scrape(
+    &quot;https://www.example-protected.com/product/123&quot;,
+    renderer=&quot;chrome_proxy&quot;,
+    stealth=True,
+    country=&quot;us&quot;,
+)
+print(result[&quot;markdown&quot;][:300])</code></pre>
+<p><strong>Note:</strong> <code>renderer: &quot;chrome_proxy&quot;</code> is only available on fastcrw.com managed infrastructure. Self-hosted deployments must supply their own residential proxy pool via <code>proxy</code> or <code>proxy_list</code> and use <code>renderer: &quot;chrome&quot;</code>.</p>
+<p><strong>Do not retry anti-bot blocks in a tight loop</strong> — each failed attempt teaches the WAF more about your traffic pattern.</p>
+<hr>
+<h2 id="3-http-422-target_unreachable">3. HTTP 422 <code>target_unreachable</code></h2>
+<p><strong>Symptom:</strong> API returns HTTP <code>422</code> with <code>errorCode: &quot;target_unreachable&quot;</code> and an error like <code>&quot;Target unreachable: dns error: failed to lookup address&quot;</code> or <code>&quot;connection refused&quot;</code>.</p>
+<p><strong>Cause:</strong> The fastCRW engine could not establish a TCP connection to the target host. Most common reasons:</p>
+<ul>
+<li>The hostname does not resolve (typo, private DNS, or the domain is down).</li>
+<li>The host refuses connections on port 80/443 (firewall, no HTTP server).</li>
+<li>The URL targets a private/reserved IP that the URL safety validator blocks (e.g., <code>localhost</code>, <code>10.x.x.x</code>, <code>192.168.x.x</code>).</li>
+</ul>
+<p><strong>Fix:</strong></p>
+<pre data-lang="bash"><code class="language-bash"># Verify DNS resolves before calling the API
+nslookup your-target.example.com
+
+# Check the URL is reachable from outside your network
+curl -I https://your-target.example.com
+
+# Check the exact error message in the response body
+curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;url&quot;: &quot;https://your-target.example.com&quot;}' | jq '.error'</code></pre>
+<p><strong>Error code mapping</strong> (from <code>crw-server/src/error.rs</code>):</p>
+<pre><code>CrwError::TargetUnreachable      → HTTP 422, error_code: &quot;target_unreachable&quot;
+CrwError::ExtractionError        → HTTP 422, error_code: &quot;extraction_error&quot;
+CrwError::UnsupportedContentType → HTTP 422, error_code: &quot;unsupported_content_type&quot;</code></pre>
+<p>If the target URL is correct and externally reachable, the issue is intermittent — retry with backoff. If it is consistent, the target host has a problem unrelated to fastCRW.</p>
+<hr>
+<h2 id="4-http-401-invalid-api-key">4. HTTP 401 Invalid API key</h2>
+<p><strong>Symptom:</strong> Every request returns HTTP <code>401</code> with <code>{&quot;success&quot;: false, &quot;error&quot;: &quot;Invalid API key&quot;}</code> or <code>{&quot;success&quot;: false, &quot;error&quot;: &quot;Missing Authorization header&quot;}</code>.</p>
+<p><strong>Cause:</strong> The <code>Authorization</code> header is missing, uses the wrong format, or the key value does not match any configured key.</p>
+<p>The server checks (from <code>crw-server/src/middleware.rs</code>):</p>
+<ol>
+<li>The header must be present and start with exactly <code>&quot;Bearer &quot;</code> (capital B, space after).</li>
+<li>The token after <code>Bearer </code> must match a key in <code>[auth].api_keys</code> (constant-time comparison).</li>
+<li>If <code>[auth].api_keys</code> is empty, all requests pass — no auth required.</li>
+</ol>
+<p><strong>Fix:</strong></p>
+<pre data-lang="bash"><code class="language-bash"># Correct header format
+curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer crw_live_YOUR_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;url&quot;: &quot;https://example.com&quot;}'
+
+# Common mistakes that return 401:
+# -H &quot;Authorization: crw_live_YOUR_KEY&quot;        ← missing &quot;Bearer &quot;
+# -H &quot;Authorization: bearer crw_live_YOUR_KEY&quot; ← lowercase &quot;bearer&quot;
+# -H &quot;Authorization: Basic ...&quot;               ← wrong scheme</code></pre>
+<pre data-lang="python"><code class="language-python">from crw import CrwClient
+
+# Key is passed in the constructor — the SDK sets the header correctly
+client = CrwClient(api_key=&quot;crw_live_YOUR_KEY&quot;)</code></pre>
+<p><strong>Self-hosted:</strong> If you did not set <code>[auth].api_keys</code> in your config, the API is open to all. If you set keys, pass one of them verbatim as the Bearer token.</p>
+<hr>
+<h2 id="5-http-429-rate-limit-vs-http-402-out-of-credits">5. HTTP 429 rate limit vs. HTTP 402 out of credits</h2>
+<p><strong>Symptom:</strong> Requests return HTTP <code>429</code> or HTTP <code>402</code>. They are different problems with different fixes.</p>
+<p><strong>How to tell them apart:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Status</th>
+<th><code>errorCode</code></th>
+<th>Has <code>Retry-After</code> header?</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Request-rate or concurrency limit</td>
+<td><code>429</code></td>
+<td>none</td>
+<td>Yes (fastcrw.com); absent on self-hosted</td>
+<td>Respect <code>Retry-After</code>; use exponential backoff on self-hosted</td>
+</tr>
+<tr>
+<td>Out of credits</td>
+<td><code>402</code></td>
+<td><code>insufficient_credits</code></td>
+<td><strong>No</strong></td>
+<td>Top up, upgrade or enable auto-recharge</td>
+</tr>
+<tr>
+<td>Out of credits, legacy <code>/v2</code> surface only</td>
+<td><code>429</code></td>
+<td>none (<code>X-FASTCRW-Credits-Available</code> header present)</td>
+<td><strong>No</strong></td>
+<td>Same as above</td>
+</tr>
+</tbody></table>
+<p><strong>Rate limit (RPM):</strong></p>
+<pre data-lang="bash"><code class="language-bash"># Honor the Retry-After header (fastcrw.com cloud)
+RETRY_AFTER=$(curl -sI -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;url&quot;: &quot;https://example.com&quot;}' | grep -i retry-after | awk '{print $2}')
+echo &quot;Retry after: $RETRY_AFTER seconds&quot;</code></pre>
+<pre data-lang="python"><code class="language-python">import time, requests
+
+def scrape_with_retry(url, api_key, max_retries=5):
+    headers = {&quot;Authorization&quot;: f&quot;Bearer {api_key}&quot;, &quot;Content-Type&quot;: &quot;application/json&quot;}
+    for attempt in range(max_retries):
+        resp = requests.post(
+            &quot;https://api.fastcrw.com/v1/scrape&quot;,
+            headers=headers,
+            json={&quot;url&quot;: url},
+        )
+        if resp.status_code == 402:
+            body = resp.json()
+            # insufficient_credits or llm_not_available: a retry cannot succeed.
+            raise RuntimeError(f&quot;{body.get('errorCode')}: {body.get('error')}&quot;)
+        if resp.status_code == 429:
+            # Rate or concurrency limit: back off
+            wait = int(resp.headers.get(&quot;Retry-After&quot;, 2 ** attempt))
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    raise RuntimeError(&quot;Max retries exceeded&quot;)
+
+result = scrape_with_retry(&quot;https://example.com&quot;, &quot;crw_live_YOUR_KEY&quot;)</code></pre>
+<p><strong>Out of credits:</strong> Retrying on a timer does not help, because the balance does not replenish on its own. Go to <code>fastcrw.com/dashboard</code> to top up, upgrade or enable auto-recharge.</p>
+<p><strong>Self-hosted:</strong> <code>429</code> from a self-hosted instance is always the RPM rate limiter (<code>rate_limit_rps</code> in config). There is no credit system on self-hosted. No <code>Retry-After</code> header is emitted; use client-side exponential backoff.</p>
+<hr>
+<h2 id="6-search-returns-empty-results">6. Search returns empty results</h2>
+<p><strong>Symptom:</strong> <code>POST /v1/search</code> returns HTTP <code>503</code> with <code>errorCode: &quot;search_disabled&quot;</code>, or it returns <code>success: true</code> but <code>data.results</code> is an empty array <code>[]</code>.</p>
+<p><strong>Two separate problems:</strong></p>
+<h3 id="6a-errorcode-search_disabled-503">6a. <code>errorCode: &quot;search_disabled&quot;</code> (503)</h3>
+<p><strong>Cause:</strong> The engine has no search backend configured. The search route requires <code>[search].search_backend_url</code> in config or the <code>CRW_SEARCH__SEARCH_BACKEND_URL</code> environment variable.</p>
+<p><strong>Fix (self-hosted):</strong></p>
+<pre data-lang="bash"><code class="language-bash"># Quickest self-hosted setup — boot the bundled search sidecar
+crw setup --local</code></pre>
+<pre data-lang="toml"><code class="language-toml"># Or point at a backend you already run
+# config.toml
+[search]
+search_backend_url = &quot;http://localhost:8080&quot;</code></pre>
+<pre data-lang="bash"><code class="language-bash"># Or via environment variable
+export CRW_SEARCH__SEARCH_BACKEND_URL=http://localhost:8080</code></pre>
+<pre data-lang="bash"><code class="language-bash"># The bundled docker-compose.yml already wires CRW to the search sidecar
+docker compose up -d</code></pre>
+<p><strong>fastcrw.com cloud:</strong> <code>search_disabled</code> never occurs on the managed SaaS tier. <code>crw_search</code> is always available.</p>
+<h3 id="6b-empty-results-array-no-error">6b. Empty results array (no error)</h3>
+<p><strong>Cause:</strong> The search backend returned zero results — usually because no search engines are enabled on it, the instance is rate-limited by upstream search providers, or the query matched no results.</p>
+<p><strong>Diagnosis:</strong></p>
+<pre data-lang="bash"><code class="language-bash"># Hit the backend directly to check it is working
+curl &quot;http://localhost:8080/?q=test+query&amp;format=json&quot; | jq '.results | length'
+
+# Check which engines the backend has enabled
+curl &quot;http://localhost:8080/config&quot; | jq '.engines[] | select(.enabled == true) | .name'</code></pre>
+<p><strong>Fix:</strong> Enable engines in the backend&#39;s <code>settings.yml</code>, or use the bundled Docker image which comes pre-configured.</p>
+<hr>
+<h2 id="7-mcp-server-not-appearing-in-ai-client">7. MCP server not appearing in AI client</h2>
+<p><strong>Symptom:</strong> After adding the MCP config, the tool list in Claude Code / Claude Desktop / Cursor / Windsurf does not show <code>crw_scrape</code>, <code>crw_crawl</code>, or the other CRW tools.</p>
+<p><strong>Common causes and fixes:</strong></p>
+<h3 id="7a-the-client-was-not-restarted">7a. The client was not restarted</h3>
+<p>MCP servers are registered at client start. Add the config entry then <strong>fully restart the application</strong> (not just reload the window).</p>
+<h3 id="7b-npx-is-not-in-path-when-the-client-launches">7b. <code>npx</code> is not in PATH when the client launches</h3>
+<p>GUI applications on macOS may not inherit your shell&#39;s PATH. The binary is not found and the MCP process silently fails to start.</p>
+<pre data-lang="json"><code class="language-json">// Workaround: use the absolute path to npx
+{
+  &quot;mcpServers&quot;: {
+    &quot;crw&quot;: {
+      &quot;command&quot;: &quot;/usr/local/bin/npx&quot;,
+      &quot;args&quot;: [&quot;-y&quot;, &quot;crw-mcp&quot;]
+    }
+  }
+}</code></pre>
+<p>Find your <code>npx</code> path with <code>which npx</code> in a terminal.</p>
+<h3 id="7c-wrong-config-file-location">7c. Wrong config file location</h3>
+<table>
+<thead>
+<tr>
+<th>Client</th>
+<th>Config file</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Claude Code</td>
+<td><code>claude mcp add crw -- npx -y crw-mcp</code> (CLI manages the file) or <code>~/.claude/mcp.json</code></td>
+</tr>
+<tr>
+<td>Claude Desktop</td>
+<td><code>~/Library/Application Support/Claude/claude_desktop_config.json</code> (macOS)</td>
+</tr>
+<tr>
+<td>Cursor</td>
+<td><code>.cursor/mcp.json</code> in project root, or <code>~/.cursor/mcp.json</code> (global)</td>
+</tr>
+<tr>
+<td>Windsurf</td>
+<td><code>~/.codeium/windsurf/mcp_config.json</code></td>
+</tr>
+</tbody></table>
+<h3 id="7d-crw_search-is-missing-but-other-tools-appear-embedded-mode">7d. <code>crw_search</code> is missing but other tools appear (embedded mode)</h3>
+<p><code>crw_search</code> is only advertised when a search backend is configured. In embedded mode with no backend, the tool is intentionally hidden. To get <code>crw_search</code>, either:</p>
+<ul>
+<li>Switch to fastcrw.com cloud mode (<code>CRW_API_URL</code> + <code>CRW_API_KEY</code>), or</li>
+<li>Run <code>crw setup --local</code> to boot a local backend, or set <code>CRW_SEARCH__SEARCH_BACKEND_URL</code> to one you already run.</li>
+</ul>
+<h3 id="7e-diagnosing-with-the-json-rpc-wire">7e. Diagnosing with the JSON-RPC wire</h3>
+<p>The MCP server communicates over stdio JSON-RPC. You can test it directly:</p>
+<pre data-lang="bash"><code class="language-bash"># List available tools (paste and press Enter, then Ctrl-D)
+echo '{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;tools/list&quot;,&quot;params&quot;:{}}' | npx -y crw-mcp 2&gt;/dev/null</code></pre>
+<p>If this produces a JSON response with a <code>tools</code> array, the binary works and the problem is in the client config.</p>
+<hr>
+<h2 id="8-credit-exhausted-402">8. Credit exhausted: 402</h2>
+<p><strong>Symptom:</strong> The fastcrw.com SaaS returns HTTP <code>402</code> with <code>errorCode: &quot;insufficient_credits&quot;</code> (or, on the legacy <code>/v2</code> surface only, a <code>429</code> carrying the <code>X-FASTCRW-Credits-Available</code> header).</p>
+<p><strong>How the SaaS uses these codes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>HTTP status</th>
+<th><code>errorCode</code></th>
+<th>When</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>402</code></td>
+<td><code>insufficient_credits</code></td>
+<td>The credit balance cannot cover the request. <code>X-FASTCRW-Stop-Reason</code> is added when an enabled auto-recharge could not run</td>
+</tr>
+<tr>
+<td><code>402</code></td>
+<td><code>llm_not_available</code></td>
+<td>A managed-LLM feature was requested on the FREE plan</td>
+</tr>
+<tr>
+<td><code>429</code></td>
+<td>none</td>
+<td>Legacy <code>/v2</code> surface only (root <code>/v2</code>, <code>/firecrawl/v2</code>, <code>compat.fastcrw.com</code>): the credit balance cannot cover the request</td>
+</tr>
+</tbody></table>
+<p><strong>Note for self-hosted users:</strong> No credit <code>402</code> or credit <code>429</code> exists on self-hosted. The only <code>429</code> on self-hosted is the RPM rate limiter (<code>rate_limited</code> error code). Self-hosted has no billing system.</p>
+<p><strong>Fix:</strong></p>
+<pre data-lang="bash"><code class="language-bash"># Check your balance (fastcrw.com SaaS)
+curl https://fastcrw.com/api/v1/account/balance \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; | jq '{balance, plan}'</code></pre>
+<pre data-lang="python"><code class="language-python"># Python — check balance before a large crawl
+import requests
+
+resp = requests.get(
+    &quot;https://fastcrw.com/api/v1/account/balance&quot;,
+    headers={&quot;Authorization&quot;: f&quot;Bearer {api_key}&quot;},
+)
+data = resp.json()
+print(f&quot;Balance: {data['balance']} credits&quot;)
+if data[&quot;balance&quot;] &lt; 100:
+    print(&quot;Warning: low balance — top up at fastcrw.com/dashboard&quot;)</code></pre>
+<p><strong>Do not retry an out-of-credit <code>402</code> (or a legacy <code>/v2</code> credit <code>429</code>) on a timer.</strong> The balance is exhausted and retrying consumes no credits (the request is rejected before any work starts), but it does waste time and may look like abuse. Replenish the balance first.</p>
+<hr>
+<h2 id="error-code-reference">Error code reference</h2>
+<table>
+<thead>
+<tr>
+<th><code>errorCode</code></th>
+<th>HTTP</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>invalid_request</code></td>
+<td>400</td>
+<td>Bad JSON, bad URL, missing required field</td>
+</tr>
+<tr>
+<td><code>invalid_url</code></td>
+<td>—</td>
+<td>Reserved — not emitted in practice; invalid URLs are returned as <code>invalid_request</code> (HTTP 400) by all server routes</td>
+</tr>
+<tr>
+<td><code>target_unreachable</code></td>
+<td>422</td>
+<td>DNS failure, connection refused, host down</td>
+</tr>
+<tr>
+<td><code>extraction_error</code></td>
+<td>422</td>
+<td>LLM extraction failed or CSS/XPath selector invalid</td>
+</tr>
+<tr>
+<td><code>unsupported_content_type</code></td>
+<td>422</td>
+<td>The origin answered with a body that is neither a web page nor a PDF (an office document, an image, an archive). Not retryable: no renderer turns one into a page</td>
+</tr>
+<tr>
+<td><code>http_error</code></td>
+<td>502, or 200 with <code>success: false</code></td>
+<td>The origin answered with a <code>&gt;= 400</code> status and what came back is its error page. The body is kept in <code>data</code> so you can read the error page and <code>metadata.statusCode</code>. A large page served under an error status is still returned as a success: some sites answer 403/404 while serving the real content. If the page is also recognised as an anti-bot wall, <code>anti_bot</code> wins instead and the body is cleared. In the default auto mode, a URL whose path names a PDF and gets a 401, 403, 429 or 503 is <code>http_error</code> with <code>success: false</code> and the body kept, whatever the page&#39;s size, since no browser tier renders a PDF and nothing could have done better; unless the page is also recognised as an anti-bot wall (a short 429 page always is), which is answered as <code>anti_bot</code>. None of this applies when the request sets <code>renderJs</code> or asks for a <code>screenshot</code>, pins a renderer, the engine sets <code>render_js_default</code>, or the engine has no browser tier</td>
+</tr>
+<tr>
+<td><code>no_usable_content</code></td>
+<td>200 with <code>success: false</code></td>
+<td>The fetch worked and produced nothing you asked for — a parked domain, an un-hydrated JS shell, an error stub, an oversized PDF the decompression-bomb guard refused, or any requested format that came back empty. Not an anti-bot block</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>504</td>
+<td>Engine or upstream search timed out</td>
+</tr>
+<tr>
+<td><code>rate_limited</code></td>
+<td>429</td>
+<td>RPM rate limit (engine-level)</td>
+</tr>
+<tr>
+<td><code>insufficient_credits</code></td>
+<td>402</td>
+<td>Cloud only: the credit balance cannot cover the request</td>
+</tr>
+<tr>
+<td><code>llm_not_available</code></td>
+<td>402</td>
+<td>Cloud only: managed-LLM feature requested on the FREE plan</td>
+</tr>
+<tr>
+<td><code>search_disabled</code></td>
+<td>503</td>
+<td><code>/v1/search</code> called with no search backend configured</td>
+</tr>
+<tr>
+<td><code>not_found</code></td>
+<td>404</td>
+<td>Unknown endpoint or crawl job ID does not exist</td>
+</tr>
+<tr>
+<td><code>anti_bot</code></td>
+<td>200</td>
+<td>Anti-bot wall detected and no renderer tier could clear it. In the default auto mode, a generic wall on a URL whose path names a PDF, which no browser tier can render, is answered this way under any 4xx status or any 5xx other than a CDN origin error (520 to 527, which is <code>target_unreachable</code>). Always <code>success: false</code>, and the page body is cleared. Detect via <code>errorCode: &quot;anti_bot&quot;</code>, never via the HTTP status: the request reached the target and the target refused it, so this is not a gateway failure and is never billed</td>
+</tr>
+<tr>
+<td><code>renderer_error</code></td>
+<td>500</td>
+<td>CDP browser internal error</td>
+</tr>
+<tr>
+<td><code>internal_error</code></td>
+<td>500</td>
+<td>Unexpected engine failure</td>
+</tr>
+</tbody></table>
+<p>Source: <code>crw-core/src/error.rs</code> (<code>error_code()</code> method), <code>crw-server/src/error.rs</code> (HTTP status mapping), and <code>crw-server/src/routes/scrape.rs</code> (the <code>http_error</code> / <code>no_usable_content</code> / <code>anti_bot</code> split).</p>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-troubleshooting-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "troubleshooting";</script>
+</body>
 </html>

@@ -1,12 +1,577 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <title>Redirecting…</title>
-  <link rel="canonical" href="https://docs.fastcrw.com/self-hosting-hardening">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hardening — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/self-hosting-hardening">
-  <script>location.replace("https://docs.fastcrw.com/self-hosting-hardening");</script>
+  <meta name="description" content="That baseline is the starting point, not the finish line. A self-hosted scraper talks to untrusted public pages and can sit close to valuable internal systems, so it deserves the same discipline as an">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/self-hosting-hardening">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/self-hosting-hardening">
+  <meta property="og:title" content="Hardening — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="That baseline is the starting point, not the finish line. A self-hosted scraper talks to untrusted public pages and can sit close to valuable internal systems, so it deserves the same discipline as an">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Hardening — CRW Docs">
+  <meta name="twitter:description" content="That baseline is the starting point, not the finish line. A self-hosted scraper talks to untrusted public pages and can sit close to valuable internal systems, so it deserves the same discipline as an">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
 </head>
-<body>This page moved to <a href="https://docs.fastcrw.com/self-hosting-hardening">https://docs.fastcrw.com/self-hosting-hardening</a>.</body>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <a href="https://fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        <a href="https://fastcrw.com/register?ref=docs-self-hosting-hardening-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/self-hosting-hardening">https://docs.fastcrw.com/self-hosting-hardening</a>.</p><h1 id="self-hosting-hardening">Self-Hosting Hardening</h1>
+<h2 id="minimum-hardening-baseline">Minimum hardening baseline</h2>
+<ul>
+<li>Terminate TLS in front of the API.</li>
+<li>Run the service as a non-root user.</li>
+<li>Restrict inbound access to required ports only.</li>
+<li>Isolate renderer sidecars from unnecessary network paths.</li>
+</ul>
+<p>That baseline is the starting point, not the finish line. A self-hosted scraper talks to untrusted public pages and can sit close to valuable internal systems, so it deserves the same discipline as any other internet-facing API.</p>
+<h2 id="network-and-access-control">Network and Access Control</h2>
+<ul>
+<li>Put a reverse proxy or gateway in front of the service.</li>
+<li>Restrict who can reach the API by network, identity, or both.</li>
+<li>Avoid exposing internal health or admin surfaces to the public internet.</li>
+<li>If browser rendering is enabled, isolate the renderer from internal systems it does not need to reach.</li>
+</ul>
+<h2 id="ssrf-protection">SSRF Protection</h2>
+<p>fastCRW validates every outbound URL before fetching it (<code>crw-core/src/url_safety.rs</code>). The guard is fail-closed and multi-layered:</p>
+<ul>
+<li><strong>Scheme</strong>: only <code>http</code> and <code>https</code> are permitted; <code>file://</code>, <code>ftp://</code>, and all other schemes are rejected.</li>
+<li><strong>Hostname blocklist</strong>: <code>localhost</code>, <code>metadata.google.internal</code>, and wildcard aliases (<code>*.localhost</code>, <code>*.localtest.me</code>, <code>*.lvh.me</code>, <code>*.nip.io</code>, <code>*.xip.io</code>, <code>*.sslip.io</code>) are all blocked before DNS resolution.</li>
+<li><strong>IP blocklist (pre-DNS)</strong>: literal IPs in loopback (127.x, ::1), private (10.x, 172.16-31.x, 192.168.x), link-local (169.254.x — AWS/GCP metadata), unspecified (0.0.0.0, ::), broadcast, carrier-grade NAT (100.64-127.x), multicast/reserved (≥224.x), and IPv4-mapped IPv6 equivalents (e.g. <code>::ffff:169.254.169.254</code>) are all rejected.</li>
+<li><strong>Post-DNS resolution</strong>: the resolved IP of every hostname is checked against the same blocklist, preventing DNS-rebinding. DNS failure is fail-closed — if the hostname cannot be resolved, the request is rejected.</li>
+<li><strong>Redirect chains</strong>: every hop in an HTTP redirect is re-validated through the same checks (<code>safe_redirect_policy</code>). A redirect chain is capped at 10 hops.</li>
+<li><strong>URL length</strong>: URLs longer than 2 048 characters and URLs containing null bytes are rejected.</li>
+</ul>
+<h3 id="crw_allow_loopback_for_tests-never-enable-in-production"><code>CRW_ALLOW_LOOPBACK_FOR_TESTS</code> — never enable in production</h3>
+<p>The env var <code>CRW_ALLOW_LOOPBACK_FOR_TESTS=1</code> disables the loopback and private-range checks so integration tests can target mock servers at <code>127.0.0.1:&lt;random&gt;</code>. It is <strong>not a runtime configuration option</strong> — it exists solely to make integration tests pass in CI without a public network. Setting it in a production process removes the SSRF guard for all outbound fetches and is never safe to do.</p>
+<h2 id="admin-and-ops-endpoints">Admin and Ops Endpoints</h2>
+<p>Three operational endpoints expose internal state:</p>
+<table>
+<thead>
+<tr>
+<th>Endpoint</th>
+<th>Method</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/metrics</code></td>
+<td><code>GET</code></td>
+<td>Prometheus text format metrics</td>
+</tr>
+<tr>
+<td><code>/metrics/renderer-breakers</code></td>
+<td><code>GET</code></td>
+<td>JSON snapshot of all circuit-breaker states</td>
+</tr>
+<tr>
+<td><code>/admin/breakers/reset</code></td>
+<td><code>POST</code></td>
+<td>Resets all circuit breakers; returns count of host entries cleared</td>
+</tr>
+</tbody></table>
+<p>These endpoints sit <strong>inside</strong> the authentication boundary. When you configure <code>[auth].api_keys</code>, they require a valid <code>Authorization: Bearer &lt;key&gt;</code> header, exactly like the scraper API. With <strong>no</strong> keys configured (the default self-host case), they are open — same as every other route — so restrict the service by network in that mode.</p>
+<p><strong>Breaking change (key-secured deployments):</strong> if you scrape <code>/metrics</code> with a Prometheus job and have <code>api_keys</code> set, the scrape now needs the token. Add it to your scrape config:</p>
+<pre data-lang="yaml"><code class="language-yaml">scrape_configs:
+  - job_name: crw
+    authorization:
+      type: Bearer
+      credentials: &quot;&lt;your-api-key&gt;&quot;
+    static_configs:
+      - targets: [&quot;crw:3000&quot;]</code></pre>
+<p><strong>Defense in depth (recommended regardless of auth):</strong></p>
+<ul>
+<li>Network policy: bind fastCRW to a non-public interface or port and allow only your monitoring system to reach it. In Docker Compose publish only to localhost (<code>127.0.0.1:&lt;port&gt;:&lt;port&gt;</code>), never <code>0.0.0.0</code>.</li>
+<li>Reverse-proxy access control: block or require HTTP Basic / mutual-TLS on the <code>/metrics</code> and <code>/admin</code> path prefixes before traffic reaches fastCRW.</li>
+<li>Firewall rule: drop inbound traffic to the fastCRW port except from trusted source IPs.</li>
+</ul>
+<h2 id="cross-origin-cors">Cross-Origin (CORS)</h2>
+<p>By default the engine sends <strong>no</strong> CORS headers, so browsers block cross-origin JavaScript from reading API responses — the safe posture for a server-to-server API. If a browser app must call the engine directly, set an explicit allowlist:</p>
+<pre data-lang="toml"><code class="language-toml">[server]
+cors_allowed_origins = [&quot;https://app.example.com&quot;]</code></pre>
+<p>or <code>CRW_SERVER__CORS_ALLOWED_ORIGINS=&quot;https://app.example.com,https://admin.example.com&quot;</code>. A literal <code>&quot;*&quot;</code> is rejected — wildcard CORS is exactly what this setting replaces. (The <code>/openapi.json</code> schema endpoint is intentionally readable cross-origin so SDK generators can fetch it.)</p>
+<h2 id="runtime-isolation">Runtime Isolation</h2>
+<p>Treat page fetching and browser rendering as higher-risk components than your application logic.</p>
+<ul>
+<li>run them with the least privilege possible,</li>
+<li>keep filesystem access narrow,</li>
+<li>and isolate sidecars so a renderer problem does not automatically become a broader platform problem.</li>
+</ul>
+<h2 id="secrets-and-keys">Secrets and Keys</h2>
+<ul>
+<li>Keep API keys, proxy credentials, and LLM keys out of image builds.</li>
+<li>Inject secrets at runtime through your platform&#39;s secret store.</li>
+<li>Rotate keys during environment changes or incident response, not only on a fixed calendar.</li>
+</ul>
+<h3 id="rotating-searxng_secret_key-and-browserless_token">Rotating <code>SEARXNG_SECRET_KEY</code> and <code>BROWSERLESS_TOKEN</code></h3>
+<p>Both variables ship with <strong>publicly-known placeholder defaults</strong> in the repository. These defaults are intentional for local dev but must be replaced before any internet-facing or shared deployment.</p>
+<p><strong><code>SEARXNG_SECRET_KEY</code></strong> (<code>docker-compose.yml</code> line: <code>${SEARXNG_SECRET_KEY:-change-me-with-openssl-rand-hex-32-please}</code>):
+The search backend uses this key to sign session cookies. Anyone who knows the default value can forge cookies against your instance. Generate a real key and inject it:</p>
+<pre data-lang="bash"><code class="language-bash">echo &quot;SEARXNG_SECRET_KEY=$(openssl rand -hex 32)&quot; &gt;&gt; .env</code></pre>
+<p><strong><code>BROWSERLESS_TOKEN</code></strong> (<code>docker-compose.yml</code> and <code>docker-compose.stealth.yml</code>: <code>${BROWSERLESS_TOKEN:-crwtest}</code>):
+Browserless v2 requires this token in every CDP WebSocket URL (<code>?token=...</code>). The default <code>crwtest</code> is public. Without a real token, any process that can reach the browserless port can open Chrome sessions against your host. Generate and inject:</p>
+<pre data-lang="bash"><code class="language-bash">echo &quot;BROWSERLESS_TOKEN=$(openssl rand -hex 24)&quot; &gt;&gt; .env</code></pre>
+<p>Both commands append to an <code>.env</code> file that Docker Compose reads automatically. After setting the variables, restart the affected containers:</p>
+<pre data-lang="bash"><code class="language-bash">docker compose up -d --force-recreate searxng chrome-stealth</code></pre>
+<p>Rotate again whenever you rotate other credentials (deployment cutover, suspected exposure, team member offboarding).</p>
+<h2 id="agpl-30-13-network-use-obligations">AGPL-3.0 §13 — Network Use Obligations</h2>
+<p>fastCRW is licensed under AGPL-3.0 (<code>Cargo.toml</code>: <code>license = &quot;AGPL-3.0&quot;</code>). AGPL §13 extends the GPL copyleft to network use: <strong>if you run a modified version of fastCRW and allow third parties to interact with it over a network (including your own users calling your API), you must offer them the complete corresponding source code</strong> under the same license.</p>
+<p>What this means in practice:</p>
+<ul>
+<li><strong>Unmodified self-hosting</strong>: no source-offer obligation beyond what AGPL always requires. Point users at the upstream repository.</li>
+<li><strong>Modified self-hosting exposed to third parties</strong>: you must make the modified source available. The standard approach is a public fork or a <code>GET /source</code> endpoint that redirects to a tagged archive.</li>
+<li><strong>Internal use only</strong> (your own employees, no third-party network access): the network-use trigger does not apply. Standard GPL obligations still apply if you distribute binaries.</li>
+<li><strong>Commercial carve-out</strong>: if AGPL compliance is impractical for your use case (embedding in a proprietary product, offering a managed service without source disclosure), a commercial license is available — see the <a href="https://github.com/fastcrw/crw/blob/main/LICENSE">LICENSE</a> file and contact information in the repository.</li>
+</ul>
+<p><strong>What counts as a modification</strong>: any change to the Rust source in <code>crates/</code> or the build scripts that alters runtime behavior. Configuration-only changes (<code>.toml</code> files, <code>.env</code> files, <code>docker-compose.yml</code> overrides) do not constitute a modification of the software itself.</p>
+<h2 id="llm-features-and-trust-boundary">LLM features and trust boundary</h2>
+<p>CRW&#39;s <code>summary</code> format and <code>/v1/search</code> answer/summarize features need an LLM key. There are two deployment shapes; pick one and lock it down with the runtime guards listed below.</p>
+<p><strong>Solo / self-hosted (key in server config):</strong></p>
+<pre data-lang="toml"><code class="language-toml">[extraction.llm]
+provider = &quot;openai&quot;
+api_key  = &quot;sk-...&quot;
+model    = &quot;gpt-4o-mini&quot;</code></pre>
+<p>Anyone who can reach your opencore can spend on that key. Front it with auth, network policy, or a private network.</p>
+<p><strong>SaaS / multi-tenant (per-request keys):</strong></p>
+<ul>
+<li>Set <code>CRW_DISABLE_SERVER_LLM_KEY=1</code> in opencore&#39;s environment. With this env var set, opencore refuses to boot if <code>[extraction.llm].api_key</code> is also configured — the most common operator mistake.</li>
+<li>Set <code>[extraction.llm].require_byok_header = &quot;X-CRW-Tenant&quot;</code> (or similar). CRW rejects LLM-touching requests that lack that header AND do not pass a per-request <code>llmApiKey</code>. Your SaaS layer adds the header on every forwarded request; direct public callers cannot.</li>
+<li>Don&#39;t expose opencore on a public address; keep it behind your SaaS proxy.</li>
+<li>Use <code>GET /v1/capabilities</code> on boot from the SaaS layer to verify the opencore version&#39;s feature set before showing LLM toggles in your UI.</li>
+</ul>
+<p><strong>Per-request budget:</strong></p>
+<ul>
+<li><code>[extraction.llm].max_html_bytes</code> (default <code>100000</code>) caps content sent to the LLM.</li>
+<li>Per-request <code>maxContentChars</code> and <code>maxCharsPerSource</code> are clamped server-side (200 KB and 32 KB respectively) regardless of value.</li>
+<li><code>summaryPrompt</code> and <code>answerPrompt</code> are truncated at 500 chars and cannot override the safety wrapper.</li>
+<li>The citation list is capped at 20 entries; fabricated <code>source_id</code>s are dropped.</li>
+</ul>
+<h2 id="operational-guidance">Operational guidance</h2>
+<ul>
+<li>Rotate API keys during deployment cutovers.</li>
+<li>Keep browser-rendering dependencies on the smallest possible surface area.</li>
+<li>Expose <code>/health</code> only where your load balancer or monitoring needs it.</li>
+<li>Review warning-heavy targets separately; they often indicate anti-bot defenses rather than renderer bugs.</li>
+</ul>
+<h2 id="monitoring-and-auditability">Monitoring and Auditability</h2>
+<p>At minimum, watch:</p>
+<ul>
+<li>API error rate,</li>
+<li>warning frequency,</li>
+<li>crawl job duration,</li>
+<li>renderer availability,</li>
+<li>and resource spikes on the browser sidecar.</li>
+</ul>
+<p>Keep enough logs to answer three questions after an incident:</p>
+<ol>
+<li>what URL or workload triggered the issue,</li>
+<li>whether it was an engine problem or a target-site problem,</li>
+<li>and what data, if any, was still returned.</li>
+</ol>
+<h2 id="example-hardening-sequence">Example Hardening Sequence</h2>
+<p>If you are moving from a dev VM to a real environment, the order should usually be:</p>
+<ol>
+<li>put a reverse proxy and TLS in front,</li>
+<li>add auth and external rate limiting,</li>
+<li>move secrets into runtime injection,</li>
+<li>restrict network access around the API and any renderer sidecar,</li>
+<li>then enable monitoring and alerting on warnings, failures, and resource spikes.</li>
+</ol>
+<p>That order keeps the riskiest exposure points under control early instead of treating hardening as a final cleanup step.</p>
+<h2 id="when-to-isolate-the-renderer-more-aggressively">When To Isolate the Renderer More Aggressively</h2>
+<p>Stronger isolation is worth it when:</p>
+<ul>
+<li>your targets are highly dynamic and require frequent JS rendering,</li>
+<li>the service runs close to internal systems with sensitive access,</li>
+<li>or many tenants or workloads share the same cluster.</li>
+</ul>
+<p>In those cases, a renderer problem should not become an easy pivot into the rest of your infrastructure.</p>
+<h2 id="common-mistakes">Common Mistakes</h2>
+<ul>
+<li>Leaving <code>/health</code> broadly exposed when only an internal load balancer needs it.</li>
+<li>Exposing <code>/metrics</code>, <code>/metrics/renderer-breakers</code>, or <code>/admin/breakers/reset</code> to the public internet — these are unauthenticated and require network-level protection.</li>
+<li>Deploying with the default <code>SEARXNG_SECRET_KEY</code> (<code>change-me-with-openssl-rand-hex-32-please</code>) or <code>BROWSERLESS_TOKEN</code> (<code>crwtest</code>) — both are publicly known.</li>
+<li>Setting <code>CRW_ALLOW_LOOPBACK_FOR_TESTS=1</code> outside of a test environment — this removes SSRF protection for all outbound fetches.</li>
+<li>Running the service with broader filesystem or network access than the scraping workload requires.</li>
+<li>Keeping incident logs too thin to separate target-site anti-bot issues from engine regressions.</li>
+</ul>
+<p>Pair this page with <a href="/docs/rate-limits">rate limits</a> and <a href="/docs/error-codes">error codes</a> so operational hardening and runtime diagnostics are documented together.</p>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-self-hosting-hardening-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "self-hosting-hardening";</script>
+</body>
 </html>
