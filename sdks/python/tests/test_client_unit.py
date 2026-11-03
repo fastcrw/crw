@@ -470,6 +470,33 @@ class TestParseFile:
             client.parse_file()
 
 
+@pytest.mark.unit
+class TestSuccessFalseBody:
+    """A 200 whose body says ``success: false`` keeps the body's errorCode."""
+
+    def test_json_and_multipart_carry_error_code(self) -> None:
+        client = CrwClient(api_url="https://api.example", api_key="crw_live_test")
+        body = {"success": False, "error": "[upstream_error] down", "errorCode": "upstream_error"}
+        with patch("crw.client._read_json_response", return_value=body):
+            with pytest.raises(CrwApiError) as json_err:
+                client._http_request("POST", "/v1/scrape", {"url": "https://example.com"})
+            with pytest.raises(CrwApiError) as multipart_err:
+                client._http_multipart("/v2/parse", b"x", "multipart/form-data; boundary=b")
+        for err in (json_err, multipart_err):
+            assert err.value.error_code == "upstream_error"
+            assert str(err.value) == "[upstream_error] down"
+
+    def test_non_string_error_code_is_dropped(self) -> None:
+        client = CrwClient(api_url="https://api.example", api_key="crw_live_test")
+        body = {"success": False, "error": "x", "errorCode": 7}
+        with (
+            patch("crw.client._read_json_response", return_value=body),
+            pytest.raises(CrwApiError) as err,
+        ):
+            client._http_request("GET", "/v1/x")
+        assert err.value.error_code is None
+
+
 # ---------------------------------------------------------------------------
 # HTTP-only methods: extract / batch_scrape / capabilities / change_tracking
 # ---------------------------------------------------------------------------

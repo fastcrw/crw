@@ -95,7 +95,7 @@ def _read_json_response(req: Any) -> dict:
         except Exception:
             raise CrwApiError(f"HTTP {e.code}: {e.reason}") from e
         message = payload.get("error") or payload.get("message") or f"HTTP {e.code}"
-        raise CrwApiError(message, e.code, payload.get("errorCode")) from e
+        raise CrwApiError(message, e.code, _body_error_code(payload)) from e
 
 
 def _encode_multipart(filename: str, content: bytes, options: dict[str, Any]) -> tuple[bytes, str]:
@@ -203,6 +203,12 @@ def _proxy_child_env(api_url: str, api_key: str | None) -> dict[str, str]:
     else:
         env.pop("CRW_API_KEY", None)
     return env
+
+
+def _body_error_code(body: dict) -> str | None:
+    """A body's machine-readable ``errorCode``, when it is a string."""
+    code = body.get("errorCode")
+    return code if isinstance(code, str) else None
 
 
 def _query_value(key: str, value: Any) -> str:
@@ -1131,7 +1137,9 @@ class CrwClient:
         result = _read_json_response(req)
 
         if check_success and not result.get("success", True):
-            raise CrwApiError(result.get("error", "API error"))
+            raise CrwApiError(
+                result.get("error", "API error"), None, _body_error_code(result)
+            )
         if raw:
             return result
         # `.get("data", result)` only covers a MISSING key. A gateway in front
@@ -1154,7 +1162,9 @@ class CrwClient:
         result = _read_json_response(req)
 
         if not result.get("success", True):
-            raise CrwApiError(result.get("error", "API error"))
+            raise CrwApiError(
+                result.get("error", "API error"), None, _body_error_code(result)
+            )
         return result.get("data", result)
 
     def _http_post(self, path: str, body: dict) -> dict:

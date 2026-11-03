@@ -63,6 +63,9 @@ const SLUG = /^[a-z0-9-]+$/;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** A body's machine-readable `errorCode`, when it is a string. */
+const bodyErrorCode = (body: Json) => (typeof body.errorCode === "string" ? body.errorCode : undefined);
+
 /**
  * Pick `crw_map`'s payload out of whichever shape the local `crw-mcp` returned.
  * It answers flat (`{success, links, sitemaps}`) when it runs embedded and with
@@ -602,7 +605,7 @@ export class CrwClient {
     const resp = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
     const result = await this.readJson(resp);
     if (checkSuccess && result.success === false) {
-      throw new CrwApiError((result.error as string) ?? "API error", resp.status);
+      throw new CrwApiError((result.error as string) ?? "API error", resp.status, bodyErrorCode(result));
     }
     if (raw) return result;
     return (result.data as Json) ?? result;
@@ -615,7 +618,9 @@ export class CrwClient {
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     const resp = await fetch(url, { method: "POST", headers, body: form });
     const result = await this.readJson(resp);
-    if (result.success === false) throw new CrwApiError((result.error as string) ?? "API error", resp.status);
+    if (result.success === false) {
+      throw new CrwApiError((result.error as string) ?? "API error", resp.status, bodyErrorCode(result));
+    }
     return (result.data as Json) ?? result;
   }
 
@@ -631,7 +636,7 @@ export class CrwClient {
     }
     if (!resp.ok) {
       const message = (parsed.error as string) ?? (parsed.message as string) ?? `HTTP ${resp.status}`;
-      throw new CrwApiError(message, resp.status, parsed.errorCode as string | undefined);
+      throw new CrwApiError(message, resp.status, bodyErrorCode(parsed));
     }
     return parsed;
   }

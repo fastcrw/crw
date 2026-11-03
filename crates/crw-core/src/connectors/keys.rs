@@ -77,6 +77,13 @@ pub fn load(slug: &str) -> Option<ConnectorEntry> {
     })
 }
 
+/// Whether `CRW_CONNECTORS__<SLUG>__API_KEY` holds a key, by the same rule
+/// [`load`] uses to let the environment win over the file.
+#[cfg(feature = "cli")]
+pub(crate) fn env_overrides(slug: &str) -> bool {
+    load_from(slug, None, |name| std::env::var(name).ok()).is_some()
+}
+
 /// Env wins as a whole entry when its `__API_KEY` is set; otherwise the file.
 pub(crate) fn load_from(
     slug: &str,
@@ -260,6 +267,16 @@ mod tests {
         assert_eq!(bind(&optional, &u, None).unwrap(), None);
         let keyless = connector(serde_json::json!({"type": "none", "param": null}), false);
         assert_eq!(bind(&keyless, &u, entry("k", &[], None)).unwrap(), None);
+    }
+
+    #[test]
+    fn connectors_blank_env_key_does_not_override() {
+        for blank in ["", "   "] {
+            let env = |k: &str| (k == "CRW_CONNECTORS__FRED__API_KEY").then(|| blank.to_string());
+            assert!(load_from("fred", None, env).is_none(), "{blank:?}");
+        }
+        let env = |k: &str| (k == "CRW_CONNECTORS__FRED__API_KEY").then(|| "k".to_string());
+        assert!(load_from("fred", None, env).is_some());
     }
 
     #[test]

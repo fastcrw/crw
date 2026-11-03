@@ -321,12 +321,7 @@ fn set_key(manifest: &Manifest, slug: &str, yes: bool) -> Result<(), String> {
         "Stored the key for {name} in {}. Agents can use it right away.",
         path.display()
     );
-    if std::env::var_os(format!(
-        "CRW_CONNECTORS__{}__API_KEY",
-        slug.to_ascii_uppercase().replace('-', "_")
-    ))
-    .is_some()
-    {
+    if keys::env_overrides(slug) {
         eprintln!(
             "note: a CRW_CONNECTORS__ environment variable for this source is set and takes precedence."
         );

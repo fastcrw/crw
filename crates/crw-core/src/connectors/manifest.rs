@@ -245,10 +245,18 @@ pub(crate) fn unavailable(detail: &str) -> String {
 /// one fetch instead of each starting their own.
 #[derive(Default)]
 pub(crate) struct ManifestCache {
+    slot: Mutex<Slot>,
+}
+
+#[derive(Default)]
+struct Slot {
     /// The copy, when it was fetched by the monotonic clock, and by the wall
     /// clock: `Instant` stops while the machine sleeps, so a laptop that
     /// slept through the hour would otherwise keep a stale copy.
-    slot: Mutex<Option<(Arc<Manifest>, Instant, SystemTime)>>,
+    copy: Option<(Arc<Manifest>, Instant, SystemTime)>,
+    /// When the last fetch failed, so a down API is not asked again on
+    /// every call that wants a newer copy.
+    failed_at: Option<Instant>,
 }
 
 /// Whether a copy fetched at `at` / `wall` is younger than `limit` by both
@@ -260,8 +268,9 @@ fn fresh(at: Instant, wall: SystemTime, now_wall: SystemTime, limit: Duration) -
 impl ManifestCache {
     /// The cached manifest if it was fetched within `max_age` (capped at
     /// [`MAX_AGE`]), else a fresh fetch. A failed fetch keeps the cached copy
-    /// for later calls but never returns it here, and an expired copy is never
-    /// used.
+    /// for later calls but never returns it here; for `max_age` after that
+    /// failure an unexpired copy answers without a new fetch. An expired copy
+    /// is never used.
     pub(crate) async fn get(
         &self,
         http: &reqwest::Client,
@@ -271,28 +280,45 @@ impl ManifestCache {
         guard: Guard,
     ) -> Result<Arc<Manifest>, String> {
         let mut slot = self.slot.lock().await;
-        if let Some((manifest, at, wall)) = slot.as_ref()
-            && fresh(*at, *wall, SystemTime::now(), max_age.min(MAX_AGE))
-        {
-            return Ok(manifest.clone());
+        let now_wall = SystemTime::now();
+        if let Some((manifest, at, wall)) = slot.copy.as_ref() {
+            let recent_failure = slot.failed_at.is_some_and(|t| t.elapsed() < max_age);
+            if fresh(*at, *wall, now_wall, max_age.min(MAX_AGE))
+                || (recent_failure && fresh(*at, *wall, now_wall, MAX_AGE))
+            {
+                return Ok(manifest.clone());
+            }
         }
-        let manifest = Arc::new(fetch(http, api_url, api_key, guard).await?);
-        *slot = Some((manifest.clone(), Instant::now(), SystemTime::now()));
-        Ok(manifest)
+        match fetch(http, api_url, api_key, guard).await {
+            Ok(manifest) => {
+                let manifest = Arc::new(manifest);
+                slot.copy = Some((manifest.clone(), Instant::now(), SystemTime::now()));
+                slot.failed_at = None;
+                Ok(manifest)
+            }
+            Err(e) => {
+                slot.failed_at = Some(Instant::now());
+                Err(e)
+            }
+        }
     }
 
     #[cfg(test)]
     pub(crate) async fn age_by(&self, by: Duration) {
-        if let Some((_, at, wall)) = self.slot.lock().await.as_mut() {
+        let mut slot = self.slot.lock().await;
+        if let Some((_, at, wall)) = slot.copy.as_mut() {
             *at -= by;
             *wall -= by;
+        }
+        if let Some(t) = slot.failed_at.as_mut() {
+            *t -= by;
         }
     }
 
     /// As if the machine slept for `by`: only the wall clock moves.
     #[cfg(test)]
     pub(crate) async fn sleep_by(&self, by: Duration) {
-        if let Some((_, _, wall)) = self.slot.lock().await.as_mut() {
+        if let Some((_, _, wall)) = self.slot.lock().await.copy.as_mut() {
             *wall -= by;
         }
     }
