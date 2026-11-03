@@ -113,6 +113,39 @@ pub(crate) fn validate_against_schema(
     Ok(())
 }
 
+/// Drop the object properties the validator rejected only for being `null`.
+///
+/// The grounding clause tells the model to answer `null` for a value the page
+/// does not carry. On a property the caller typed as non-nullable that null
+/// fails validation, and the retry then pushed the model to invent a value: a
+/// missing was-price came back as `0` on one run and the current price on the
+/// next (issue #666). Absent is the honest answer, so only the flagged nulls are
+/// removed and the result re-validated. A required property still fails here and
+/// takes the normal retry; a null the schema allows is never flagged, so it stays.
+fn drop_rejected_nulls(
+    value: &serde_json::Value,
+    schema: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    let validator = jsonschema::validator_for(schema).ok()?;
+    let paths: Vec<String> = validator
+        .iter_errors(value)
+        .filter(|e| e.instance().is_null())
+        .map(|e| e.instance_path().as_str().to_string())
+        .collect();
+    let mut pruned = value.clone();
+    let mut removed = false;
+    for path in &paths {
+        let Some((parent, key)) = path.rsplit_once('/') else {
+            continue;
+        };
+        let key = key.replace("~1", "/").replace("~0", "~");
+        if let Some(obj) = pruned.pointer_mut(parent).and_then(|v| v.as_object_mut()) {
+            removed |= obj.remove(&key).is_some();
+        }
+    }
+    (removed && validator.is_valid(&pruned)).then_some(pruned)
+}
+
 /// Extract structured JSON from markdown content using an LLM.
 ///
 /// Backward-compatible thin wrapper: callers that only need the validated
@@ -386,6 +419,9 @@ async fn extract_inner(
         let Err(err) = validate_against_schema(&value, schema) else {
             break (value, usage, model_basis);
         };
+        if let Some(pruned) = drop_rejected_nulls(&value, schema) {
+            break (pruned, usage, model_basis);
+        }
 
         // Second failure, or not enough budget left to be worth spending: give
         // the caller the validation error, which is the honest answer.
@@ -1498,6 +1534,83 @@ mod tests {
         assert!(
             err.to_string().contains("Invalid JSON schema"),
             "got: {err}"
+        );
+    }
+
+    /// Issue #666: list of products, optional non-nullable `wasPrice` answered null.
+    fn product_list_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": { "items": { "type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "price": { "type": "number" },
+                    "wasPrice": { "type": "number" },
+                    "note": { "type": ["string", "null"] }
+                },
+                "required": ["name", "price", "note"]
+            }}},
+            "required": ["items"]
+        })
+    }
+
+    #[test]
+    fn drop_rejected_nulls_removes_optional_null_inside_array_items() {
+        let value = json!({ "items": [
+            { "name": "a", "price": 10, "wasPrice": null, "note": null },
+            { "name": "b", "price": 20, "wasPrice": 25, "note": "x" }
+        ]});
+        let pruned = drop_rejected_nulls(&value, &product_list_schema()).unwrap();
+        assert_eq!(
+            pruned,
+            json!({ "items": [
+                { "name": "a", "price": 10, "note": null },
+                { "name": "b", "price": 20, "wasPrice": 25, "note": "x" }
+            ]})
+        );
+    }
+
+    #[test]
+    fn drop_rejected_nulls_leaves_a_required_null_to_the_retry() {
+        let value = json!({ "items": [{ "name": "a", "price": null, "note": null }] });
+        assert!(drop_rejected_nulls(&value, &product_list_schema()).is_none());
+    }
+
+    #[test]
+    fn drop_rejected_nulls_does_not_hide_an_unrelated_error() {
+        let value =
+            json!({ "items": [{ "name": "a", "price": "10", "wasPrice": null, "note": null }] });
+        assert!(drop_rejected_nulls(&value, &product_list_schema()).is_none());
+    }
+
+    #[test]
+    fn drop_rejected_nulls_is_none_when_nothing_was_null() {
+        let value = json!({ "items": [{ "name": "a", "price": 1 }] });
+        assert!(drop_rejected_nulls(&value, &product_list_schema()).is_none());
+    }
+
+    #[tokio::test]
+    async fn extract_structured_optional_null_needs_no_retry() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(openai_tool_call_response(
+                    &json!({ "items": [
+                        { "name": "a", "price": 10, "wasPrice": null, "note": null }
+                    ]}),
+                )),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let llm = mock_llm("openai", server.uri());
+        let out = extract_structured("# TVs", &product_list_schema(), &llm)
+            .await
+            .unwrap();
+        assert_eq!(
+            out,
+            json!({ "items": [{ "name": "a", "price": 10, "note": null }] })
         );
     }
 
