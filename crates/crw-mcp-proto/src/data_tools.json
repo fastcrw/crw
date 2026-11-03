@@ -18,7 +18,7 @@
         },
         "category": {
           "type": "string",
-          "description": "Only sources in this category, e.g. Research"
+          "description": "Only sources in this category, e.g. Research (case-insensitive; the values items show in category)"
         },
         "provider": {
           "type": "string",
@@ -49,6 +49,7 @@
               "capability": { "type": "string" },
               "name": { "type": ["string", "null"] },
               "description": { "type": ["string", "null"] },
+              "category": { "type": ["string", "null"] },
               "creditsCost": { "type": ["number", "null"] },
               "requiredOptions": { "type": "array", "items": { "type": "string" } },
               "optionalOptions": { "type": "array", "items": { "type": "string" } },

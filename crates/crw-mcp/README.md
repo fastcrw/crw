@@ -7,7 +7,7 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 
 ## Overview
 
-`crw-mcp` is a self-contained MCP server that gives any MCP-compatible AI client (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools. No external server needed — just add and go.
+`crw-mcp` is a self-contained MCP server that gives any MCP-compatible AI client (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools, plus 2 data source tools in proxy mode (11 in all). No external server needed: just add and go.
 
 **Two modes:**
 
@@ -16,7 +16,7 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 | **Embedded** (default) | `CRW_LOCAL` truthy, or no API URL resolved | Self-contained, zero setup |
 | **Proxy** | `CRW_LOCAL` unset or falsy, and an API URL resolved | Forwards to remote CRW server |
 
-**9 MCP tools:**
+**MCP tools** (9 in embedded mode, 11 in proxy mode):
 
 | Tool | Description |
 |------|-------------|
@@ -29,6 +29,8 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 | `crw_cancel_extract` | Idempotently cancel an extract job and retrieve canonical status |
 | `crw_search` | Search the web (needs a configured search backend; always available in proxy mode, available in embedded mode only when a search backend is configured) |
 | `crw_parse_file` | Parse a local PDF (base64) to markdown |
+| `crw_find_data` | Proxy mode only: find structured data sources (papers, packages, registries) and the options each takes |
+| `crw_get_data` | Proxy mode only: call one data source capability and get its JSON with provenance. Some sources run on your machine with your own key: `crw-mcp connectors set-key <provider>`. A self-hosted server has no data sources and answers `[data_sources_unavailable]` |
 
 > **Output bounding:** By default, content fields are truncated to ~15 000 chars and `crw_map` returns at most 100 URLs to keep agent context small. Pass `maxLength: 0` (scrape / check_status / parse_file) or `limit: 0` (map) to opt out.
 
