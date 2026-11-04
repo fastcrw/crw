@@ -70,7 +70,7 @@
   {
     "name": "crw_get_data",
     "title": "Get structured data",
-    "description": "Structured data from named public APIs (papers, packages, registries, music metadata). Call crw_find_data first. Use crw_search for open web search and crw_scrape for a known URL.",
+    "description": "Returns one public data source's JSON (papers, packages, registries, music metadata) with its source and licence, for a provider, capability and options from crw_find_data.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
