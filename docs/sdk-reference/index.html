@@ -477,6 +477,12 @@ switches to subprocess mode automatically.</p>
 <td>HTTP only</td>
 </tr>
 <tr>
+<td>Data sources</td>
+<td><code>find_data(query, ...)</code> / <code>get_data(provider, capability, options)</code></td>
+<td><code>findData(opts?)</code> / <code>getData(provider, capability, options?)</code></td>
+<td>HTTP only</td>
+</tr>
+<tr>
 <td>Shutdown</td>
 <td><code>close()</code></td>
 <td><code>close()</code></td>
@@ -799,7 +805,9 @@ import { CrwError, CrwApiError, CrwBinaryNotFoundError, CrwTimeoutError } from &
 </tr>
 </tbody></table>
 <p><code>CrwApiError</code> carries an optional <code>status_code</code> (Python) / <code>statusCode</code> (TS)
-integer with the HTTP status code of the failing response.</p>
+integer with the HTTP status code of the failing response, and an optional
+<code>error_code</code> (Python) / <code>errorCode</code> (TS) with the body&#39;s <code>errorCode</code>, or the
+bracketed code of an MCP tool error.</p>
 <hr>
 <h2 id="error-handling">Error handling</h2>
 <h3 id="python">Python</h3>
@@ -920,6 +928,11 @@ try {
 </tr>
 <tr>
 <td><code>change_tracking_diff</code> / <code>changeTrackingDiff</code></td>
+<td>yes</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>find_data</code> / <code>findData</code>, <code>get_data</code> / <code>getData</code></td>
 <td>yes</td>
 <td>no</td>
 </tr>

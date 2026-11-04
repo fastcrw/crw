@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MCP Server — CRW Docs</title>
-  <meta name="description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant — Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI — 9 web sc">
+  <meta name="description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scra">
   <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
   <link rel="canonical" href="https://docs.fastcrw.com/mcp">
   <link rel="icon" href="/favicon.png?v=2" type="image/png">
@@ -15,13 +15,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://docs.fastcrw.com/mcp">
   <meta property="og:title" content="MCP Server — CRW | Web Scraper in Rust">
-  <meta property="og:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant — Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI — 9 web sc">
+  <meta property="og:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scra">
   <meta property="og:site_name" content="CRW">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="MCP Server — CRW Docs">
-  <meta name="twitter:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant — Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI — 9 web sc">
+  <meta name="twitter:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scra">
 
   <!-- Structured Data (JSON-LD) -->
   <script type="application/ld+json">
@@ -324,7 +324,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 
     <main class="content" id="content">
       <article id="article" role="main"><h1 id="mcp-server-for-ai-agents">MCP Server for AI Agents</h1>
-<p>CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant — Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI — 9 web scraping tools (8 on a self-host with no search backend configured, since <code>crw_search</code> is hidden in that case). Turn any AI coding agent into a web scraper with a single command.</p>
+<p>CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools (8 on a self-host with no search backend configured, since <code>crw_search</code> is hidden in that case). In proxy mode, including fastcrw.com cloud, it adds <code>crw_find_data</code> and <code>crw_get_data</code> (structured <a href="/data-sources">data sources</a>) for 11 tools. Turn any AI coding agent into a web scraper with a single command.</p>
 <blockquote>
 <p>Also available on the <a href="https://registry.modelcontextprotocol.io/?q=crw">MCP Registry</a></p>
 </blockquote>
@@ -348,8 +348,8 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <tr>
 <td><strong>Proxy / Server</strong></td>
 <td><code>CRW_LOCAL</code> unset or falsy, and an API URL resolved</td>
-<td>scrape, crawl, check_crawl_status, map, extract, check_extract_status, cancel_extract, parse_file, search</td>
-<td>Forwards tool calls to a remote CRW server: the <a href="https://fastcrw.com">fastcrw.com</a> cloud <strong>or your own self-hosted server</strong>. <code>crw_search</code> is always advertised in proxy mode; it works whenever the server has a search backend configured (the Docker stack enables it by default).</td>
+<td>scrape, crawl, check_crawl_status, map, extract, check_extract_status, cancel_extract, parse_file, search, find_data, get_data</td>
+<td>Forwards tool calls to a remote CRW server: the <a href="https://fastcrw.com">fastcrw.com</a> cloud <strong>or your own self-hosted server</strong>. <code>crw_search</code> is always advertised in proxy mode; it works whenever the server has a search backend configured (the Docker stack enables it by default). <code>crw_find_data</code> and <code>crw_get_data</code> are listed too; a self-hosted server has no data sources, so they answer <code>[data_sources_unavailable]</code> there.</td>
 </tr>
 </tbody></table>
 <p>An API URL resolves from <code>--api-url</code>, <code>CRW_API_URL</code>, <code>CRW_CLIENT__API_URL</code>, or
@@ -581,6 +581,18 @@ yourself are never touched, only the engine&#39;s own bookkeeping, and
 <td>Parse a local PDF (base64) → markdown</td>
 <td><code>POST /firecrawl/v2/parse</code> (multipart)</td>
 <td>All modes</td>
+</tr>
+<tr>
+<td><code>crw_find_data</code></td>
+<td>Find structured data sources → provider, capability, options</td>
+<td><code>GET /v1/data/find</code></td>
+<td>Proxy mode only; a self-hosted server answers <code>[data_sources_unavailable]</code></td>
+</tr>
+<tr>
+<td><code>crw_get_data</code></td>
+<td>Call one data source capability → JSON with provenance</td>
+<td><code>GET /v1/data/&lt;provider&gt;/&lt;capability&gt;</code></td>
+<td>Proxy mode only; a self-hosted server answers <code>[data_sources_unavailable]</code>. See <a href="/data-sources">Data Sources</a></td>
 </tr>
 </tbody></table>
 <blockquote>

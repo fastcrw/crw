@@ -503,6 +503,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>A managed-LLM feature (search <code>answer</code> / <code>summarizeResults</code>, <code>/v1/extract</code>) was requested on the FREE plan. The <code>/v1/crawl</code> LLM formats gate sends the same code with HTTP <code>403</code>.</td>
 </tr>
 </tbody></table>
+<p>Data source calls (<code>/v1/data/*</code>, <code>crw_find_data</code>, <code>crw_get_data</code>, and the SDKs&#39; <code>findData</code> / <code>getData</code>) send their own codes, such as <code>client_execution_required</code>, <code>unknown_data_source</code>, <code>upstream_error</code>, <code>upstream_timeout</code>, <code>upstream_rate_limited</code>, <code>invalid_response</code> and <code>result_too_large</code>. The SDKs pass them on as <code>errorCode</code> (<code>error_code</code> in Python). The full list, with what to do about each, is in the Errors section of <a href="/data-sources">Data Sources</a>.</p>
 <h2 id="common-warnings">Common warnings</h2>
 <table>
 <thead>

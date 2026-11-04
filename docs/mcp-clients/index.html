@@ -380,7 +380,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><code>crw_parse_file</code> — parse a local PDF (base64) to markdown, no OCR (always present)</li>
 <li><code>crw_search</code> — only advertised when a search backend is configured; hidden otherwise</li>
 </ul>
-<p>fastcrw.com cloud mode exposes all 9 tools:</p>
+<p>fastcrw.com cloud mode exposes all 11 tools:</p>
 <ul>
 <li><code>crw_scrape</code></li>
 <li><code>crw_crawl</code></li>
@@ -391,13 +391,14 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><code>crw_cancel_extract</code></li>
 <li><code>crw_parse_file</code></li>
 <li><code>crw_search</code> — always available (managed search backend)</li>
+<li><code>crw_find_data</code> and <code>crw_get_data</code> for structured data sources; see <a href="/data-sources">Data Sources</a></li>
 </ul>
 <p>Browser automation mode (<code>crw-browse</code>, separate server — v0.4.0+) exposes:</p>
 <ul>
 <li><code>goto</code> — navigate the browser to an URL</li>
 <li><code>tree</code> — accessibility snapshot of the current page</li>
 </ul>
-<div class="callout callout-tip"><div class="callout-icon"></div><div class="callout-content">If you only remember one rule, remember this one: local embedded mode is the easiest setup (up to 9 tools, with `crw_search` appearing automatically when a search backend is configured), and fastcrw.com cloud mode is the easiest way to get all 9 tools including always-on web search.</div></div><h2 id="claude-code">Claude Code</h2>
+<div class="callout callout-tip"><div class="callout-icon"></div><div class="callout-content">If you only remember one rule, remember this one: local embedded mode is the easiest setup (up to 9 tools, with `crw_search` appearing automatically when a search backend is configured), and fastcrw.com cloud mode is the easiest way to get all 11 tools including always-on web search and data sources.</div></div><h2 id="claude-code">Claude Code</h2>
 <h3 id="local-embedded">Local embedded</h3>
 <pre data-lang="bash"><code class="language-bash">claude mcp add crw -- npx -y crw-mcp</code></pre>
 <div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">500 credits to start, up to 500 more from onboarding tasks, no card.
@@ -522,7 +523,7 @@ CRW_API_KEY = &quot;YOUR_API_KEY&quot;</code></pre>
     }
   }
 }</code></pre>
-<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Windsurf has a total MCP tool limit. CRW stays lightweight: local embedded mode exposes up to 9 tools (`crw_search` is hidden unless a search backend is configured), and cloud mode always exposes all 9 tools.</div></div><h2 id="cline">Cline</h2>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Windsurf has a total MCP tool limit. CRW stays lightweight: local embedded mode exposes up to 9 tools (`crw_search` is hidden unless a search backend is configured), and cloud mode always exposes all 11 tools.</div></div><h2 id="cline">Cline</h2>
 <p>Edit the Cline MCP settings file:</p>
 <table>
 <thead>

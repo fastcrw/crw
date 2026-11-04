@@ -335,13 +335,13 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <blockquote>
 <p><strong>What you get:</strong> <code>crw_scrape</code>, <code>crw_crawl</code>, <code>crw_check_crawl_status</code>, <code>crw_map</code>, <code>crw_extract</code>, <code>crw_check_extract_status</code>, <code>crw_cancel_extract</code>, <code>crw_parse_file</code>. <code>crw_search</code> requires a search backend — use cloud mode to get it instantly.</p>
 </blockquote>
-<h3 id="option-b-cloud-mode-all-9-tools-including-crw_search">Option B: Cloud mode (all 9 tools, including <code>crw_search</code>)</h3>
+<h3 id="option-b-cloud-mode-all-11-tools-including-crw_search">Option B: Cloud mode (all 11 tools, including <code>crw_search</code>)</h3>
 <p>Get a free API key at <a href="https://fastcrw.com">fastcrw.com</a>: 500 credits to start, and up to 500 more from onboarding tasks, no monthly reset.</p>
 <pre data-lang="bash"><code class="language-bash">claude mcp add crw \
   -e CRW_API_URL=https://api.fastcrw.com \
   -e CRW_API_KEY=crw_live_xxxxxxxxxxxx \
   -- npx -y crw-mcp</code></pre>
-<p>This registers the same <code>crw-mcp</code> binary in proxy mode. Tool calls are forwarded to <code>api.fastcrw.com</code>. All 9 tools are advertised, including <code>crw_search</code>.</p>
+<p>This registers the same <code>crw-mcp</code> binary in proxy mode. Tool calls are forwarded to <code>api.fastcrw.com</code>. All 11 tools are advertised, including <code>crw_search</code> and the data source tools <code>crw_find_data</code> and <code>crw_get_data</code>.</p>
 <p><strong>Verify it works:</strong></p>
 <pre data-lang="bash"><code class="language-bash">claude mcp list
 # crw   npx crw-mcp   stdio</code></pre>
@@ -457,7 +457,7 @@ Find current sources, not training data.</code></pre>
 
 ## Tool reference (MCP)
 
-All 9 tools registered by `crw-mcp`:
+All 11 tools registered by `crw-mcp` in cloud mode (embedded mode has the first 9):
 
 | Tool | Required params | Returns |
 |------|-----------------|---------|
@@ -470,6 +470,8 @@ All 9 tools registered by `crw-mcp`:
 | `crw_check_extract_status` | `id` | `{ status, results: [{url, status, data, error, llmUsage}] }` |
 | `crw_cancel_extract` | `id` | `{ success, id, status, results, creditsUsed, tokensUsed }` |
 | `crw_parse_file` | `contentBase64` | `{ success, data: { markdown } }` |
+| `crw_find_data` | none (`query`, `category`, `provider` optional) | `{ items: [{provider, capability, requiredOptions, optionalOptions, creditsCost}], total }` |
+| `crw_get_data` | `provider`, `capability` | `{ provider, capability, creditsUsed, provenance, data }` |
 
 **Key points:**
 
