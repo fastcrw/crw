@@ -743,9 +743,20 @@ async fn scrape_url_inner(
                         let js_score = js_md_quality.as_ref().map(|q| q.score).unwrap_or(0.0);
                         let before_score = md_quality.as_ref().map(|q| q.score).unwrap_or(0.0);
                         let http_was_thin = md_is_byte_thin;
-                        let quality_improved = js_score > before_score + 0.05;
-                        let accept =
-                            js_md_len >= retry_threshold && (http_was_thin || quality_improved);
+                        let js_floor = if js_fetch.rendered_with.as_deref() == Some("lightpanda") {
+                            extraction_cfg.lightpanda_retry_threshold_bytes
+                        } else {
+                            extraction_cfg.http_retry_threshold_bytes
+                        };
+                        let accept = accept_js_retry(JsRetry {
+                            prior_renderer,
+                            prior_was_thin: http_was_thin,
+                            prior_floor: retry_threshold,
+                            before_score,
+                            js_md_len,
+                            js_floor,
+                            js_score,
+                        });
                         if accept {
                             // Remember which tier really produced the body, so
                             // the entry assembled after the swap below can say
@@ -786,11 +797,17 @@ async fn scrape_url_inner(
                                 quality_score_after = js_score,
                                 "JS escalation recovered content",
                             );
-                        } else if js_md_len >= retry_threshold && !http_was_thin {
+                        } else if !http_was_thin {
+                            // Logged even when the JS body is under its floor:
+                            // that rejection used to be silent, which hid every
+                            // short-but-better browser render.
                             tracing::info!(
                                 url = %LogUrl(&req.url),
                                 before = before_score,
                                 after = js_score,
+                                md_bytes,
+                                js_md_len,
+                                js_floor,
                                 "JS retry returned worse-quality markdown ({before_score} -> {js_score}), keeping HTTP",
                             );
                         }
@@ -1852,6 +1869,56 @@ pub(crate) fn classify_block(
         vendor: r.signal.class_name().to_string(),
         reason: r.reason,
     })
+}
+
+/// The two bodies [`accept_js_retry`] chooses between.
+#[derive(Debug, Clone, Copy)]
+struct JsRetry<'a> {
+    /// Tier that produced the body we already hold.
+    prior_renderer: Option<&'a str>,
+    /// That body was under its own tier's floor.
+    prior_was_thin: bool,
+    /// Floor of the prior tier (lightpanda's is higher than http's).
+    prior_floor: usize,
+    before_score: f32,
+    js_md_len: usize,
+    /// Floor of the tier that produced the JS body.
+    js_floor: usize,
+    js_score: f32,
+}
+
+/// Quality margin a re-render has to clear (or stay within) to change hands.
+const JS_RETRY_SCORE_MARGIN: f32 = 0.05;
+
+/// Whether the JS re-render replaces the body the lower tier returned.
+///
+/// A thin prior body is replaced by anything that clears the prior tier's
+/// floor, as before.
+///
+/// A non-thin prior body was escalated because it scored low. From the HTTP
+/// tier the browser has to be clearly better: an HTTP body is what the server
+/// sent, and the measured waste here was JSON bodies a render cannot improve.
+/// From lightpanda the burden flips. Its body is a render too, from the tier
+/// that runs the least of the page's JS, and here it already failed the quality
+/// check, so Chrome keeps the page unless it is clearly worse. On kiwi.com
+/// lightpanda returned the search shell ("Lädt" placeholders, 0.118) and Chrome
+/// the rendered offers (0.094); the old "clearly better" rule shipped the shell.
+///
+/// The JS body is measured against the floor of the tier that produced it. It
+/// used to be held to lightpanda's 2000-byte floor, which silently dropped any
+/// shorter Chrome render however much better it was.
+fn accept_js_retry(r: JsRetry<'_>) -> bool {
+    if r.prior_was_thin {
+        return r.js_md_len >= r.prior_floor;
+    }
+    if r.js_md_len < r.js_floor {
+        return false;
+    }
+    if r.prior_renderer == Some("lightpanda") {
+        r.js_score >= r.before_score - JS_RETRY_SCORE_MARGIN
+    } else {
+        r.js_score > r.before_score + JS_RETRY_SCORE_MARGIN
+    }
 }
 
 /// Should a substantive-but-low-scoring body buy a browser render?
@@ -3628,6 +3695,59 @@ mod tests {
     fn empty_truncated_render_false_on_a_single_meaningful_character() {
         let formats = [OutputFormat::Markdown];
         assert!(!is_empty_truncated_render(true, &formats, Some("x")));
+    }
+
+    // ── accept_js_retry ──────────────────────────────────────────────────────
+
+    /// Default floors: http 100 B, lightpanda 2000 B.
+    fn js_retry(prior: &str, before: f32, js_len: usize, js: f32) -> JsRetry<'_> {
+        JsRetry {
+            prior_renderer: Some(prior),
+            prior_was_thin: false,
+            prior_floor: if prior == "lightpanda" { 2000 } else { 100 },
+            before_score: before,
+            js_md_len: js_len,
+            js_floor: 100,
+            js_score: js,
+        }
+    }
+
+    #[test]
+    fn chrome_render_replaces_a_lightpanda_shell_that_scores_slightly_higher() {
+        // kiwi.com flight search: lightpanda kept the "Lädt" search shell (0.118)
+        // over Chrome's rendered offers (0.094).
+        assert!(accept_js_retry(js_retry("lightpanda", 0.118, 2400, 0.094)));
+    }
+
+    #[test]
+    fn chrome_render_is_judged_against_its_own_floor_not_lightpandas() {
+        // A better Chrome body under lightpanda's 2000-byte floor used to be
+        // dropped without a log line.
+        assert!(accept_js_retry(js_retry("lightpanda", 0.119, 1395, 0.130)));
+        assert!(!accept_js_retry(js_retry("lightpanda", 0.119, 60, 0.130)));
+    }
+
+    #[test]
+    fn clearly_worse_chrome_render_keeps_the_lightpanda_body() {
+        // Same page, Chrome snapshot before the offers: 0.054 against 0.119.
+        assert!(!accept_js_retry(js_retry("lightpanda", 0.119, 1395, 0.054)));
+    }
+
+    #[test]
+    fn http_body_still_needs_a_clearly_better_render() {
+        assert!(!accept_js_retry(js_retry("http", 0.20, 3000, 0.22)));
+        assert!(!accept_js_retry(js_retry("http", 0.20, 3000, 0.18)));
+        assert!(accept_js_retry(js_retry("http", 0.20, 3000, 0.26)));
+    }
+
+    #[test]
+    fn thin_prior_body_is_replaced_only_past_the_prior_floor() {
+        let thin = |js_len| JsRetry {
+            prior_was_thin: true,
+            ..js_retry("lightpanda", 0.0, js_len, 0.0)
+        };
+        assert!(!accept_js_retry(thin(1500)));
+        assert!(accept_js_retry(thin(2000)));
     }
 
     // ── escalate_for_quality (additional) ────────────────────────────────────
