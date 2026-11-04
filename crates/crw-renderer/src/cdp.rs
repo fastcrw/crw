@@ -2965,17 +2965,30 @@ impl CdpRenderer {
             text_len = first.text_len,
             "Skeleton placeholders detected, waiting for content to fill",
         );
-        let deadline = Instant::now() + Duration::from_millis(SKELETON_WAIT_MAX_MS);
+        let started = Instant::now();
+        let deadline = started + Duration::from_millis(SKELETON_WAIT_MAX_MS);
         let mut wait = SkeletonWait::new(first);
+        let mut reason = "cap";
         while Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(CONTENT_STABILITY_TICK_MS)).await;
             let Some(s) = Self::eval_skeleton(conn, session_id, timeout).await else {
+                reason = "eval_failed";
                 break;
             };
-            if wait.observe(s) {
+            if let Some(done) = wait.observe(s) {
+                reason = done;
                 break;
             }
         }
+        tracing::info!(
+            url = %LogUrl(&url),
+            reason,
+            waited_ms = started.elapsed().as_millis() as u64,
+            skeletons = wait.prev.skeletons,
+            text_len = wait.prev.text_len,
+            region_len = wait.prev.region_len,
+            "Skeleton wait ended",
+        );
         true
     }
 
@@ -4059,7 +4072,7 @@ impl SkeletonWait {
         }
     }
 
-    /// Feed one sample; `true` means snapshot now.
+    /// Feed one sample; `Some(reason)` means snapshot now.
     ///
     /// Filled: the skeleton region gained real text and held still for one
     /// tick, or the skeleton went away without the page text shrinking.
@@ -4068,18 +4081,25 @@ impl SkeletonWait {
     /// with no offer on screen. The shrink check matters for the second: Kiwi
     /// swaps its skeleton for a shorter loading view (902 chars) first.
     /// Idle: nothing changed at all for [`SKELETON_IDLE_TICKS`] ticks.
-    fn observe(&mut self, s: SkeletonSample) -> bool {
+    fn observe(&mut self, s: SkeletonSample) -> Option<&'static str> {
         let arrived = s.region_len >= self.base_region + SKELETON_REGION_MIN_GROWTH
             && s.region_len.abs_diff(self.prev.region_len) <= (self.prev.region_len / 20).max(50);
         let cleared = s.skeletons < SKELETON_MIN_ELEMENTS && s.text_len >= self.base_text;
-        let filled = arrived || cleared;
         if s.text_len == self.prev.text_len && s.html_len == self.prev.html_len {
             self.idle += 1;
         } else {
             self.idle = 0;
         }
         self.prev = s;
-        filled || self.idle >= SKELETON_IDLE_TICKS
+        if arrived {
+            Some("filled")
+        } else if cleared {
+            Some("cleared")
+        } else if self.idle >= SKELETON_IDLE_TICKS {
+            Some("idle")
+        } else {
+            None
+        }
     }
 }
 
@@ -4765,8 +4785,8 @@ mod tests {
     // --- SkeletonWait ------------------------------------------------------------
 
     /// Drive a [`SkeletonWait`] with `(skeletons, text_len, html_len,
-    /// region_len)` samples and return the index of the sample it snapshots on.
-    fn skeleton_stop(trace: &[(u64, u64, u64, u64)]) -> Option<usize> {
+    /// region_len)` samples and return the index of the sample it snapshots on, with the reason.
+    fn skeleton_stop(trace: &[(u64, u64, u64, u64)]) -> Option<(usize, &'static str)> {
         let s =
             |&(skeletons, text_len, html_len, region_len): &(u64, u64, u64, u64)| SkeletonSample {
                 skeletons,
@@ -4777,8 +4797,8 @@ mod tests {
         let mut w = SkeletonWait::new(s(&trace[0]));
         trace[1..]
             .iter()
-            .position(|t| w.observe(s(t)))
-            .map(|i| i + 1)
+            .enumerate()
+            .find_map(|(i, t)| w.observe(s(t)).map(|r| (i + 1, r)))
     }
 
     #[test]
@@ -4799,14 +4819,14 @@ mod tests {
             (5, 2411, 973_329, 549),
             (5, 2553, 981_851, 677),
         ];
-        assert_eq!(skeleton_stop(&trace), Some(8));
+        assert_eq!(skeleton_stop(&trace), Some((8, "filled")));
     }
 
     #[test]
     fn skeleton_wait_gives_up_on_a_page_that_stands_still() {
         // Image placeholders the blocklist never lets load: nothing changes.
         let trace = [(6, 4000, 90_000, 0); 6];
-        assert_eq!(skeleton_stop(&trace), Some(3));
+        assert_eq!(skeleton_stop(&trace), Some((3, "idle")));
     }
 
     #[test]
@@ -4824,7 +4844,7 @@ mod tests {
             (4, 1000, 51_000, 0),
             (0, 1100, 60_000, 0),
         ];
-        assert_eq!(skeleton_stop(&trace), Some(2));
+        assert_eq!(skeleton_stop(&trace), Some((2, "cleared")));
     }
 
     // --- is_content_stable: more boundaries ------------------------------------
