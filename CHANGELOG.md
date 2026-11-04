@@ -2,6 +2,38 @@
 
 All notable changes to CRW are documented here.
 
+## [0.41.0](https://github.com/fastcrw/crw/compare/v0.40.0...v0.41.0) (2026-11-04)
+
+
+### Features
+
+* **connectors:** send a header key stored as a JSON set ([4715199](https://github.com/fastcrw/crw/commit/47151992566d591355bc7189a1fd276ab9ff9ac6))
+* **mcp:** add data source tools that can run sources locally ([72227ca](https://github.com/fastcrw/crw/commit/72227caf4c627655183955436849b17281e3406d))
+* **sdk:** add data source methods to the TypeScript and Python SDKs ([c205ce6](https://github.com/fastcrw/crw/commit/c205ce6f13114a0e8d556655b8af180c898c6d6d))
+
+
+### Bug Fixes
+
+* **connectors:** call an API without data sources unavailable in find ([08150b9](https://github.com/fastcrw/crw/commit/08150b905e4bd250d5f3c0c6dc40dcc9906c4e1b))
+* **connectors:** compare approvals like a call, keep SDK pings alive ([93a8704](https://github.com/fastcrw/crw/commit/93a87046fe7d05897b84f88efcb77114a4fca568))
+* **connectors:** deliver usage counts before exit, document data tools ([03d2832](https://github.com/fastcrw/crw/commit/03d28329303a5193cbea20eb258907f59d76af7f))
+* **connectors:** document the data tools, pin the manifest field by field ([6f5e10f](https://github.com/fastcrw/crw/commit/6f5e10f4dffe38aa04f8b7d1b15b9e915f3b284f))
+* **connectors:** find the key on Windows and keep the saas copies in step ([92e27e5](https://github.com/fastcrw/crw/commit/92e27e56857ddd9c1b27baed25b39772312e7408))
+* **connectors:** keep error codes on success:false, throttle failed rechecks ([e549c1a](https://github.com/fastcrw/crw/commit/e549c1a8f69be6e99a57ba6d6b1a17c6ae911e2c))
+* **connectors:** let the 409 path fetch past a recent failure ([f78f175](https://github.com/fastcrw/crw/commit/f78f175b1e0823278ba55a3de01baa843d3a539a))
+* **connectors:** let the server own the size cap on forwarded calls ([a9cf6cc](https://github.com/fastcrw/crw/commit/a9cf6cc313e589ad674ddf90f878061eec7d4c8e))
+* **connectors:** make data sources workable from the crw-mcp install ([f699924](https://github.com/fastcrw/crw/commit/f699924ef4d48711599f68d594449c7174bf4400))
+* **connectors:** match the cloud URL rules for pinned and dotted names ([42dc803](https://github.com/fastcrw/crw/commit/42dc803d5f88f65b322577317bd2ed83a3a639e4))
+* **connectors:** never send the config key to a flag URL ([fb7721d](https://github.com/fastcrw/crw/commit/fb7721d9e2c5f662cc7227e3b3eff15f09266959))
+* **connectors:** recheck the manifest for a newly added capability ([4d53ae6](https://github.com/fastcrw/crw/commit/4d53ae6ce052f8d9f722bfb85d7c70ed3e95a810))
+* **connectors:** report a dropped forwarded answer as unreachable ([fa995da](https://github.com/fastcrw/crw/commit/fa995da4827c461bff7affeeeac5becaac1839b3))
+* **connectors:** trim header values, expire the manifest across sleep ([65975a9](https://github.com/fastcrw/crw/commit/65975a959521e401680c042cbed61e232a9fe318))
+* **crawl:** keep a browser render over a lightpanda shell unless worse ([ae9a78b](https://github.com/fastcrw/crw/commit/ae9a78bb77a9223b48255d9d5a3c9267cb38a92f))
+* **extract:** keep links in markdown when include_tags narrows the page ([e104665](https://github.com/fastcrw/crw/commit/e1046653e3f5a95e5b835ddad998a194953f8e3a))
+* **mcp:** crw_get_data says what it returns ([2ccc3d5](https://github.com/fastcrw/crw/commit/2ccc3d56b8ef88aba96f0cb89f28c002917530ed))
+* **mcp:** describe the data tools instead of steering toward them ([151665c](https://github.com/fastcrw/crw/commit/151665cfd0fecba38e2878998f039a7183fa3f3c))
+* **renderer:** wait for skeleton lists to fill before the snapshot ([7aa0b23](https://github.com/fastcrw/crw/commit/7aa0b23654162c75241920aeb13a152dd6faab92))
+
 ## [0.40.0](https://github.com/fastcrw/crw/compare/v0.39.1...v0.40.0) (2026-11-03)
 
 
