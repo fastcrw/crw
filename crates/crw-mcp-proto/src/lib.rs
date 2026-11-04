@@ -31,7 +31,7 @@ pub const SERVER_INSTRUCTIONS: &str = "fastCRW reads public web pages and search
 pub const SERVER_INSTRUCTIONS_NO_SEARCH: &str = "fastCRW reads public web pages. crw_scrape reads one URL as clean markdown, crw_map lists the URLs a site publishes, crw_crawl reads a bounded set of pages under one URL (poll crw_check_crawl_status), and crw_extract returns structured JSON from pages against a prompt or schema. Every result carries its source URL.";
 
 /// Appended in proxy mode only, the one mode that advertises the data tools.
-pub const DATA_TOOLS_INSTRUCTION: &str = "For structured data from named public APIs (package registries, papers, datasets, statistics), call crw_find_data first, then crw_get_data with the provider, capability and options it returns.";
+pub const DATA_TOOLS_INSTRUCTION: &str = "crw_find_data lists the public data sources (datasets, statistics, registries, papers) that match a question, and crw_get_data returns one source's data, with its source and licence, for the provider, capability and options crw_find_data gave.";
 
 /// The `instructions` string that matches the tool set actually advertised.
 pub fn server_instructions(search_available: bool) -> &'static str {
