@@ -2919,6 +2919,66 @@ impl CdpRenderer {
         false
     }
 
+    /// One skeleton sample (see [`SKELETON_PROBE_JS`]). `None` when the page
+    /// cannot be evaluated.
+    async fn eval_skeleton(
+        conn: &CdpConnection,
+        session_id: &str,
+        timeout: Duration,
+    ) -> Option<SkeletonSample> {
+        let v = conn
+            .send_recv(
+                "Runtime.evaluate",
+                serde_json::json!({ "expression": SKELETON_PROBE_JS, "returnByValue": true }),
+                Some(session_id),
+                timeout,
+            )
+            .await
+            .ok()?;
+        let arr = v.get("result")?.get("value")?.as_array()?;
+        let n = |i: usize| arr.get(i).and_then(|x| x.as_u64());
+        Some(SkeletonSample {
+            skeletons: n(0)?,
+            text_len: n(1)?,
+            html_len: n(2)?,
+            region_len: n(3)?,
+        })
+    }
+
+    /// Wait while the page shows a skeleton region that has not filled yet.
+    /// Returns whether it waited, so the caller knows to re-snapshot.
+    async fn wait_for_skeleton_fill(
+        conn: &CdpConnection,
+        session_id: &str,
+        url: &str,
+        timeout: Duration,
+    ) -> bool {
+        let Some(first) = Self::eval_skeleton(conn, session_id, timeout).await else {
+            return false;
+        };
+        if first.skeletons < SKELETON_MIN_ELEMENTS {
+            return false;
+        }
+        tracing::info!(
+            url = %LogUrl(&url),
+            skeletons = first.skeletons,
+            text_len = first.text_len,
+            "Skeleton placeholders detected, waiting for content to fill",
+        );
+        let deadline = Instant::now() + Duration::from_millis(SKELETON_WAIT_MAX_MS);
+        let mut wait = SkeletonWait::new(first);
+        while Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(CONTENT_STABILITY_TICK_MS)).await;
+            let Some(s) = Self::eval_skeleton(conn, session_id, timeout).await else {
+                break;
+            };
+            if wait.observe(s) {
+                break;
+            }
+        }
+        true
+    }
+
     /// Poll `document.documentElement.outerHTML` at a fixed interval until the
     /// rendered HTML stabilises and no longer looks like a loading placeholder,
     /// or until the stability budget is exhausted.
@@ -3719,6 +3779,19 @@ impl CdpRenderer {
             t_stability_ms = _stab_t.elapsed().as_millis() as u64;
         }
 
+        // 4b'. Skeleton region still filling → wait for its data. 4b only sees
+        // small pages with English loading copy; a search app is neither. On
+        // kiwi.com the selector poll above exits at ~3s on 1.2k chars of
+        // filters and footer, while the result list is still five grey
+        // placeholder cards that fill at 6-18s.
+        if wait_for_ms.is_none() {
+            let _sk_t = Instant::now();
+            if Self::wait_for_skeleton_fill(conn, session_id, url, self.page_timeout).await {
+                html = Self::eval_html(conn, session_id, self.page_timeout).await?;
+            }
+            t_stability_ms += _sk_t.elapsed().as_millis() as u64;
+        }
+
         // 4c. Auto-mode lazy-load pass: scroll viewport-by-viewport so
         // infinite-scroll feeds, lazy images, and below-the-fold hydration
         // appear in the snapshot. Gated:
@@ -3914,6 +3987,102 @@ impl CdpRenderer {
 ///
 /// Size tolerance is 5% of `prev_len` with a 500-byte floor, so noise from
 /// small DOM updates (timestamps, counters) does not reset stability.
+/// Returns `[visible skeleton elements, body text length, html length, region
+/// text length]`, where the region is the skeletons' parent elements: the list
+/// the placeholders stand in for, which is where the real items appear.
+/// Inputs are excluded: their `placeholder` is an attribute, not a loading
+/// state. The count stops at 50; past the threshold the number does not matter.
+const SKELETON_PROBE_JS: &str = r#"(() => {
+    const sel = '[class*="skeleton" i],[class*="placeholder" i],[class*="shimmer" i],'
+        + '[data-test*="placeholder" i],[data-testid*="placeholder" i],'
+        + '[data-test*="skeleton" i],[data-testid*="skeleton" i],[aria-busy="true"]';
+    let n = 0;
+    const parents = new Set();
+    for (const e of document.querySelectorAll(sel)) {
+        if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') continue;
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        if (e.parentElement) parents.add(e.parentElement);
+        if (++n >= 50) break;
+    }
+    let region = 0;
+    for (const p of parents) region += (p.innerText || '').length;
+    const t = (document.body && document.body.innerText) || '';
+    return [n, t.length, document.documentElement.outerHTML.length, region];
+})()"#;
+
+/// Visible skeleton elements that mark a region waiting for data. Fewer is
+/// usually decoration.
+const SKELETON_MIN_ELEMENTS: u64 = 3;
+
+/// Longest wait for a skeleton region to fill. Kiwi's result list filled 6-18s
+/// after navigation and the skeleton is up by ~3s; the tier's nav budget still
+/// bounds the whole render.
+const SKELETON_WAIT_MAX_MS: u64 = 9000;
+
+/// Text the skeleton region has to gain before it counts as filled. Kiwi's
+/// went from 0 to 540-654 chars when the first five offers rendered, and stayed
+/// at 0 through every intermediate loading view.
+const SKELETON_REGION_MIN_GROWTH: u64 = 200;
+
+/// Ticks (at [`CONTENT_STABILITY_TICK_MS`]) with no change at all after which
+/// nothing is loading any more. Kiwi's DOM never stood still for more than
+/// ~1s while its search ran; a page whose placeholders are images the
+/// blocklist dropped stands still from the first tick and costs 1.5s.
+const SKELETON_IDLE_TICKS: u32 = 3;
+
+#[derive(Debug, Clone, Copy)]
+struct SkeletonSample {
+    skeletons: u64,
+    text_len: u64,
+    html_len: u64,
+    region_len: u64,
+}
+
+/// Decides when a skeleton region has filled. Pure, so it can be driven by
+/// recorded traces.
+#[derive(Debug)]
+struct SkeletonWait {
+    base_text: u64,
+    base_region: u64,
+    prev: SkeletonSample,
+    idle: u32,
+}
+
+impl SkeletonWait {
+    fn new(first: SkeletonSample) -> Self {
+        Self {
+            base_text: first.text_len,
+            base_region: first.region_len,
+            prev: first,
+            idle: 0,
+        }
+    }
+
+    /// Feed one sample; `true` means snapshot now.
+    ///
+    /// Filled: the skeleton region gained real text and held still for one
+    /// tick, or the skeleton went away without the page text shrinking.
+    /// Whole-page text is no use for the first test: Kiwi's price calendar
+    /// loads outside the result list and grows the page 1223 -> 1845 chars
+    /// with no offer on screen. The shrink check matters for the second: Kiwi
+    /// swaps its skeleton for a shorter loading view (902 chars) first.
+    /// Idle: nothing changed at all for [`SKELETON_IDLE_TICKS`] ticks.
+    fn observe(&mut self, s: SkeletonSample) -> bool {
+        let arrived = s.region_len >= self.base_region + SKELETON_REGION_MIN_GROWTH
+            && s.region_len.abs_diff(self.prev.region_len) <= (self.prev.region_len / 20).max(50);
+        let cleared = s.skeletons < SKELETON_MIN_ELEMENTS && s.text_len >= self.base_text;
+        let filled = arrived || cleared;
+        if s.text_len == self.prev.text_len && s.html_len == self.prev.html_len {
+            self.idle += 1;
+        } else {
+            self.idle = 0;
+        }
+        self.prev = s;
+        filled || self.idle >= SKELETON_IDLE_TICKS
+    }
+}
+
 fn is_content_stable(prev_len: u64, curr_len: u64, placeholder_gone: bool) -> bool {
     if prev_len == 0 || !placeholder_gone {
         return false;
@@ -3946,10 +4115,10 @@ fn is_spa_text_ready(text_len: i64) -> bool {
 mod tests {
     use super::{
         BLOCK_LABEL_RESUME_FAILED, BLOCK_LABEL_WORKER_RESUMED, CdpRenderer, ChildAction, CrwError,
-        STEALTH_DEFAULT_LANGUAGES, STEALTH_JS, build_auth_response, child_enable_failure_action,
-        geo_accept_language, is_content_stable, is_method_not_found, is_proxy_tunnel_error,
-        language_locale, outbound_block_label, screenshot_clip, split_caller_headers,
-        ua_override_params,
+        STEALTH_DEFAULT_LANGUAGES, STEALTH_JS, SkeletonSample, SkeletonWait, build_auth_response,
+        child_enable_failure_action, geo_accept_language, is_content_stable, is_method_not_found,
+        is_proxy_tunnel_error, language_locale, outbound_block_label, screenshot_clip,
+        split_caller_headers, ua_override_params,
     };
     use std::collections::HashMap;
     use std::time::Duration;
@@ -4591,6 +4760,71 @@ mod tests {
             challenge_retry_budget(2),
             Duration::from_millis(CHALLENGE_POLL_INTERVAL_MS * 2)
         );
+    }
+
+    // --- SkeletonWait ------------------------------------------------------------
+
+    /// Drive a [`SkeletonWait`] with `(skeletons, text_len, html_len,
+    /// region_len)` samples and return the index of the sample it snapshots on.
+    fn skeleton_stop(trace: &[(u64, u64, u64, u64)]) -> Option<usize> {
+        let s =
+            |&(skeletons, text_len, html_len, region_len): &(u64, u64, u64, u64)| SkeletonSample {
+                skeletons,
+                text_len,
+                html_len,
+                region_len,
+            };
+        let mut w = SkeletonWait::new(s(&trace[0]));
+        trace[1..]
+            .iter()
+            .position(|t| w.observe(s(t)))
+            .map(|i| i + 1)
+    }
+
+    #[test]
+    fn skeleton_wait_holds_until_kiwi_offers_render() {
+        // kiwi.com flight search page, sampled from a real browser. The
+        // first offers render at index 7. Before that the page shows a shorter
+        // loading view (902 chars) and a price calendar that grows the page to
+        // 1845 chars with no offer in it; neither may end the wait.
+        let trace = [
+            (5, 1223, 861_707, 0),
+            (5, 1223, 866_759, 0),
+            (5, 1223, 866_764, 0),
+            (0, 902, 770_457, 0),
+            (0, 902, 770_494, 0),
+            (5, 1845, 908_721, 0),
+            (5, 1819, 873_595, 0),
+            (10, 2402, 1_070_093, 540),
+            (5, 2411, 973_329, 549),
+            (5, 2553, 981_851, 677),
+        ];
+        assert_eq!(skeleton_stop(&trace), Some(8));
+    }
+
+    #[test]
+    fn skeleton_wait_gives_up_on_a_page_that_stands_still() {
+        // Image placeholders the blocklist never lets load: nothing changes.
+        let trace = [(6, 4000, 90_000, 0); 6];
+        assert_eq!(skeleton_stop(&trace), Some(3));
+    }
+
+    #[test]
+    fn skeleton_wait_keeps_waiting_while_a_page_moves_without_filling() {
+        // A ticking DOM whose skeleton region never gains text: only the
+        // caller's cap ends it.
+        let trace: Vec<_> = (0..20).map(|i| (5, 1200 + i, 800_000 + i * 7, 0)).collect();
+        assert_eq!(skeleton_stop(&trace), None);
+    }
+
+    #[test]
+    fn skeleton_wait_stops_once_the_skeleton_clears_without_shrinking() {
+        let trace = [
+            (4, 1000, 50_000, 0),
+            (4, 1000, 51_000, 0),
+            (0, 1100, 60_000, 0),
+        ];
+        assert_eq!(skeleton_stop(&trace), Some(2));
     }
 
     // --- is_content_stable: more boundaries ------------------------------------
