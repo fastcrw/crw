@@ -248,7 +248,16 @@ fn clean_html_impl(
             // Per-token substring matching avoids cross-token false positives
             // (e.g. "vector-toc-available skin-theme" wouldn't match "toc" on
             // a combined string that also contains the other classes).
-            let combined = format!("{class} {id}");
+            //
+            // `data-testid` joins the substring check only. Sites built on hashed
+            // class names (vanilla-extract, CSS modules) leave it as the one
+            // readable name on an element: jbhifi's per-card wishlist prompt is
+            // `div._x9 [data-testid=wishlist-card-overlay-message]`.
+            let testid = el
+                .get_attribute("data-testid")
+                .unwrap_or_default()
+                .to_lowercase();
+            let combined = format!("{class} {id} {testid}");
 
             // Layout names, matched per class token — NEVER as a substring.
             // These describe where a region sits on the page, so themes reuse
@@ -357,6 +366,7 @@ fn clean_html_impl(
                 "follow-us",
                 "site-map",
                 "sitemap",
+                "wishlist",
             ];
 
             // Patterns that need exact token matching (too short/generic for substring).
@@ -850,6 +860,17 @@ mod tests {
         assert!(result.contains("Blaupunkt 55in TV</h2>"));
         let full = clean_html(html, false, &[], &[]).unwrap();
         assert!(full.contains("_32x32.jpg"));
+    }
+
+    #[test]
+    fn wishlist_prompt_named_only_by_data_testid_is_removed() {
+        let html = r#"<body><main><div class="_10ipotx2f ProductCard"><h3>Hisense 55in TV</h3>
+            <div class="sn7w9b6" data-testid="wishlist-card-overlay-message">You're one step away from having this in your wishlist! Create account Log in</div>
+            <div data-testid="product-card-price">$695</div></div></main></body>"#;
+        let result = clean_html(html, true, &[], &[]).unwrap();
+        assert!(!result.contains("one step away"));
+        assert!(result.contains("Hisense 55in TV"));
+        assert!(result.contains("$695"));
     }
 
     #[test]
