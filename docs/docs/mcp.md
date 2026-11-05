@@ -240,7 +240,7 @@ For cloud mode and file-based configs, continue in [MCP Client Setup](#mcp-clien
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `url` | string | **yes** | The URL to scrape |
-| `formats` | string[] | no | `markdown`, `html`, `links` |
+| `formats` | string[] | no | `markdown`, `html`, `plainText`, `links`, `images` |
 | `onlyMainContent` | boolean | no | Strip nav/footer (default: true) |
 | `includeTags` | string[] | no | CSS selectors to keep |
 | `excludeTags` | string[] | no | CSS selectors to remove |
