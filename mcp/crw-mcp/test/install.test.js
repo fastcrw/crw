@@ -135,3 +135,17 @@ test("existing agent config is backed up before the first merge", (t) => {
   assert.equal(fs.readFileSync(`${configPath}.crw-backup`, "utf8"), original);
   assert.equal(JSON.parse(fs.readFileSync(configPath, "utf8")).theme, "dark");
 });
+
+test("install rejects an unknown flag and writes nothing", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "crw-mcp-unknown-flag-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const result = runInstall(home, ["--dry-run"]);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /unknown argument "--dry-run"/);
+  assert.equal(fs.existsSync(path.join(home, ".codex")), false);
+
+  // A flag's value is not mistaken for an unknown argument.
+  const ok = runInstall(home, ["--api-url", "https://api.example"]);
+  assert.equal(ok.status, 0, ok.stderr || ok.stdout);
+});
