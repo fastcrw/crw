@@ -458,6 +458,25 @@ async fn connectors_route_manifest_auth_and_rate_limit_errors_keep_their_codes()
     }
 }
 
+/// With no key configured, a 401 says the key is missing, not that it was refused.
+#[tokio::test]
+async fn connectors_route_manifest_401_without_a_key_says_it_is_missing() {
+    let server = MockServer::start().await;
+    Mock::given(path("/v1/data/manifest"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&server)
+        .await;
+    let err = DataToolContext::new(server.uri(), None, false)
+        .manifest()
+        .await
+        .unwrap_err();
+    assert!(
+        err.starts_with("[unauthorized]") && err.contains("none is configured"),
+        "{err}"
+    );
+    assert!(!err.contains("did not accept"), "{err}");
+}
+
 #[tokio::test]
 async fn connectors_route_unknown_schema_version_is_too_old() {
     let server = MockServer::start().await;
@@ -1365,6 +1384,44 @@ async fn connectors_exec_honours_short_retry_after_once() {
         hits(&server, "/up/works/L").await,
         1,
         "a long Retry-After is not waited out"
+    );
+}
+
+/// A 503 is a rate limit when the source paces itself or sends Retry-After;
+/// any other 503 is the source being down.
+#[tokio::test]
+async fn connectors_exec_rate_limit_503_is_upstream_rate_limited() {
+    let server = MockServer::start().await;
+    let mut paced = connector(&server, "paced");
+    paced["minIntervalMs"] = json!(1);
+    mount_manifest(&server, vec![paced, connector(&server, "openalex")]).await;
+    let ctx = DataToolContext::for_tests(&server.uri(), false, vec![]);
+    Mock::given(path("/up/works/P"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+    Mock::given(path("/up/works/R"))
+        .respond_with(ResponseTemplate::new(503).insert_header("retry-after", "30"))
+        .mount(&server)
+        .await;
+    Mock::given(path("/up/works/D"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+
+    let err = get(&ctx, "paced", json!({"id": "P"})).await.unwrap_err();
+    assert!(err.starts_with("[upstream_rate_limited]"), "{err}");
+    let err = get(&ctx, "openalex", json!({"id": "R"})).await.unwrap_err();
+    assert!(err.starts_with("[upstream_rate_limited]"), "{err}");
+    let err = get(&ctx, "openalex", json!({"id": "D"})).await.unwrap_err();
+    assert!(
+        err.starts_with("[upstream_error]") && err.contains("HTTP 503"),
+        "{err}"
+    );
+    assert_eq!(
+        hits(&server, "/up/works/P").await,
+        1,
+        "no Retry-After, no retry"
     );
 }
 
