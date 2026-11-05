@@ -26,6 +26,8 @@ pub struct StaticTier {
     pub html: String,
     /// Report the page as a partial snapshot taken when the budget ran out.
     pub truncated: bool,
+    /// With `truncated`: the page had settled when the budget fired.
+    pub budget_settled: bool,
 }
 
 #[async_trait::async_trait]
@@ -51,6 +53,7 @@ impl PageFetcher for StaticTier {
             credit_cost: 0,
             warnings: Vec::new(),
             truncated: self.truncated,
+            budget_settled: self.budget_settled,
             deadline_exceeded: false,
             captured_responses: Vec::new(),
             screenshot: None,

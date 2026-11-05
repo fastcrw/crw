@@ -56,6 +56,7 @@ fn app(with_browser: bool) -> TestServer {
             status_code: 403,
             html: CAPTCHA_WALL.to_string(),
             truncated: false,
+            budget_settled: false,
         }) as Arc<dyn PageFetcher>;
         renderer = renderer.with_js_tiers(vec![browser]);
     }
@@ -408,6 +409,12 @@ async fn batch_keeps_a_pdf_the_origin_refused_as_main_does() {
 /// served with `status`. A rate-limiting origin answers 429 this way, and the
 /// request used to end as a timeout the client kept retrying.
 fn app_with_truncated_browser(status: u16) -> TestServer {
+    app_with_budget_browser(status, "<html><head></head><body></body></html>", false)
+}
+
+/// A browser tier whose nav budget fired on `html`; `settled` says the page had
+/// already finished loading when it did.
+fn app_with_budget_browser(status: u16, html: &str, settled: bool) -> TestServer {
     allow_loopback();
     let config: AppConfig = toml::from_str("").unwrap();
     let mut state = AppState::new(config).expect("AppState::new failed");
@@ -419,8 +426,9 @@ fn app_with_truncated_browser(status: u16) -> TestServer {
     let browser = Arc::new(StaticTier {
         name: "chrome",
         status_code: status,
-        html: "<html><head></head><body></body></html>".to_string(),
+        html: html.to_string(),
         truncated: true,
+        budget_settled: settled,
     }) as Arc<dyn PageFetcher>;
     let renderer = FallbackRenderer::new(&cfg, "crw-test", None, &StealthConfig::default())
         .expect("renderer builds")
@@ -475,4 +483,52 @@ async fn an_empty_truncated_render_without_a_wall_is_still_a_timeout() {
         .json(&json!({"url": url, "formats": ["markdown"], "renderJs": true}))
         .await;
     assert_eq!(r.status_code(), StatusCode::REQUEST_TIMEOUT, "{}", r.text());
+}
+
+const FULL_PAGE: &str = "<html><head><title>Plain</title></head><body><p>A complete page \
+    whose readiness poll found none of the SPA containers, so the navigation budget \
+    fired after it had already finished loading.</p></body></html>";
+
+/// A budget hit on a page that had already settled is a complete page: no
+/// `truncated` label, and the content is served as on any other success.
+#[tokio::test]
+async fn a_settled_budget_hit_is_not_labelled_truncated() {
+    let origin = MockServer::start().await;
+    let url = serve(&origin, "/plain", 200, "<html><body></body></html>").await;
+    let s = app_with_budget_browser(200, FULL_PAGE, true);
+
+    let body = forced_js(&s, "/v1/scrape", &url).await;
+    assert_eq!(body["success"], true, "{body}");
+    assert!(body["data"].get("truncated").is_none(), "{body}");
+    assert!(
+        body["data"]["markdown"]
+            .as_str()
+            .is_some_and(|m| m.contains("A complete page")),
+        "{body}"
+    );
+}
+
+/// The same budget hit before the page settled keeps the label.
+#[tokio::test]
+async fn an_unsettled_budget_hit_stays_labelled_truncated() {
+    let origin = MockServer::start().await;
+    let url = serve(&origin, "/plain", 200, "<html><body></body></html>").await;
+    let s = app_with_budget_browser(200, FULL_PAGE, false);
+
+    let body = forced_js(&s, "/v1/scrape", &url).await;
+    assert_eq!(body["success"], true, "{body}");
+    assert_eq!(body["data"]["truncated"], true, "{body}");
+}
+
+/// The label is display only: an empty render whose budget fired is still the
+/// refunded timeout even when the page had settled.
+#[tokio::test]
+async fn an_empty_settled_budget_hit_is_still_a_timeout() {
+    let origin = MockServer::start().await;
+    let url = serve(&origin, "/slow", 200, "<html><body></body></html>").await;
+    let s = app_with_budget_browser(200, "<html><head></head><body></body></html>", true);
+
+    let body = forced_js(&s, "/v1/scrape", &url).await;
+    assert_eq!(body["success"], false, "{body}");
+    assert_eq!(body["errorCode"], "timeout", "{body}");
 }

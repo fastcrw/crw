@@ -75,6 +75,13 @@ const SPA_BODY_TEXT_MIN_CHARS: u64 = 800;
 /// finish their data fetch before innerText hits the threshold get an early
 /// exit via this signal — recall lift on lazy-fetch pages.
 const NETWORK_IDLE_QUIET_MS: i64 = 500;
+
+/// Quiet window for [`NetworkActivityTracker::budget_settled`]: when the nav
+/// budget fires, the main frame must have had no request in flight and no
+/// network change for this long before the page is labelled complete. Twice
+/// the readiness poll's window because a wrong "complete" hides a real
+/// truncation from the caller.
+const BUDGET_SETTLED_QUIET_MS: i64 = 1000;
 /// latency-qn fast-ready: mandatory content floor (non-whitespace body chars)
 /// below which we NEVER early-exit — prevents snapshotting an empty CSR shell
 /// (the quality red line; CSR SPAs go load+idle with body still empty). Matches
@@ -1701,6 +1708,10 @@ struct NetworkActivityTracker {
     /// quiet-period — `in_flight == 0` alone fires too early on SPAs that
     /// haven't kicked off their first XHR yet.
     last_change_ms: AtomicI64,
+    /// The frame the idle pump adopted as the main frame. Read by
+    /// [`Self::budget_settled`] and the `nav budget hit` log line; the pump's
+    /// adoption logic is unchanged.
+    adopted_frame: std::sync::OnceLock<String>,
 }
 
 impl NetworkActivityTracker {
@@ -1708,7 +1719,20 @@ impl NetworkActivityTracker {
         Self {
             in_flight: AtomicI64::new(0),
             last_change_ms: AtomicI64::new(now_unix_ms()),
+            adopted_frame: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Whether a page whose nav budget just fired had in fact finished: the
+    /// tracker is counting the frame `Page.navigate` reported (so it is the
+    /// top-level document, not an iframe or nothing at all) and that frame's
+    /// network has been idle for `quiet_ms`. Labelling only: decisions keep
+    /// reading `truncated`, so a wrong answer here can mislabel a page but
+    /// never change its content.
+    fn budget_settled(&self, nav_frame: Option<&str>, quiet_ms: i64) -> bool {
+        nav_frame.is_some()
+            && self.adopted_frame.get().map(String::as_str) == nav_frame
+            && self.is_idle(quiet_ms)
     }
 
     fn record_request_start(&self) {
@@ -1787,6 +1811,9 @@ async fn run_network_idle_pump(
                     && ev.params.get("type").and_then(|v| v.as_str()) == Some("Document")
                 {
                     main_frame = fid.map(str::to_string);
+                    if let Some(f) = &main_frame {
+                        let _ = tracker.adopted_frame.set(f.clone());
+                    }
                 }
                 if let (Some(rid), Some(mf)) = (
                     ev.params.get("requestId").and_then(|v| v.as_str()),
@@ -2315,7 +2342,16 @@ impl CdpRenderer {
             tracing::warn!(error = %e, "pool: release returned error (slot recycled as Dead)");
         }
 
-        let (html, status_code, truncated, final_href, captured_responses, screenshot, _tid) = res?;
+        let (
+            html,
+            status_code,
+            truncated,
+            settled,
+            final_href,
+            captured_responses,
+            screenshot,
+            _tid,
+        ) = res?;
 
         if html.is_empty() {
             return Err(CrwError::RendererError(
@@ -2329,6 +2365,7 @@ impl CdpRenderer {
         }
 
         let final_url = final_href.filter(|h| *h != url);
+        let budget_warning = self.budget_warning(truncated, settled);
         Ok(FetchResult {
             url: url.to_string(),
             final_url,
@@ -2338,19 +2375,12 @@ impl CdpRenderer {
             raw_bytes: None,
             rendered_with: Some(self.name.clone()),
             elapsed_ms: start.elapsed().as_millis() as u64,
-            warning: if truncated {
-                Some(self.budget_truncated_warning())
-            } else {
-                None
-            },
+            warning: budget_warning.clone(),
             render_decision: None,
             credit_cost: 0,
-            warnings: if truncated {
-                vec![self.budget_truncated_warning()]
-            } else {
-                Vec::new()
-            },
+            warnings: budget_warning.into_iter().collect(),
             truncated,
+            budget_settled: truncated && settled,
             deadline_exceeded: deadline.remaining().is_zero(),
             captured_responses,
             screenshot,
@@ -2367,6 +2397,14 @@ impl CdpRenderer {
     /// consumers see no difference.
     fn budget_truncated_warning(&self) -> String {
         format!("{}_budget_truncated", self.name)
+    }
+
+    /// The `<tier>_budget_truncated` warning for a render whose nav budget
+    /// fired, unless the page had already settled (see
+    /// [`NetworkActivityTracker::budget_settled`]): then the snapshot is the
+    /// whole page and calling it partial would be false. Display only.
+    fn budget_warning(&self, truncated: bool, settled: bool) -> Option<String> {
+        (truncated && !settled).then(|| self.budget_truncated_warning())
     }
 
     /// Inner fetch with WebSocket lifecycle management.
@@ -2501,6 +2539,7 @@ impl CdpRenderer {
             html,
             status_code,
             truncated,
+            settled,
             final_href,
             captured_responses,
             screenshot,
@@ -2520,7 +2559,7 @@ impl CdpRenderer {
         }
 
         let final_url = final_href.filter(|h| *h != url);
-
+        let budget_warning = self.budget_warning(truncated, settled);
         Ok(FetchResult {
             url: url.to_string(),
             final_url,
@@ -2530,19 +2569,12 @@ impl CdpRenderer {
             raw_bytes: None,
             rendered_with: Some(self.name.clone()),
             elapsed_ms: start.elapsed().as_millis() as u64,
-            warning: if truncated {
-                Some(self.budget_truncated_warning())
-            } else {
-                None
-            },
+            warning: budget_warning.clone(),
             render_decision: None,
             credit_cost: 0,
-            warnings: if truncated {
-                vec![self.budget_truncated_warning()]
-            } else {
-                Vec::new()
-            },
+            warnings: budget_warning.into_iter().collect(),
             truncated,
+            budget_settled: truncated && settled,
             deadline_exceeded: deadline.remaining().is_zero(),
             captured_responses,
             screenshot,
@@ -3040,6 +3072,7 @@ impl CdpRenderer {
         String,
         u16,
         bool,
+        bool,
         Option<String>,
         Vec<CapturedNetworkResponse>,
         Option<String>,
@@ -3446,6 +3479,10 @@ impl CdpRenderer {
                     "Navigation failed: {error_text}"
                 )));
             }
+            let nav_frame = navigate_result
+                .get("frameId")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
             let status_code =
                 wait_for_page_ready(events_rx, &session_id, self.page_timeout).await?;
             crw_core::metrics::metrics()
@@ -3463,10 +3500,19 @@ impl CdpRenderer {
             // we attempt a partial-DOM snapshot and return `truncated = true`;
             // `single.rs` decides success on md length.
             let phase = self.post_navigate_phase(conn, &session_id, url, wait_for_ms, &net_tracker);
-            let (html, truncated) = match tokio::time::timeout(nav_budget, phase).await {
-                Ok(Ok(html)) => (html, false),
+            let (html, truncated, settled) = match tokio::time::timeout(nav_budget, phase).await {
+                Ok(Ok(html)) => (html, false, false),
                 Ok(Err(err)) => return Err(err),
                 Err(_) => {
+                    // Before `Page.stopLoading` (which cancels requests and moves
+                    // the tracker): did the page already finish? The yields give
+                    // the biased select a best-effort chance to feed queued
+                    // `Network.*` events to the tracker first.
+                    for _ in 0..3 {
+                        tokio::task::yield_now().await;
+                    }
+                    let settled =
+                        net_tracker.budget_settled(nav_frame.as_deref(), BUDGET_SETTLED_QUIET_MS);
                     // Name the tier that actually ran out, for the same reason
                     // `budget_truncated_warning()` does: this struct drives every
                     // CDP-speaking renderer, so a hardcoded "chrome" blamed Chrome
@@ -3476,6 +3522,10 @@ impl CdpRenderer {
                         url = %LogUrl(&url),
                         renderer = %self.name,
                         budget_ms = nav_budget.as_millis() as u64,
+                        settled,
+                        in_flight = net_tracker.in_flight.load(Ordering::Relaxed),
+                        frame_match = nav_frame.is_some()
+                            && net_tracker.adopted_frame.get() == nav_frame.as_ref(),
                         "nav budget hit; attempting partial snapshot",
                     );
                     let _ = conn
@@ -3493,7 +3543,7 @@ impl CdpRenderer {
                         .chrome_budget_truncated_total
                         .with_label_values(&[if html.is_empty() { "empty" } else { "ok" }])
                         .inc();
-                    (html, true)
+                    (html, true, settled)
                 }
             };
             // Screenshot capture runs AFTER the page-load budget race resolves,
@@ -3508,7 +3558,7 @@ impl CdpRenderer {
                 }
                 None => None,
             };
-            Ok::<_, CrwError>((html, status_code, truncated, screenshot))
+            Ok::<_, CrwError>((html, status_code, truncated, settled, screenshot))
         };
 
         // Always-on XHR/fetch capture. Cheap when no JSON XHRs fire (events
@@ -3704,7 +3754,7 @@ impl CdpRenderer {
         // it via the recorded target_id; legacy fetch_with_ws closes after
         // fetch_inner returns via its Cell-captured id).
 
-        let (html, status_code, truncated, screenshot) = outcome?;
+        let (html, status_code, truncated, settled, screenshot) = outcome?;
 
         if html.is_empty() && truncated {
             return Err(CrwError::Timeout(nav_budget.as_millis() as u64));
@@ -3722,6 +3772,7 @@ impl CdpRenderer {
             html,
             status_code,
             truncated,
+            settled,
             final_href,
             captured_drained,
             screenshot,
@@ -4187,6 +4238,19 @@ mod tests {
     }
 
     #[test]
+    fn budget_warning_only_for_an_unsettled_budget_hit() {
+        let lp = CdpRenderer::new("lightpanda", "ws://x/", 1000, 1);
+        assert_eq!(
+            lp.budget_warning(true, false).as_deref(),
+            Some("lightpanda_budget_truncated")
+        );
+        // The page had finished: the snapshot is whole, so no partial label.
+        assert_eq!(lp.budget_warning(true, true), None);
+        assert_eq!(lp.budget_warning(false, false), None);
+        assert_eq!(lp.budget_warning(false, true), None);
+    }
+
+    #[test]
     fn pool_gate_reflects_configured_reserved_interactive_renders() {
         // Guards the FULL config→PoolCfg→with_pool threading, not just the
         // resolver arithmetic: a configured reserve must actually reach the pool
@@ -4323,6 +4387,31 @@ mod tests {
     }
 
     use super::NetworkActivityTracker;
+
+    #[test]
+    fn budget_settled_needs_the_navigated_frame_and_a_quiet_network() {
+        let t = NetworkActivityTracker::new();
+        // Idle, but the tracker never adopted a frame: it may not be counting
+        // the page at all, so it cannot vouch for it.
+        assert!(!t.budget_settled(Some("F1"), 0));
+        t.adopted_frame.set("F1".to_string()).unwrap();
+        // No frame from Page.navigate: nothing to match.
+        assert!(!t.budget_settled(None, 0));
+        // An iframe adopted instead of the navigated frame.
+        assert!(!t.budget_settled(Some("F2"), 0));
+        assert!(t.budget_settled(Some("F1"), 0));
+        // A request still in flight on the page.
+        t.record_request_start();
+        assert!(!t.budget_settled(Some("F1"), 0));
+        t.record_request_end();
+        // Just went quiet: the production window has not elapsed yet.
+        assert!(!t.budget_settled(Some("F1"), super::BUDGET_SETTLED_QUIET_MS));
+        t.last_change_ms.store(
+            super::now_unix_ms() - super::BUDGET_SETTLED_QUIET_MS - 1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        assert!(t.budget_settled(Some("F1"), super::BUDGET_SETTLED_QUIET_MS));
+    }
 
     #[test]
     fn tracker_starts_idle_after_quiet_period() {
