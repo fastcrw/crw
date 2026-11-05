@@ -45,7 +45,7 @@ Scrape a single URL and return clean content.
 
 Parameters:
 - `url` (required) — The URL to scrape
-- `formats` — Output formats: `markdown` (default), `html`, `links`, `images`
+- `formats` — Output formats: `markdown` (default), `html`, `plainText`, `links`, `images`
 - `onlyMainContent` — Strip navs/footers/sidebars. Default: `true`
 - `includeTags` — Only include content matching these CSS selectors (e.g. `["article", "main"]`)
 - `excludeTags` — Exclude content matching these CSS selectors (e.g. `["nav", "footer"]`)

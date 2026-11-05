@@ -471,7 +471,7 @@ Scrape a single URL and return clean content.
 
 Parameters:
   url             string    required  The URL to scrape
-  formats         string[]  opt       "markdown" (default), "html", "links"
+  formats         string[]  opt       "markdown" (default), "html", "plainText", "links", "images"
   onlyMainContent boolean   opt       Strip nav/footer (default: true)
   includeTags     string[]  opt       CSS selectors to include
   excludeTags     string[]  opt       CSS selectors to exclude
