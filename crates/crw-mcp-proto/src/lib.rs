@@ -172,7 +172,7 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                     },
                     "formats": {
                         "type": "array",
-                        "items": { "type": "string", "enum": ["markdown", "html", "links", "images"] },
+                        "items": { "type": "string", "enum": ["markdown", "html", "plainText", "links", "images"] },
                         "description": "Output formats (default [\"markdown\"])"
                     },
                     "onlyMainContent": {
@@ -1223,6 +1223,21 @@ mod tests {
             est_tokens,
             TOOLS_LIST_TOKEN_CEILING
         );
+    }
+
+    #[test]
+    fn crw_scrape_schema_advertises_plain_text_in_both_modes() {
+        for proxy_mode in [false, true] {
+            let defs = tool_definitions(proxy_mode);
+            let scrape = tool_by_name(&defs, "crw_scrape");
+            let formats = scrape["inputSchema"]["properties"]["formats"]["items"]["enum"]
+                .as_array()
+                .expect("formats enum");
+            assert!(
+                formats.iter().any(|format| format == "plainText"),
+                "plainText must be advertised in proxy_mode={proxy_mode}"
+            );
+        }
     }
 
     #[test]
