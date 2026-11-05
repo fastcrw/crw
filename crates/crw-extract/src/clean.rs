@@ -13,6 +13,11 @@ pub(crate) enum CleanDepth {
     /// Scripts, styles, frames and data-URI images only. What a caller asking
     /// for the document as it is gets.
     Chrome,
+    /// Chrome plus markup hidden by an inline style. The floor of the
+    /// `onlyMainContent` ladder: the rungs above it drop hidden markup too, and
+    /// the structural rung is judged by how much of this one it keeps, so both
+    /// sides of that ratio have to be measured on the same visible page.
+    Visible,
     /// Also drop structural chrome: `nav`, site-level `header`/`footer`/`aside`,
     /// `menu`, `select`. The class-name rules do NOT run.
     ///
@@ -137,6 +142,29 @@ fn clean_html_impl(
     ];
 
     if depth != CleanDepth::Chrome {
+        // Markup the page hides with an inline style is not content: a reader
+        // never sees it. Shopify themes ship `#BrowserWarning` with
+        // `display: none` and a cart drawer under `visibility: hidden`, and both
+        // read as body text once converted. Readability.js drops the same nodes
+        // (`_isProbablyVisible`). The page skeleton is exempt: some sites hide
+        // <body> or <main> until their scripts run, and that is the whole
+        // document.
+        //
+        // The `hidden` attribute is left alone on purpose. React's streaming
+        // SSR parks the real content in `<div hidden id="S:0">` and moves it into
+        // place with a script, so a page fetched without running scripts keeps
+        // its body there (kap.org.tr on the frozen set).
+        handlers.push(element!("[style]", |el| {
+            if !matches!(el.tag_name().as_str(), "html" | "body" | "main")
+                && el.get_attribute("style").is_some_and(|s| hides(&s))
+            {
+                el.remove();
+            }
+            Ok(())
+        }));
+    }
+
+    if matches!(depth, CleanDepth::Structural | CleanDepth::Full) {
         handlers.push(element!("nav", |el| {
             el.remove();
             Ok(())
@@ -404,6 +432,21 @@ fn clean_html_impl(
     }
 
     Ok(result)
+}
+
+/// True when an inline `style` takes the element out of view.
+fn hides(style: &str) -> bool {
+    let style: String = style
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    style.split(';').any(|decl| {
+        matches!(
+            decl.trim_end_matches("!important"),
+            "display:none" | "visibility:hidden"
+        )
+    })
 }
 
 /// Keep only the HTML of elements matching any of the given CSS selectors.
@@ -726,6 +769,68 @@ mod tests {
         let result = clean_html(html, false, &[], &[]).unwrap();
         assert!(!result.contains("Enable JS"));
         assert!(result.contains("Content"));
+    }
+
+    #[test]
+    fn hidden_markup_is_dropped_in_main_content_mode() {
+        // Shape of the jbhifi collection page from #660.
+        let html = r#"<body><main><h1>50-55 Inch Televisions</h1>
+            <p class="unsupported-browser" id="BrowserWarning" style="display: none;">Your browser version is unsupported.</p>
+            <div role="button" style="z-index: 1001; visibility:hidden !important"><h3>My Cart</h3><p>Your cart is empty</p></div>
+            <p style="display: block">Hisense 55 inch TV</p></main></body>"#;
+        let result = clean_html(html, true, &[], &[]).unwrap();
+        assert!(!result.contains("browser version"));
+        assert!(!result.contains("Your cart is empty"));
+        assert!(result.contains("50-55 Inch Televisions"));
+        assert!(result.contains("Hisense 55 inch TV"));
+    }
+
+    #[test]
+    fn hidden_markup_is_kept_when_only_main_content_is_false() {
+        let html = r#"<body><p style="display:none">Hidden note</p><p>Content</p></body>"#;
+        let result = clean_html(html, false, &[], &[]).unwrap();
+        assert!(result.contains("Hidden note"));
+    }
+
+    #[test]
+    fn hidden_page_skeleton_and_hidden_attribute_content_survive() {
+        // Sites that hide the document until their scripts run still carry the
+        // content, and React streaming SSR parks the real body in
+        // `<div hidden id="S:0">` until a script moves it into place.
+        let html = r#"<html style="visibility:hidden"><body style="display:none"><main style="display:none">
+            <p>Article body</p><div hidden id="S:0">Fund summary table</div></main></body></html>"#;
+        let result = clean_html(html, true, &[], &[]).unwrap();
+        assert!(result.contains("Article body"));
+        assert!(result.contains("Fund summary table"));
+    }
+
+    #[test]
+    fn visible_depth_drops_hidden_markup_but_keeps_structure() {
+        let html =
+            r#"<body><nav>Menu</nav><p style="display:none">Hidden note</p><p>Content</p></body>"#;
+        let result = clean_html_at(html, CleanDepth::Visible, &[], &[], &mut Vec::new()).unwrap();
+        assert!(!result.contains("Hidden note"));
+        assert!(result.contains("Menu"));
+        assert!(result.contains("Content"));
+    }
+
+    #[test]
+    fn style_without_a_hiding_declaration_is_kept() {
+        for style in [
+            "display: flex",
+            "visibility: visible",
+            "max-height: 0; overflow: hidden",
+            "--display:none-ish: 1",
+        ] {
+            assert!(!hides(style), "{style}");
+        }
+        for style in [
+            "DISPLAY:NONE",
+            "color:red; display : none ;",
+            "visibility:hidden!important",
+        ] {
+            assert!(hides(style), "{style}");
+        }
     }
 
     #[test]
