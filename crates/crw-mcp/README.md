@@ -20,7 +20,7 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 
 | Tool | Description |
 |------|-------------|
-| `crw_scrape` | Scrape a single URL → markdown, HTML, links |
+| `crw_scrape` | Scrape a single URL → Markdown, HTML, plain text, links, images |
 | `crw_crawl` | Start an async BFS crawl (returns job ID) |
 | `crw_check_crawl_status` | Poll crawl job status and retrieve results |
 | `crw_map` | Discover all URLs on a website |
