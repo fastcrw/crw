@@ -589,7 +589,11 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
                 // incumbent by a ratio rather than by raw length.
                 let chrome_cleaned = clean::clean_html_at(
                     raw_html,
-                    clean::CleanDepth::Chrome,
+                    if only_main_content {
+                        clean::CleanDepth::Visible
+                    } else {
+                        clean::CleanDepth::Chrome
+                    },
                     include_tags,
                     exclude_tags,
                     &mut warnings,
