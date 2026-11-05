@@ -847,6 +847,7 @@ fn build_request(
         max_content_chars: None,
         renderer: None,
         force_cloak: None,
+        cloak_allowed: None,
         deadline_ms: None,
         debug: None,
         change_tracking: None,

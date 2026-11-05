@@ -487,6 +487,7 @@ impl PageFetcher for CamoufoxRenderer {
             // Camoufox is an HTTP sidecar (no CDP) — it never captures.
             screenshot: None,
             block: None,
+            residential_bytes: None,
         })
     }
 

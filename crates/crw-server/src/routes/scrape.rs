@@ -26,6 +26,15 @@ pub async fn scrape(
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false),
     );
+    // Same trusted channel: `cloak_allowed` is `skip_deserializing`, and only
+    // matters when the deployment runs with `renderer.cloak_opt_in_only`.
+    req.cloak_allowed = Some(
+        headers
+            .get("x-crw-cloak-allow")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false),
+    );
     // Same trusted channel as `x-crw-force-cloak`: `cache_scope` is
     // `skip_deserializing`, so this header is its only source and a caller
     // cannot put themselves in someone else's cache scope.

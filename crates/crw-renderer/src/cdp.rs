@@ -2355,6 +2355,7 @@ impl CdpRenderer {
             captured_responses,
             screenshot,
             block: None,
+            residential_bytes: None,
         })
     }
 
@@ -2546,6 +2547,7 @@ impl CdpRenderer {
             captured_responses,
             screenshot,
             block: None,
+            residential_bytes: None,
         })
     }
 

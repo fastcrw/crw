@@ -228,6 +228,7 @@ fn scrape_data_skip_serializing_none() {
         unclearable_wall: false,
         truncated: false,
         cached: false,
+        residential_bytes: None,
     };
 
     let json = serde_json::to_value(&data).unwrap();
@@ -351,6 +352,7 @@ fn scrape_data_serializes_debug_extraction_as_camel_case() {
         unclearable_wall: false,
         truncated: false,
         cached: false,
+        residential_bytes: None,
     };
     let v = serde_json::to_value(&data).unwrap();
     assert!(v.get("debugExtraction").is_none(), "absent when None");

@@ -852,6 +852,9 @@ pub struct FallbackRenderer {
     /// `RendererConfig::cloak_after_egress`. Default off; inert in a lean
     /// (no-`cloak`) build, where the flag that reads it folds to `false`.
     cloak_after_egress: bool,
+    /// Every cloak entry requires the per-request allow bit. See
+    /// `RendererConfig::cloak_opt_in_only`. Default off.
+    cloak_opt_in_only: bool,
     /// latency-qn: conditional hedge — race lightpanda+chrome concurrently.
     chrome_hedge: bool,
     /// Headroom gate for the hedge: bounds concurrent hedges to pool_size/2 so the
@@ -1134,6 +1137,7 @@ impl FallbackRenderer {
                 auto_egress_escalation: config.auto_egress_escalation,
                 cloak_recover_on_cf: config.cloak_recover_on_cf,
                 cloak_after_egress: config.cloak_after_egress,
+                cloak_opt_in_only: config.cloak_opt_in_only,
                 chrome_hedge: config.chrome_hedge,
                 hedge_sem: Arc::new(tokio::sync::Semaphore::new((config.pool_size / 2).max(1))),
                 chrome_proxy_arm_sem: Arc::new(tokio::sync::Semaphore::new(
@@ -1453,6 +1457,7 @@ impl FallbackRenderer {
             auto_egress_escalation: config.auto_egress_escalation,
             cloak_recover_on_cf: config.cloak_recover_on_cf,
             cloak_after_egress: config.cloak_after_egress,
+            cloak_opt_in_only: config.cloak_opt_in_only,
             chrome_hedge: config.chrome_hedge,
             hedge_sem: Arc::new(tokio::sync::Semaphore::new((config.pool_size / 2).max(1))),
             chrome_proxy_arm_sem: Arc::new(tokio::sync::Semaphore::new(
@@ -1991,6 +1996,7 @@ impl FallbackRenderer {
             wait_for_ms,
             requested_renderer,
             false,
+            false,
             deadline,
         )
         .await
@@ -2009,6 +2015,7 @@ impl FallbackRenderer {
         wait_for_ms: Option<u64>,
         requested_renderer: Option<&str>,
         force_cloak: bool,
+        cloak_allowed: bool,
         deadline: crw_core::Deadline,
     ) -> CrwResult<FetchResult> {
         // Phase 0 (latency-qn): time the whole fetch and emit a structured
@@ -2025,6 +2032,7 @@ impl FallbackRenderer {
                     wait_for_ms,
                     requested_renderer,
                     force_cloak,
+                    cloak_allowed,
                     deadline,
                 )
                 .await;
@@ -2038,6 +2046,7 @@ impl FallbackRenderer {
                 wait_for_ms,
                 requested_renderer,
                 force_cloak,
+                cloak_allowed,
                 deadline,
             )
             .await;
@@ -2071,8 +2080,12 @@ impl FallbackRenderer {
         wait_for_ms: Option<u64>,
         requested_renderer: Option<&str>,
         force_cloak: bool,
+        cloak_allowed: bool,
         deadline: crw_core::Deadline,
     ) -> CrwResult<FetchResult> {
+        // One decision for every cloak entry below: with `cloak_opt_in_only`
+        // set, a request reaches cloak only when the front end allowed it.
+        let cloak_permitted = !self.cloak_opt_in_only || cloak_allowed;
         // Per-eTLD+1 rate-limit + concurrency cap. Held across the entire
         // fetch (including any escalation to a JS renderer) so a host that
         // rate-limits HTTP doesn't get hammered by Chrome on retry.
@@ -2155,6 +2168,7 @@ impl FallbackRenderer {
                 // silently break. Screenshots also skip it (cloak replays HTTP and
                 // has no DOM to capture).
                 let cloak_first_eligible = force_cloak
+                    && cloak_permitted
                     && !screenshot_requested()
                     && effective != Some(false)
                     && !matches!(requested_renderer, Some(name) if name != "auto");
@@ -2437,6 +2451,7 @@ impl FallbackRenderer {
                                 wait_for_ms,
                                 requested_renderer,
                                 cloak_attempted,
+                                cloak_permitted,
                                 deadline,
                             )
                             .await
@@ -2516,6 +2531,7 @@ impl FallbackRenderer {
                             wait_for_ms,
                             requested_renderer,
                             cloak_attempted,
+                            cloak_permitted,
                             deadline,
                         )
                         .await;
@@ -2671,6 +2687,7 @@ impl FallbackRenderer {
                                 wait_for_ms,
                                 requested_renderer,
                                 cloak_attempted,
+                                cloak_permitted,
                                 deadline,
                             )
                             .await
@@ -2899,6 +2916,7 @@ impl FallbackRenderer {
                             wait_for_ms,
                             requested_renderer,
                             cloak_attempted,
+                            cloak_permitted,
                             deadline,
                         )
                         .await;
@@ -3298,6 +3316,11 @@ impl FallbackRenderer {
         // this request; suppresses the post-ladder recovery arm so one page never
         // burns two `cloak_sem` permits.
         cloak_attempted: bool,
+        // False when `cloak_opt_in_only` is set and this request did not carry
+        // the allow bit: neither the recovery arm nor the after-egress arm may
+        // fire, and a challenge uncovered by chrome_proxy is booked as a plain
+        // render error so its host breaker behaves exactly as without cloak.
+        cloak_permitted: bool,
         deadline: crw_core::Deadline,
     ) -> CrwResult<FetchResult> {
         let host = host_of(url);
@@ -4264,11 +4287,13 @@ impl FallbackRenderer {
                 // `!cloak_attempted`: if the pre-ladder cloak-first hint already
                 // fired a cloak attempt this request, do NOT fire the recovery arm
                 // again (one page, one cloak permit).
-                saw_cf_challenge && self.cloak_arm.is_some() && !cloak_attempted
+                saw_cf_challenge && cloak_permitted && self.cloak_arm.is_some() && !cloak_attempted
             }
             #[cfg(not(feature = "cloak"))]
             {
                 let _ = cloak_attempted;
+                let _ = cloak_permitted;
+                let _ = self.cloak_opt_in_only;
                 let _ = self.cloak_recover_on_cf;
                 let _ = self.cloak_after_egress;
                 false
@@ -4316,10 +4341,22 @@ impl FallbackRenderer {
             // arm can win a permit yet briefly wait on `conn_semaphore` behind
             // in-ladder traffic — still bounded by the arm's own ~12s fetch timeout,
             // never a deadlock or a 120s queue.
+            // A request that opted into the metered tier is not held back by a
+            // host breaker that traffic without the opt-in opened: under the
+            // opt-in gate those requests book a wall as RenderError (they may
+            // not continue to cloak), and letting that close the arm would
+            // stop the paying request from ever uncovering the challenge.
+            #[cfg(feature = "cloak")]
+            let opted_after_egress = self.cloak_opt_in_only
+                && cloak_permitted
+                && self.cloak_after_egress
+                && self.cloak_arm.is_some();
+            #[cfg(not(feature = "cloak"))]
+            let opted_after_egress = false;
             let arm_wanted = saw_hard_block
                 && !route_to_cloak
                 && !saw_unrecoverable_wall
-                && !self.breakers.host_for(&host, kind).await.is_open();
+                && (opted_after_egress || !self.breakers.host_for(&host, kind).await.is_open());
             let arm_permit = if arm_wanted {
                 self.chrome_proxy_arm_sem.clone().try_acquire_owned().ok()
             } else {
@@ -4437,6 +4474,7 @@ impl FallbackRenderer {
                                     {
                                         r_cf_challenge
                                             && self.cloak_after_egress
+                                            && cloak_permitted
                                             && self.cloak_arm.is_some()
                                     }
                                     #[cfg(not(feature = "cloak"))]
@@ -4529,6 +4567,7 @@ impl FallbackRenderer {
         #[cfg(feature = "cloak")]
         let cloak_after_egress_route = arm_uncovered_cf
             && self.cloak_after_egress
+            && cloak_permitted
             && self.cloak_arm.is_some()
             && !cloak_attempted;
         #[cfg(feature = "cloak")]
@@ -5474,6 +5513,7 @@ mod tests {
                 captured_responses: Vec::new(),
                 screenshot: None,
                 block: None,
+                residential_bytes: None,
             })
         }
 
@@ -5548,6 +5588,7 @@ mod tests {
                 captured_responses: Vec::new(),
                 screenshot: None,
                 block: None,
+                residential_bytes: None,
             })
         }
         fn name(&self) -> &str {
@@ -5581,6 +5622,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 crw_core::Deadline::from_request_ms(0),
             )
             .await
@@ -5658,6 +5700,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 crw_core::Deadline::from_request_ms(1_500),
             )
             .await
@@ -5926,6 +5969,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 crw_core::Deadline::from_request_ms(1_500),
             )
             .await
@@ -6245,6 +6289,7 @@ mod tests {
                 captured_responses: Vec::new(),
                 screenshot: None,
                 block: None,
+                residential_bytes: None,
             })
         }
         fn name(&self) -> &str {
@@ -6472,6 +6517,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 tdl(),
             )
             .await
@@ -6572,6 +6618,7 @@ mod tests {
             None,
             None,
             false,
+            true,
             crw_core::Deadline::from_request_ms(30_000),
         )
         .await
@@ -6711,6 +6758,7 @@ mod tests {
                     None,
                     None,
                     false,
+                    true,
                     crw_core::Deadline::from_request_ms(5000),
                 )
                 .await
@@ -6744,6 +6792,7 @@ mod tests {
                     None,
                     None,
                     false,
+                    true,
                     crw_core::Deadline::from_request_ms(5000),
                 )
                 .await
@@ -8786,6 +8835,7 @@ mod tests {
                 captured_responses: Vec::new(),
                 screenshot: None,
                 block: None,
+                residential_bytes: None,
             })
         }
         fn name(&self) -> &str {
@@ -8835,6 +8885,7 @@ mod tests {
                 None,
                 None,
                 true,
+                true,
                 tdl(),
             )
             .await
@@ -8879,6 +8930,7 @@ mod tests {
                 None,
                 None,
                 true,
+                true,
                 // 5s: below the 24s cloak floor (hint ignored) but above the
                 // ladder's own MIN_TIER_BUDGET so the ladder still renders.
                 crw_core::Deadline::from_request_ms(5_000),
@@ -8914,6 +8966,7 @@ mod tests {
                 Some(true),
                 None,
                 None,
+                true,
                 true,
                 tdl(),
             )
@@ -8956,6 +9009,7 @@ mod tests {
                 None,
                 None,
                 true,
+                true,
                 tdl(),
             )
             .await;
@@ -8995,6 +9049,7 @@ mod tests {
                 None,
                 None,
                 true,
+                true,
                 tdl(),
             )
             .await;
@@ -9024,6 +9079,7 @@ mod tests {
                 Some(false),
                 None,
                 None,
+                true,
                 true,
                 tdl(),
             )
@@ -9057,6 +9113,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 tdl(),
             )
             .await
@@ -9109,6 +9166,7 @@ mod tests {
                 captured_responses: Vec::new(),
                 screenshot: None,
                 block: None,
+                residential_bytes: None,
             })
         }
         fn name(&self) -> &str {
@@ -9172,6 +9230,7 @@ mod tests {
                 None,
                 None,
                 false, // force_cloak off: exercise ONLY the post-ladder recovery arm
+                true,
                 crw_core::Deadline::from_request_ms(5_000), // below CLOAK_ARM_FLOOR_MS (24s)
             )
             .await
@@ -9215,6 +9274,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 crw_core::Deadline::from_request_ms(5_000),
             )
             .await
@@ -9228,6 +9288,141 @@ mod tests {
             Some("chrome"),
             "the CF-challenge thin ladder result must ship unchanged (byte-identical to today)"
         );
+    }
+
+    // ---- cloak_opt_in_only: cloak only for requests the front end allowed ----
+
+    /// Runs the CF-challenge recovery scenario with the given gate settings and
+    /// reports whether the cloak arm was called and which tier shipped.
+    #[cfg(feature = "cloak")]
+    async fn recovery_arm_with_gate(opt_in_only: bool, allowed: bool) -> (bool, Option<String>) {
+        let recorded = Arc::new(std::sync::Mutex::new(None));
+        let cloak = Arc::new(DeadlineRecordingFetcher {
+            recorded_remaining: recorded.clone(),
+            html: solved_html(),
+        });
+        let ladder = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(cf_challenge_html()),
+        });
+        let mut r = renderer_with_cloak(cloak, vec![ladder]);
+        r.cloak_recover_on_cf = true;
+        r.cloak_opt_in_only = opt_in_only;
+        let res = r
+            .fetch_hinted(
+                "https://glassdoor.com/x",
+                &HashMap::new(),
+                Some(true),
+                None,
+                None,
+                false,
+                allowed,
+                crw_core::Deadline::from_request_ms(5_000),
+            )
+            .await
+            .unwrap();
+        let called = recorded.lock().unwrap().is_some();
+        (called, res.rendered_with)
+    }
+
+    /// Opt-in-only without the allow bit: the recovery arm never fires and the
+    /// ladder's own result ships, exactly as if cloak did not exist.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn cloak_opt_in_only_blocks_recovery_arm_without_allow() {
+        let (called, tier) = recovery_arm_with_gate(true, false).await;
+        assert!(
+            !called,
+            "cloak must not run for a request that was not allowed"
+        );
+        assert_eq!(tier.as_deref(), Some("chrome"));
+    }
+
+    /// Opt-in-only with the allow bit: the recovery arm fires as it does today.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn cloak_opt_in_only_allows_recovery_arm_with_allow() {
+        let (called, tier) = recovery_arm_with_gate(true, true).await;
+        assert!(
+            called,
+            "an allowed request must still reach the recovery arm"
+        );
+        assert_eq!(tier.as_deref(), Some("cloak"));
+    }
+
+    /// Default (self-host): the allow bit is irrelevant, so a request without
+    /// it behaves exactly as before the gate existed.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn cloak_opt_in_only_off_ignores_the_allow_bit() {
+        let (called, tier) = recovery_arm_with_gate(false, false).await;
+        assert!(called, "with the gate off the trigger flags alone decide");
+        assert_eq!(tier.as_deref(), Some("cloak"));
+    }
+
+    /// Opt-in-only without the allow bit closes the other two entries too: a
+    /// cloak-first hint and a challenge the residential arm uncovers.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn cloak_opt_in_only_blocks_cloak_first_and_after_egress() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cloak = Arc::new(CountingBodyFetcher {
+            name: "cloak",
+            calls: calls.clone(),
+            html: solved_html(),
+            fail: false,
+        }) as Arc<dyn PageFetcher>;
+        let mut r = renderer_with_egress_and_cloak(cf_challenge_html(), cloak);
+        r.cloak_after_egress = true;
+        r.cloak_recover_on_cf = true;
+        r.cloak_opt_in_only = true;
+        let _ = r
+            .fetch_hinted(
+                "https://example.com",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                true, // force_cloak set, but the request was not allowed
+                false,
+                crw_core::Deadline::from_request_ms(60_000),
+            )
+            .await;
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "no cloak entry may run for a request that was not allowed"
+        );
+    }
+
+    /// Plain `fetch` is what crawl, map, search and the escalation path use. It
+    /// never carries the allow bit, so under opt-in-only it can never reach cloak.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn cloak_opt_in_only_plain_fetch_never_reaches_cloak() {
+        let recorded = Arc::new(std::sync::Mutex::new(None));
+        let cloak = Arc::new(DeadlineRecordingFetcher {
+            recorded_remaining: recorded.clone(),
+            html: solved_html(),
+        });
+        let ladder = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(cf_challenge_html()),
+        });
+        let mut r = renderer_with_cloak(cloak, vec![ladder]);
+        r.cloak_recover_on_cf = true;
+        r.cloak_opt_in_only = true;
+        let _ = r
+            .fetch(
+                "https://glassdoor.com/x",
+                &HashMap::new(),
+                Some(true),
+                None,
+                None,
+                crw_core::Deadline::from_request_ms(5_000),
+            )
+            .await;
+        assert!(recorded.lock().unwrap().is_none());
     }
 
     // ---- cloak_after_egress: the challenge the residential arm uncovers ----
@@ -9419,6 +9614,7 @@ mod tests {
                 None,
                 Some("auto"),
                 true, // force_cloak: the pre-ladder attempt runs and sets cloak_attempted
+                true,
                 crw_core::Deadline::from_request_ms(6_000),
             )
             .await;
@@ -9540,6 +9736,7 @@ mod tests {
                 None,
                 None,
                 false,
+                true,
                 crw_core::Deadline::from_request_ms(40_000),
             )
             .await;
@@ -9994,6 +10191,7 @@ mod tests {
             captured_responses: Vec::new(),
             screenshot: None,
             block: None,
+            residential_bytes: None,
         }
     }
 

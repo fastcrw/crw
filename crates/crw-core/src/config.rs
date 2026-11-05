@@ -907,6 +907,18 @@ pub struct RendererConfig {
     /// is opt-in per deployment and reverts without a redeploy of the engine.
     #[serde(default)]
     pub cloak_after_egress: bool,
+    /// Run the cloak tier only for requests the front end explicitly allowed.
+    ///
+    /// When true, every cloak entry (the cloak-first hint, the recovery arm on
+    /// a ladder-seen challenge, and the after-egress arm) requires the
+    /// per-request allow bit, which only the trusted `x-crw-cloak-allow`
+    /// header sets. A request without it never reaches cloak, so a deployment
+    /// can bill the tier separately without every challenged page falling
+    /// into it. Crawl, map, search and every other internal fetch never carry
+    /// the bit. Off by default: a self-hosted deployment keeps today's
+    /// behaviour, where the two trigger flags alone decide.
+    #[serde(default)]
+    pub cloak_opt_in_only: bool,
     /// Phase 0 (latency-qn): when true, the renderer emits a structured
     /// `target: "latency_breakdown"` tracing event per fetch with total wall
     /// time and the tier that produced the accepted result. Off by default;
@@ -1238,6 +1250,7 @@ impl Default for RendererConfig {
             auto_egress_escalation: false,
             cloak_recover_on_cf: false,
             cloak_after_egress: false,
+            cloak_opt_in_only: false,
             latency_breakdown: false,
             render_js_default: None,
             lightpanda: None,

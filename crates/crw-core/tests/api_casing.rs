@@ -99,6 +99,7 @@ fn sample_scrape_data() -> ScrapeData {
         unclearable_wall: true,
         truncated: false,
         cached: false,
+        residential_bytes: None,
     }
 }
 

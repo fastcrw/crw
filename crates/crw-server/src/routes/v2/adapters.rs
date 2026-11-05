@@ -449,6 +449,7 @@ mod tests {
             unclearable_wall: false,
             truncated: false,
             cached: false,
+            residential_bytes: None,
         }
     }
 

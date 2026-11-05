@@ -55,6 +55,7 @@ impl PageFetcher for StaticTier {
             captured_responses: Vec::new(),
             screenshot: None,
             block: None,
+            residential_bytes: None,
         })
     }
 

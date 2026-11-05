@@ -75,6 +75,12 @@ async fn run_server() {
         "Renderer render_js_default: {:?}",
         config.renderer.render_js_default
     );
+    tracing::info!(
+        "Renderer cloak: opt_in_only={} recover_on_cf={} after_egress={}",
+        config.renderer.cloak_opt_in_only,
+        config.renderer.cloak_recover_on_cf,
+        config.renderer.cloak_after_egress
+    );
     if let Some(lp) = &config.renderer.lightpanda {
         tracing::info!("Lightpanda CDP: {}", lp.ws_url);
     }
