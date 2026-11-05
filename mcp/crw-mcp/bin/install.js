@@ -45,6 +45,20 @@ registers the "crw" MCP server. Run \`crw-mcp init\` for the skill only.
   process.exit(0);
 }
 
+// Anything unrecognised stops here: ignoring it would turn a typo, or a flag
+// this command does not have (such as --dry-run), into a real install.
+const VALUE_FLAGS = ["--api-key", "--api-url"];
+const KNOWN_FLAGS = ["--all", "--from-config", ...AGENTS.map((a) => a.flag)];
+for (let i = 0; i < args.length; i++) {
+  if (VALUE_FLAGS.includes(args[i])) {
+    i++;
+  } else if (!KNOWN_FLAGS.includes(args[i])) {
+    console.error(`crw-mcp install: unknown argument "${args[i]}". Nothing was installed.`);
+    console.error("Run `npx crw-mcp@latest install --help` to see the options.");
+    process.exit(2);
+  }
+}
+
 const fromConfig = args.includes("--from-config");
 const apiKey = fromConfig ? null : getApiKey(args);
 const apiUrl = argValue("--api-url") || (apiKey ? "https://api.fastcrw.com" : null);

@@ -57,7 +57,11 @@ const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 // --- CLI ---
 
 #[derive(Parser)]
-#[command(name = "crw-mcp", about = "MCP server for the CRW web scraper")]
+#[command(
+    name = "crw-mcp",
+    version,
+    about = "MCP server for the CRW web scraper"
+)]
 struct Cli {
     /// Remote CRW server URL. Enables proxy mode.
     /// Without this flag, runs in embedded mode (self-contained).
@@ -1554,6 +1558,15 @@ mod tests {
         clear_crw_env();
         let cli = Cli::parse_from(["crw-mcp", "--config", "/tmp/some-config.toml"]);
         assert_eq!(cli.config, Some("/tmp/some-config.toml".to_string()));
+    }
+
+    #[test]
+    fn cli_version_flags_print_the_version() {
+        for flag in ["--version", "-V"] {
+            let err = Cli::try_parse_from(["crw-mcp", flag]).err().expect(flag);
+            assert_eq!(err.kind(), clap::error::ErrorKind::DisplayVersion, "{flag}");
+            assert!(err.to_string().contains(SERVER_VERSION), "{flag}: {err}");
+        }
     }
 
     #[test]
