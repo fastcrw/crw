@@ -294,6 +294,14 @@ fn clean_html_impl(
                 // zhihu names the article body `copyrightrichtext-richtext`;
                 // as a substring this deleted 98% of the page.
                 "copyright",
+                // Listing controls: facet lists, sort and page-size pickers.
+                // Prefix only: `facet` as a substring hits
+                // `wraphuggingfacetransformers`, and `filter` in any form names
+                // content wrappers (`column_filters` holding a news list).
+                "facet",
+                "sortby",
+                "sort-by",
+                "page-size",
             ];
 
             // Names here are matched as a SUBSTRING of "{class} {id}", so a name
@@ -871,6 +879,24 @@ mod tests {
         assert!(!result.contains("one step away"));
         assert!(result.contains("Hisense 55in TV"));
         assert!(result.contains("$695"));
+    }
+
+    #[test]
+    fn listing_controls_are_removed_but_lookalike_names_are_not() {
+        let html = r#"<body><main><div class="sticky-filters">
+            <div class="sortby-container"><span class="sort-title">Sort by:</span></div>
+            <div class="page-size-container"><span>Show:</span> 36 72 100</div>
+            <div class="facets-container" id="facets-container"><button>Screen Size</button></div></div>
+            <h3 class="wraphuggingfacetransformers">HuggingFace transformers</h3>
+            <div class="column_filters"><p>Agency names a leader in media</p></div>
+            <p>Hisense 55in TV $695</p></main></body>"#;
+        let result = clean_html(html, true, &[], &[]).unwrap();
+        assert!(!result.contains("Sort by:"));
+        assert!(!result.contains("Show:"));
+        assert!(!result.contains("Screen Size"));
+        assert!(result.contains("HuggingFace transformers"));
+        assert!(result.contains("Agency names a leader"));
+        assert!(result.contains("Hisense 55in TV"));
     }
 
     #[test]
