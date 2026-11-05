@@ -156,7 +156,7 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
         json!({
             "name": "crw_scrape",
             "title": "Scrape URL",
-            "description": "Scrape one URL to markdown, HTML, or links.",
+            "description": "Scrape one URL to Markdown, HTML, plain text, links, or images.",
             "annotations": {
                 "readOnlyHint": true,
                 "destructiveHint": false,
