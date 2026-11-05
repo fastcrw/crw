@@ -1328,6 +1328,7 @@ pub(crate) fn build_http_fetch_result(
             .map(|c| vec![c.warning_text().to_string()])
             .unwrap_or_default(),
         truncated: false,
+        budget_settled: false,
         deadline_exceeded: false,
         captured_responses: Vec::new(),
         // Neither plain-HTTP tier renders or captures a screenshot.

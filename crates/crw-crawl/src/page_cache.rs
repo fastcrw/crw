@@ -318,6 +318,7 @@ mod tests {
             credit_cost: 1,
             warnings: vec![],
             truncated: false,
+            budget_settled: false,
             deadline_exceeded: false,
             captured_responses: vec![],
             screenshot: None,

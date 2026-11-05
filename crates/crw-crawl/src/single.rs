@@ -1201,6 +1201,11 @@ async fn scrape_url_inner(
         }
     }
 
+    // Past the last decision that reads `data.truncated` (the refund above): a
+    // render whose budget fired after the page had settled is complete, so it
+    // must not be labelled partial. Display only.
+    data.truncated &= !fetch_result.budget_settled;
+
     // Wrap the raw base64 screenshot in a `data:image/png;base64,` URL exactly
     // once, here, so both v1 and v2 responses are identical (D8). FetchResult
     // keeps the raw b64.
@@ -2986,6 +2991,7 @@ mod tests {
             credit_cost: 0,
             warnings: Vec::new(),
             truncated: false,
+            budget_settled: false,
             deadline_exceeded: false,
             captured_responses: Vec::new(),
             screenshot: None,

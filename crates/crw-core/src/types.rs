@@ -873,7 +873,8 @@ pub struct ScrapeData {
     #[serde(skip)]
     pub unclearable_wall: bool,
     /// The renderer snapshotted a partial DOM because the navigation budget
-    /// elapsed (`FetchResult.truncated`). The content is usable but incomplete,
+    /// elapsed before the page settled (`FetchResult.truncated` without
+    /// `FetchResult.budget_settled`). The content is usable but incomplete,
     /// and a caller cannot otherwise tell it apart from a page that genuinely
     /// has little content — which is what makes a shrinking scrape budget a
     /// silent recall regression.
@@ -5253,6 +5254,11 @@ pub struct FetchResult {
     /// `loadEventFired` and we snapshotted the partial DOM. Mid-load HTML may
     /// still extract usefully (`single.rs` decides success on md length).
     pub truncated: bool,
+    /// `truncated`, but the page had already settled when the budget fired
+    /// (top-level document loaded, its network idle): the snapshot is the
+    /// whole page. Display only: it clears the outward `truncated` label and
+    /// the budget warning, while every decision keeps reading `truncated`.
+    pub budget_settled: bool,
     /// Set when `Deadline::remaining() == 0` was observed at result-build time.
     /// Stricter than `truncated` — caller's whole budget is spent.
     pub deadline_exceeded: bool,

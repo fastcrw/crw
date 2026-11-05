@@ -342,6 +342,7 @@ impl PageFetcher for CloakRenderer {
                         credit_cost: 0,
                         warnings: Vec::new(),
                         truncated: false,
+                        budget_settled: false,
                         deadline_exceeded: deadline.remaining().is_zero(),
                         captured_responses: Vec::new(),
                         screenshot: None,

@@ -59,6 +59,7 @@ fn renderer_with_tiers(tiers: &[(&'static str, u16, &str)]) -> Arc<FallbackRende
                 status_code: *status_code,
                 html: html.to_string(),
                 truncated: false,
+                budget_settled: false,
             }) as Arc<dyn PageFetcher>
         })
         .collect();

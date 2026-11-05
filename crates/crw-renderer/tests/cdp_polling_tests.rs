@@ -125,3 +125,89 @@ async fn explicit_wait_for_opts_out_of_polling() {
         &result.html[..result.html.len().min(500)]
     );
 }
+
+/// ~1000 chars of plain prose and no SPA container (`main`, `article`, `#root`,
+/// ...): the shape example.com has today, which spins the readiness poll until
+/// the nav budget fires.
+fn selectorless_page(extra_script: &str) -> String {
+    let text = "<p>This page uses none of the usual SPA containers: no main, no \
+                article, no root or app mount. It is plain markup with a script, \
+                the shape example.com has today.</p>"
+        .repeat(6);
+    format!(
+        "<!doctype html><html><head><title>Plain</title></head><body>{text}\
+         <script>{extra_script}</script></body></html>"
+    )
+}
+
+async fn spawn_budget_site() -> String {
+    let app = Router::new()
+        .route(
+            "/settled",
+            get(|| async { Html(selectorless_page("document.title = 'Plain';")) }),
+        )
+        .route(
+            "/hung",
+            get(|| async { Html(selectorless_page("fetch('/never');")) }),
+        )
+        .route(
+            "/never",
+            get(|| async {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                "late"
+            }),
+        );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    format!("http://{addr}")
+}
+
+/// The budget fires on a page that finished loading long before: the snapshot
+/// is the whole page, so it must not carry the partial-render warning.
+#[tokio::test]
+#[ignore = "requires CRW_CDP_WS_URL (live Chrome/CDP) and CRW_ALLOW_LOOPBACK_FOR_TESTS=1"]
+async fn budget_hit_on_a_settled_page_is_not_labelled_partial() {
+    let ws_url = cdp_ws_url().expect("CRW_CDP_WS_URL must be set for this test");
+    let base_url = spawn_budget_site().await;
+    let renderer = CdpRenderer::new("lightpanda", &ws_url, 2_500, 2);
+
+    let result = renderer
+        .fetch(&format!("{base_url}/settled"), &HashMap::new(), None, tdl())
+        .await
+        .expect("CDP fetch failed");
+
+    assert!(result.warning.is_none(), "warning: {:?}", result.warning);
+    assert!(
+        result.warnings.is_empty(),
+        "warnings: {:?}",
+        result.warnings
+    );
+    // Decisions still see the budget hit; only the label changed.
+    assert!(result.truncated, "the budget should still have fired");
+    assert!(result.budget_settled);
+}
+
+/// A request still in flight when the budget fires: the page is genuinely
+/// partial and keeps its label.
+#[tokio::test]
+#[ignore = "requires CRW_CDP_WS_URL (live Chrome/CDP) and CRW_ALLOW_LOOPBACK_FOR_TESTS=1"]
+async fn budget_hit_with_a_request_in_flight_stays_partial() {
+    let ws_url = cdp_ws_url().expect("CRW_CDP_WS_URL must be set for this test");
+    let base_url = spawn_budget_site().await;
+    let renderer = CdpRenderer::new("lightpanda", &ws_url, 2_500, 2);
+
+    let result = renderer
+        .fetch(&format!("{base_url}/hung"), &HashMap::new(), None, tdl())
+        .await
+        .expect("CDP fetch failed");
+
+    assert!(result.truncated);
+    assert!(!result.budget_settled);
+    assert_eq!(
+        result.warnings,
+        vec!["lightpanda_budget_truncated".to_string()]
+    );
+}
