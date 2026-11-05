@@ -1226,21 +1226,6 @@ mod tests {
     }
 
     #[test]
-    fn crw_scrape_schema_advertises_plain_text_in_both_modes() {
-        for proxy_mode in [false, true] {
-            let defs = tool_definitions(proxy_mode);
-            let scrape = tool_by_name(&defs, "crw_scrape");
-            let formats = scrape["inputSchema"]["properties"]["formats"]["items"]["enum"]
-                .as_array()
-                .expect("formats enum");
-            assert!(
-                formats.iter().any(|format| format == "plainText"),
-                "plainText must be advertised in proxy_mode={proxy_mode}"
-            );
-        }
-    }
-
-    #[test]
     fn crw_scrape_schema_advertises_render_js() {
         let defs = tool_definitions(false);
         let scrape = tool_by_name(&defs, "crw_scrape");
@@ -2589,21 +2574,25 @@ mod tests {
     );
 
     #[test]
-    fn crw_scrape_formats_enum_has_the_four_documented_values() {
-        let defs = tool_definitions(false);
-        let scrape = tool_by_name(&defs, "crw_scrape");
-        let enum_vals = scrape["inputSchema"]["properties"]["formats"]["items"]["enum"]
-            .as_array()
-            .unwrap();
-        assert_eq!(
-            enum_vals,
-            &vec![
-                json!("markdown"),
-                json!("html"),
-                json!("links"),
-                json!("images")
-            ]
-        );
+    fn crw_scrape_formats_enum_advertises_plain_text_in_both_modes() {
+        for proxy_mode in [false, true] {
+            let defs = tool_definitions(proxy_mode);
+            let scrape = tool_by_name(&defs, "crw_scrape");
+            let enum_vals = scrape["inputSchema"]["properties"]["formats"]["items"]["enum"]
+                .as_array()
+                .unwrap();
+            assert_eq!(
+                enum_vals,
+                &vec![
+                    json!("markdown"),
+                    json!("html"),
+                    json!("plainText"),
+                    json!("links"),
+                    json!("images")
+                ],
+                "formats must include plainText in proxy_mode={proxy_mode}"
+            );
+        }
     }
 
     #[test]
