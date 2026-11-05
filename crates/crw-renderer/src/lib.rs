@@ -3306,6 +3306,7 @@ impl FallbackRenderer {
         let _ = guard;
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn fetch_with_js(
         &self,
         url: &str,
