@@ -15,7 +15,11 @@ const {
   home,
 } = require("./agents.js");
 
-const args = process.argv.slice(2);
+// `--api-key=value` and `--api-key value` mean the same thing.
+const args = process.argv.slice(2).flatMap((a) => {
+  const m = /^(--api-key|--api-url)=(.*)$/.exec(a);
+  return m ? [m[1], m[2]] : [a];
+});
 
 function argValue(flag) {
   const i = args.indexOf(flag);
