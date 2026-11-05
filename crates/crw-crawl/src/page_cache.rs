@@ -76,6 +76,10 @@ pub struct KeyInputs<'a> {
     pub wait_for: Option<u64>,
     pub renderer_pin: Option<&'a str>,
     pub force_cloak: bool,
+    /// The per-request cloak allow bit. A page an allowed request fetched may
+    /// have come through cloak, which a request without the bit could never
+    /// have reached, so the two must not share an entry.
+    pub cloak_allowed: bool,
     pub country: Option<&'a str>,
     /// Identity of the proxy actually resolved for this fetch. Even with no
     /// caller proxy one is picked from config, and a rotating strategy changes
@@ -138,7 +142,14 @@ pub fn build_key(i: &KeyInputs<'_>) -> String {
     });
     push(&i.wait_for.map(|w| w.to_string()).unwrap_or_default());
     push(i.renderer_pin.unwrap_or(""));
-    push(if i.force_cloak { "cloak=1" } else { "cloak=0" });
+    // Folded into the existing segment so a request without the allow bit
+    // keeps exactly the key it had before the bit existed.
+    push(match (i.force_cloak, i.cloak_allowed) {
+        (false, false) => "cloak=0",
+        (true, false) => "cloak=1",
+        (false, true) => "cloak=0a",
+        (true, true) => "cloak=1a",
+    });
     push(i.country.unwrap_or(""));
     push(&i.proxy_id.map(proxy_fingerprint).unwrap_or_default());
     push(i.user_agent);
@@ -269,12 +280,27 @@ mod tests {
             wait_for: None,
             renderer_pin: None,
             force_cloak: false,
+            cloak_allowed: false,
             country: None,
             proxy_id: None,
             cache_scope: None,
             user_agent: "crw-test/0.0",
             may_escalate: true,
         }
+    }
+
+    /// A request without the allow bit must keep exactly the key it had before
+    /// the bit existed, so shipping it does not cold-start every cache entry.
+    #[test]
+    fn cloak_allow_bit_leaves_existing_keys_unchanged() {
+        let h = HashMap::new();
+        let key = build_key(&inputs("https://example.com", &h));
+        assert!(key.contains("|7:cloak=0|"), "{key}");
+        let allowed = build_key(&KeyInputs {
+            cloak_allowed: true,
+            ..inputs("https://example.com", &h)
+        });
+        assert!(allowed.contains("|8:cloak=0a|"), "{allowed}");
     }
 
     fn fetch_result(html: &str) -> FetchResult {
@@ -296,6 +322,7 @@ mod tests {
             captured_responses: vec![],
             screenshot: None,
             block: None,
+            residential_bytes: None,
         }
     }
 
@@ -352,6 +379,10 @@ mod tests {
             },
             KeyInputs {
                 force_cloak: true,
+                ..inputs("https://example.com", &h)
+            },
+            KeyInputs {
+                cloak_allowed: true,
                 ..inputs("https://example.com", &h)
             },
             KeyInputs {

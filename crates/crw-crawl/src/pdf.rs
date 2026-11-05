@@ -587,6 +587,7 @@ fn build_scrape_data(
         // The PDF parser reads whole documents; there is no partial-DOM snapshot.
         truncated: false,
         cached: false,
+        residential_bytes: None,
     }
 }
 

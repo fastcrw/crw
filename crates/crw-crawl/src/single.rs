@@ -283,6 +283,7 @@ async fn scrape_url_inner(
             wait_for: req.wait_for,
             renderer_pin: pinned,
             force_cloak: req.force_cloak.unwrap_or(false),
+            cloak_allowed: req.cloak_allowed.unwrap_or(false),
             country: req.country.as_deref(),
             proxy_id: proxy_id.as_deref(),
             user_agent,
@@ -357,6 +358,7 @@ async fn scrape_url_inner(
                             req.wait_for,
                             pinned,
                             req.force_cloak.unwrap_or(false),
+                            req.cloak_allowed.unwrap_or(false),
                             deadline,
                         )
                         .await?
@@ -370,6 +372,7 @@ async fn scrape_url_inner(
                         req.wait_for,
                         pinned,
                         req.force_cloak.unwrap_or(false),
+                        req.cloak_allowed.unwrap_or(false),
                         deadline,
                     )
                     .await?
@@ -694,13 +697,17 @@ async fn scrape_url_inner(
                 escalate_for_quality,
                 "empty markdown after fetch, escalating to JS renderer",
             );
+            // Carries the opt-in bit: a request that opted into the metered
+            // tier keeps it when its thin first answer escalates into a wall.
             let escalation = renderer
-                .fetch(
+                .fetch_hinted(
                     &req.url,
                     &req.headers,
                     Some(true),
                     req.wait_for,
                     escalation_target,
+                    false,
+                    req.cloak_allowed.unwrap_or(false),
                     deadline,
                 )
                 .await
@@ -783,6 +790,8 @@ async fn scrape_url_inner(
                             // browser tier hardcodes it to `None`, and it is read
                             // later for `data.content_type`.
                             fetch_result.html = std::mem::take(&mut js_fetch.html);
+                            // And its metered cost: the body shipped is this one.
+                            fetch_result.residential_bytes = js_fetch.residential_bytes;
                             // Replace the original "Target returned 4xx" with the JS
                             // fetch's warning (which is None for a clean 2xx render),
                             // so a successful escalation doesn't leak the original
@@ -957,6 +966,14 @@ async fn scrape_url_inner(
     // A hit that then escalated returned a body fetched live milliseconds ago,
     // so it is not a cached answer however it started.
     data.cached = from_cache && !escalated;
+    // Only a page cloak served fresh carries its metered cost. A replay spent
+    // nothing; an accepted escalation already put its own figure on
+    // `fetch_result` (None unless cloak served the escalation).
+    data.residential_bytes = if data.cached {
+        None
+    } else {
+        fetch_result.residential_bytes
+    };
 
     // Phase 4: LLM structured extraction
     // Merge Firecrawl-compatible extract.schema into json_schema if not already set.
@@ -2973,6 +2990,7 @@ mod tests {
             captured_responses: Vec::new(),
             screenshot: None,
             block: None,
+            residential_bytes: None,
         }
     }
 

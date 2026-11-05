@@ -151,20 +151,34 @@ impl CloakRenderer {
     }
 
     /// One mirror call. `bypass_cache` forces a fresh sidecar solve.
+    /// Returns the status, the body and the metered residential bytes the
+    /// sidecar reported for this call (`None` when it does not meter).
     async fn mirror_once(
         &self,
         host: &str,
         path_and_query: &str,
         sessid: &str,
         bypass_cache: bool,
+        request_id: &str,
         deadline: &Deadline,
-    ) -> CrwResult<(u16, String)> {
+    ) -> CrwResult<(u16, String, Option<u64>)> {
         let budget = self.call_budget(deadline);
         if budget.is_zero() {
             return Err(CrwError::Timeout(deadline.requested_ms()));
         }
         let url = format!("{}{}", self.base_url, path_and_query);
-        let mut rb = self.auth(self.client.get(&url)).header("x-hostname", host);
+        // `x-cloak-allow` is this engine's own statement that the request
+        // passed its cloak gate (we only get here when it did); it is never a
+        // header passed through from the caller. A gated sidecar refuses any
+        // call without it, which is what keeps an older engine image, one that
+        // has no gate, from reaching the metered tier at all.
+        // `x-request-id` is constant across this page's attempts, so the sidecar
+        // can hold one byte budget per page however many attempts it takes.
+        let mut rb = self
+            .auth(self.client.get(&url))
+            .header("x-hostname", host)
+            .header("x-cloak-allow", "1")
+            .header("x-request-id", request_id);
         if let Some(px) = self.sticky_proxy_url(sessid) {
             rb = rb.header("x-proxy", px);
         }
@@ -190,13 +204,18 @@ impl CloakRenderer {
                 ))
             })?;
         let status = resp.status().as_u16();
+        let metered = resp
+            .headers()
+            .get("x-cloak-bytes")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<u64>().ok());
         let body = resp.text().await.map_err(|e| {
             CrwError::RendererError(format!(
                 "cloak GET body: {}",
                 crw_core::error::reqwest_message(e)
             ))
         })?;
-        Ok((status, body))
+        Ok((status, body, metered))
     }
 }
 
@@ -242,6 +261,7 @@ impl PageFetcher for CloakRenderer {
             }
         };
 
+        let request_id = format!("crq{:016x}", rand::random::<u64>());
         let mut last_err: Option<CrwError> = None;
         for attempt in 0..MAX_ATTEMPTS {
             if deadline.remaining() < crate::MIN_TIER_BUDGET {
@@ -258,7 +278,14 @@ impl PageFetcher for CloakRenderer {
                 }
             };
             match self
-                .mirror_once(&host, &path_and_query, &sessid, bypass, &deadline)
+                .mirror_once(
+                    &host,
+                    &path_and_query,
+                    &sessid,
+                    bypass,
+                    &request_id,
+                    &deadline,
+                )
                 .await
             {
                 // Accept a body that is NOT itself a CF challenge and carries
@@ -289,7 +316,7 @@ impl PageFetcher for CloakRenderer {
                 //
                 // The same floor the caller applies, so nothing that would have
                 // been accepted downstream is rejected here.
-                Ok((status, body))
+                Ok((status, body, metered))
                     if !crate::detector::looks_like_cloudflare_challenge(&body)
                         && crate::html_body_text_len(&body)
                             >= crate::FallbackRenderer::MIN_RENDERED_TEXT_LEN =>
@@ -319,9 +346,10 @@ impl PageFetcher for CloakRenderer {
                         captured_responses: Vec::new(),
                         screenshot: None,
                         block: None,
+                        residential_bytes: metered,
                     });
                 }
-                Ok((status, body)) => {
+                Ok((status, body, _)) => {
                     let reason = if crate::html_body_text_len(&body)
                         < crate::FallbackRenderer::MIN_RENDERED_TEXT_LEN
                     {
@@ -468,6 +496,120 @@ mod tests {
         assert_eq!(r.status_code, 200);
         assert!(r.html.contains("Northwestern Mutual"));
         assert_eq!(r.rendered_with.as_deref(), Some("cloak"));
+    }
+
+    /// The engine states its own gate decision on every call, and the metered
+    /// byte figure the sidecar returns rides on the result.
+    #[tokio::test]
+    async fn sends_allow_marker_and_carries_metered_bytes() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .and(header("x-cloak-allow", "1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-cloak-bytes", "123456")
+                    .set_body_string(REAL_BODY),
+            )
+            .mount(&server)
+            .await;
+        let r = renderer(&server.uri())
+            .fetch(
+                &format!("{}/page", server.uri()),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .expect("a call carrying the allow marker is served");
+        assert_eq!(r.residential_bytes, Some(123_456));
+        let reqs = server.received_requests().await.unwrap();
+        assert!(reqs[0].headers.get("x-request-id").is_some());
+    }
+
+    /// A sidecar that does not meter leaves the figure unset, never zero.
+    #[tokio::test]
+    async fn missing_bytes_header_leaves_figure_unset() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(REAL_BODY))
+            .mount(&server)
+            .await;
+        let r = renderer(&server.uri())
+            .fetch(
+                &format!("{}/page", server.uri()),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .unwrap();
+        assert_eq!(r.residential_bytes, None);
+    }
+
+    /// Only the attempt that served the page is reported (a failed attempt's
+    /// bytes are the sidecar's overhead), and every attempt of one page shares
+    /// one request id so the sidecar can hold a single budget for the page.
+    #[tokio::test]
+    async fn bytes_come_from_the_winning_attempt_and_request_id_is_stable() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .and(header("x-bypass-cache", "true"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-cloak-bytes", "2000")
+                    .set_body_string(REAL_BODY),
+            )
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-cloak-bytes", "9999")
+                    .set_body_string(CHALLENGE_BODY),
+            )
+            .with_priority(5)
+            .mount(&server)
+            .await;
+        // Seed a warm sessid so attempt 0 runs without bypass and loses.
+        let r = renderer(&server.uri());
+        let host = url::Url::parse(&server.uri())
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string();
+        r.sessid_map
+            .lock()
+            .unwrap()
+            .insert(host, ("crwwarm".to_string(), Instant::now()));
+        let res = r
+            .fetch(
+                &format!("{}/page", server.uri()),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .expect("the bypass attempt recovers");
+        assert_eq!(res.residential_bytes, Some(2000));
+        let reqs = server.received_requests().await.unwrap();
+        assert!(reqs.len() >= 2, "expected a losing and a winning attempt");
+        let ids: Vec<_> = reqs
+            .iter()
+            .map(|q| {
+                q.headers
+                    .get("x-request-id")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+        assert!(ids.windows(2).all(|w| w[0] == w[1]), "{ids:?}");
     }
 
     #[tokio::test]

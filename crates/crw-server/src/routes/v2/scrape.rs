@@ -627,6 +627,7 @@ mod tests {
             unclearable_wall: false,
             truncated: false,
             cached: false,
+            residential_bytes: None,
         };
         to_v2_document(data, "basic", "id".into())
     }

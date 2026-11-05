@@ -1030,6 +1030,7 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
         llm_input_hash: None,
         // Set by the scrape path when the fetch was replayed from cache.
         cached: false,
+        residential_bytes: None,
         metadata: PageMetadata {
             title: meta.title,
             description: meta.description,

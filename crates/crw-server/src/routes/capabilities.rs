@@ -199,6 +199,10 @@ pub struct RendererCapabilities {
     /// Effective `renderer.render_js_default`; omitted when unset (auto-detect).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub render_js_default: Option<bool>,
+    /// Effective `renderer.cloak_opt_in_only`: when true, the cloak tier only
+    /// runs for requests the front end explicitly allowed. A deployment that
+    /// bills the tier separately checks this before turning it on.
+    pub cloak_opt_in: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -300,6 +304,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
                 .collect(),
             mode: state.config.renderer.mode,
             render_js_default: state.config.renderer.render_js_default,
+            cloak_opt_in: state.config.renderer.cloak_opt_in_only,
         },
         extract: ExtractCapabilities {
             supported: llm_ready_without_caller_key,

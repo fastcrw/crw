@@ -1310,6 +1310,7 @@ pub(crate) fn build_http_fetch_result(
         // Neither plain-HTTP tier renders or captures a screenshot.
         screenshot: None,
         block: None,
+        residential_bytes: None,
     })
 }
 

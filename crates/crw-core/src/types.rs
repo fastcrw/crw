@@ -327,6 +327,13 @@ pub struct ScrapeRequest {
     /// "server-only" contract structural rather than relying on a downstream strip.
     #[serde(default, skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub force_cloak: Option<bool>,
+    /// Allows this request to reach the cloak tier when the deployment runs
+    /// with `renderer.cloak_opt_in_only`. Same trust model as `force_cloak`:
+    /// `skip_deserializing`, set only from the trusted `x-crw-cloak-allow`
+    /// header, so a caller can never grant it to themselves. Ignored when
+    /// `cloak_opt_in_only` is off.
+    #[serde(skip_deserializing, skip_serializing)]
+    pub cloak_allowed: Option<bool>,
     /// End-to-end deadline budget in milliseconds. When unset, the configured
     /// `request.deadline_ms_default` (8000) applies. The SLO p95 metric is
     /// computed only over requests with `deadline_ms <= 8000`; longer values
@@ -507,6 +514,7 @@ impl Default for ScrapeRequest {
             max_content_chars: None,
             renderer: None,
             force_cloak: None,
+            cloak_allowed: None,
             deadline_ms: None,
             debug: None,
             change_tracking: None,
@@ -815,6 +823,14 @@ pub struct ScrapeData {
     /// identical.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cached: bool,
+    /// Metered residential bytes the cloak tier spent serving this page, when
+    /// the cloak sidecar meters. Only set when cloak served the page fresh:
+    /// `None` on a cache replay, on an escalation that replaced the cloak body,
+    /// and on every other tier. Lets an operator bill or audit the tier by
+    /// what it really cost; omitted otherwise, so other responses are
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residential_bytes: Option<u64>,
     pub metadata: PageMetadata,
     /// Extraction debug trace; populated only when the request opts in.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1445,6 +1461,7 @@ mod tests {
             unclearable_wall: false,
             truncated: false,
             cached: false,
+            residential_bytes: None,
         }
     }
 
@@ -1765,6 +1782,7 @@ mod tests {
             unclearable_wall: false,
             truncated: false,
             cached: false,
+            residential_bytes: None,
         };
         data.clear_body();
         // content-shell + LLM outputs cleared
@@ -2154,6 +2172,7 @@ mod tests {
             unclearable_wall: false,
             truncated: false,
             cached: false,
+            residential_bytes: None,
         }
     }
 
@@ -2688,6 +2707,17 @@ mod tests {
             req.force_cloak, None,
             "forceCloak must never be settable from a caller-supplied body"
         );
+    }
+
+    #[test]
+    fn scrape_request_cloak_allowed_cannot_be_set_from_a_request_body() {
+        // The opt-in into the metered tier is billed; only the SaaS's trusted
+        // header may grant it, never a caller-supplied body field.
+        for key in ["cloakAllowed", "cloak_allowed"] {
+            let json = serde_json::json!({ "url": "https://example.com", key: true });
+            let req: ScrapeRequest = serde_json::from_value(json).unwrap();
+            assert_eq!(req.cloak_allowed, None, "{key} must be ignored");
+        }
     }
 
     #[test]
@@ -5260,6 +5290,10 @@ pub struct FetchResult {
     /// `None` on every other path, and on every renderer: only the ladder tail
     /// and the PDF gate in `crw_renderer::FallbackRenderer` ever set it.
     pub block: Option<BlockOutcome>,
+    /// Metered residential bytes this page cost, as reported by the cloak
+    /// sidecar for the attempt that served it. `None` on every other tier and
+    /// whenever the sidecar does not meter. Never set on a cache hit.
+    pub residential_bytes: Option<u64>,
 }
 
 /// A single XHR/fetch response captured via CDP Network domain.
