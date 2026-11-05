@@ -148,4 +148,9 @@ test("install rejects an unknown flag and writes nothing", (t) => {
   // A flag's value is not mistaken for an unknown argument.
   const ok = runInstall(home, ["--api-url", "https://api.example"]);
   assert.equal(ok.status, 0, ok.stderr || ok.stdout);
+
+  // The `--flag=value` form is accepted too.
+  const eq = runInstall(home, ["--api-key=crw_live_test", "--api-url=https://api.example"]);
+  assert.equal(eq.status, 0, eq.stderr || eq.stdout);
+  assert.match(eq.stdout, /Mode: cloud/);
 });
