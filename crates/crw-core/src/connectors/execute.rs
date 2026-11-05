@@ -65,6 +65,12 @@ impl Pacer {
     }
 }
 
+/// Whether a Retry-After of `wait` is waited out: only when it is short and
+/// the call has that long left before its timeout.
+fn may_wait(wait: Duration, left: Duration) -> bool {
+    wait <= MAX_RETRY_AFTER && wait < left
+}
+
 async fn wait_turn(last: &mut Option<Instant>, min_interval: Duration) {
     if let Some(at) = *last {
         tokio::time::sleep_until((at + min_interval).into()).await;
@@ -356,23 +362,33 @@ pub(crate) async fn run(
     let redactor = Redactor::new(key.as_deref());
 
     let min_interval = Duration::from_millis(connector.min_interval_ms.unwrap_or(0));
+    // A source that asks for pacing is one that throttles, and some of those
+    // say so with a 503 rather than a 429.
+    let throttles = min_interval > Duration::ZERO;
     let mut last = pacer.lock(&connector.provider).await;
     // Time spent waiting on the source only: crw's own pacing and a
     // Retry-After sleep are not the source's latency.
     let mut latency = Duration::ZERO;
     let mut retried = false;
+    // One budget from the first send, the retry included, so a throttling
+    // source cannot hold the call past the attempt timeout.
+    let mut deadline = None;
     let (result, outcome) = loop {
         wait_turn(&mut last, min_interval).await;
         let started = Instant::now();
-        let attempt = tokio::time::timeout(
-            ATTEMPT_TIMEOUT,
-            attempt(http, url.clone(), &headers, &redactor),
+        let deadline = *deadline.get_or_insert(started + ATTEMPT_TIMEOUT);
+        let attempt = tokio::time::timeout_at(
+            deadline.into(),
+            attempt(http, url.clone(), &headers, &redactor, throttles),
         )
         .await
         .unwrap_or(Err(Failure::Fetch(FetchError::Timeout)));
         latency += started.elapsed();
         match attempt {
-            Err(Failure::RateLimited(Some(wait))) if !retried && wait <= MAX_RETRY_AFTER => {
+            Err(Failure::RateLimited(Some(wait)))
+                if !retried
+                    && may_wait(wait, deadline.saturating_duration_since(Instant::now())) =>
+            {
                 retried = true;
                 tokio::time::sleep(wait).await;
             }
@@ -501,10 +517,13 @@ async fn attempt(
     url: url::Url,
     headers: &HeaderMap,
     redactor: &Redactor,
+    throttles: bool,
 ) -> Result<(Value, url::Url), Failure> {
     let (resp, final_url) = http.get(url, headers).await.map_err(Failure::Fetch)?;
     let status = resp.status().as_u16();
-    if status == 429 {
+    let rate_limit_503 =
+        status == 503 && (throttles || resp.headers().contains_key(reqwest::header::RETRY_AFTER));
+    if status == 429 || rate_limit_503 {
         return Err(Failure::RateLimited(retry_after(resp.headers())));
     }
     if status >= 400 {
@@ -599,6 +618,16 @@ mod tests {
             plus.apply_json(v),
             json!({"q": "REDACTED", "u": "REDACTED"})
         );
+    }
+
+    #[test]
+    fn connectors_retry_after_is_waited_only_within_the_call_budget() {
+        let s = Duration::from_secs;
+        assert!(may_wait(s(1), s(20)));
+        assert!(may_wait(MAX_RETRY_AFTER, s(20)));
+        assert!(!may_wait(s(11), s(20)), "too long to wait");
+        assert!(!may_wait(s(5), s(4)), "a slow first answer used the budget");
+        assert!(!may_wait(s(5), s(5)), "no time left to send again");
     }
 
     #[test]

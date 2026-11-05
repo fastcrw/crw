@@ -353,6 +353,11 @@ async fn fetch(
     let status = resp.status().as_u16();
     match status {
         200..=299 => {}
+        401 | 403 if api_key.is_none() => {
+            return Err(format!(
+                "[unauthorized] The fastCRW API needs an API key and none is configured (HTTP {status}). Set CRW_API_KEY."
+            ));
+        }
         401 | 403 => {
             return Err(format!(
                 "[unauthorized] The fastCRW API did not accept the API key (HTTP {status}). Check CRW_API_KEY."
