@@ -173,7 +173,7 @@ This yields a ~4.2 MB binary (vs ~17 MB for the default embedded build) because 
 
 | Tool | Description | HTTP Endpoint | Availability |
 |------|-------------|---------------|-------------|
-| `crw_scrape` | Scrape a URL → markdown, HTML, links | `POST /v1/scrape` | All modes |
+| `crw_scrape` | Scrape a URL → Markdown, HTML, plain text, links, images | `POST /v1/scrape` | All modes |
 | `crw_crawl` | Start async crawl → returns job ID | `POST /v1/crawl` | All modes |
 | `crw_check_crawl_status` | Poll crawl status and get results | `GET /v1/crawl/:id` | All modes |
 | `crw_map` | Discover all URLs on a site | `POST /v1/map` | All modes |
