@@ -154,10 +154,18 @@ fn clean_html_impl(
         // SSR parks the real content in `<div hidden id="S:0">` and moves it into
         // place with a script, so a page fetched without running scripts keeps
         // its body there (kap.org.tr on the frozen set).
+        //
+        // A blurred <img> is a blur-up placeholder: a thumbnail (Shopify's
+        // `_32x32.jpg`) the page swaps for the real image once it loads. A
+        // render that blocks images never gets the swap, so the stand-in would
+        // ship as the product photo.
         handlers.push(element!("[style]", |el| {
-            if !matches!(el.tag_name().as_str(), "html" | "body" | "main")
-                && el.get_attribute("style").is_some_and(|s| hides(&s))
-            {
+            let tag = el.tag_name();
+            let Some(style) = el.get_attribute("style") else {
+                return Ok(());
+            };
+            let placeholder = tag == "img" && is_blur_placeholder(&style);
+            if placeholder || (!matches!(tag.as_str(), "html" | "body" | "main") && hides(&style)) {
                 el.remove();
             }
             Ok(())
@@ -446,6 +454,20 @@ fn hides(style: &str) -> bool {
             decl.trim_end_matches("!important"),
             "display:none" | "visibility:hidden"
         )
+    })
+}
+
+/// True when an inline `style` blurs the element, the mark of a blur-up
+/// image placeholder.
+fn is_blur_placeholder(style: &str) -> bool {
+    style.split(';').any(|decl| {
+        let decl: String = decl
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_lowercase();
+        decl.strip_prefix("filter:")
+            .is_some_and(|v| v.starts_with("blur("))
     })
 }
 
@@ -812,6 +834,22 @@ mod tests {
         assert!(!result.contains("Hidden note"));
         assert!(result.contains("Menu"));
         assert!(result.contains("Content"));
+    }
+
+    #[test]
+    fn blurred_placeholder_images_are_dropped_in_main_content_mode() {
+        // jbhifi product card from #660: the 32px stand-in never gets swapped.
+        let html = r#"<body><main><a href="/p/1"><img alt="Blaupunkt 55in TV" width="189" style="transition: filter 200ms linear; filter: blur(5px);" src="https://cdn.shopify.com/files/839355_32x32.jpg"></a>
+            <img alt="Hero" src="/hero.jpg" style="filter: grayscale(1)">
+            <img alt="Next" src="/next.jpg" style="background-image:url(&quot;data:image/svg+xml;feGaussianBlur stdDeviation='20'&quot;)">
+            <h2>Blaupunkt 55in TV</h2></main></body>"#;
+        let result = clean_html(html, true, &[], &[]).unwrap();
+        assert!(!result.contains("_32x32.jpg"));
+        assert!(result.contains("/hero.jpg"));
+        assert!(result.contains("/next.jpg"));
+        assert!(result.contains("Blaupunkt 55in TV</h2>"));
+        let full = clean_html(html, false, &[], &[]).unwrap();
+        assert!(full.contains("_32x32.jpg"));
     }
 
     #[test]
