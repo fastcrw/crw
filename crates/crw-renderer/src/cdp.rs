@@ -2960,18 +2960,7 @@ impl CdpRenderer {
         // fast-ready uses body innerText (selector-independent) so content pages
         // that don't use the main/article/#root containers still detect content;
         // the legacy path gates on the specific selectors (returns -1 if absent).
-        let expr = if fast_ready {
-            r#"(() => { const t = (document.body && document.body.innerText) || ""; return t.trim().length; })()"#.to_string()
-        } else {
-            format!(
-                r#"(() => {{
-                    if (!document.querySelector({sel:?})) return -1;
-                    const t = (document.body && document.body.innerText) || "";
-                    return t.trim().length;
-                }})()"#,
-                sel = SPA_CONTENT_SELECTORS
-            )
-        };
+        let expr = spa_poll_expression(fast_ready);
         while Instant::now() < deadline {
             match conn
                 .send_recv(
@@ -3013,6 +3002,10 @@ impl CdpRenderer {
                         // content arrives after a stable gap; only the real `load`
                         // event / networkAlmostIdle are safe. Keep the ceiling.
                     } else {
+                        if len == -2 {
+                            tracing::debug!("SPA poll handing over to the skeleton wait");
+                            return true;
+                        }
                         let selector_mounted = len >= 0;
                         if is_spa_text_ready(len) {
                             return true;
@@ -3046,7 +3039,7 @@ impl CdpRenderer {
         let v = conn
             .send_recv(
                 "Runtime.evaluate",
-                serde_json::json!({ "expression": SKELETON_PROBE_JS, "returnByValue": true }),
+                serde_json::json!({ "expression": &*SKELETON_PROBE_JS, "returnByValue": true }),
                 Some(session_id),
                 timeout,
             )
@@ -4163,24 +4156,30 @@ impl CdpRenderer {
 /// the placeholders stand in for, which is where the real items appear.
 /// Inputs are excluded: their `placeholder` is an attribute, not a loading
 /// state. The count stops at 50; past the threshold the number does not matter.
-const SKELETON_PROBE_JS: &str = r#"(() => {
-    const sel = '[class*="skeleton" i],[class*="placeholder" i],[class*="shimmer" i],'
-        + '[data-test*="placeholder" i],[data-testid*="placeholder" i],'
-        + '[data-test*="skeleton" i],[data-testid*="skeleton" i],[aria-busy="true"]';
+static SKELETON_PROBE_JS: LazyLock<String> = LazyLock::new(|| {
+    format!(
+        r#"(() => {{
+    const sel = {SKELETON_SELECTOR:?};
     let n = 0;
     const parents = new Set();
-    for (const e of document.querySelectorAll(sel)) {
+    for (const e of document.querySelectorAll(sel)) {{
         if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') continue;
         const r = e.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
         if (e.parentElement) parents.add(e.parentElement);
         if (++n >= 50) break;
-    }
+    }}
     let region = 0;
     for (const p of parents) region += (p.innerText || '').length;
     const t = (document.body && document.body.innerText) || '';
     return [n, t.length, document.documentElement.outerHTML.length, region];
-})()"#;
+}})()"#
+    )
+});
+
+/// Elements that stand in for content still loading. Shared by the probe and
+/// the selector poll's handover so the two never disagree on what a skeleton is.
+const SKELETON_SELECTOR: &str = r#"[class*="skeleton" i],[class*="placeholder" i],[class*="shimmer" i],[data-test*="placeholder" i],[data-testid*="placeholder" i],[data-test*="skeleton" i],[data-testid*="skeleton" i],[aria-busy="true"]"#;
 
 /// Visible skeleton elements that mark a region waiting for data. Fewer is
 /// usually decoration.
@@ -4291,6 +4290,38 @@ fn screenshot_clip(content_w: f64, content_h: f64, max_h: f64) -> Option<(f64, f
 /// snapshot? `text_len` is the body innerText length returned from the JS
 /// eval, with `-1` signaling "selector not yet mounted". Threshold matches
 /// [`SPA_BODY_TEXT_MIN_CHARS`].
+/// The expression the selector poll evaluates each tick: body text length,
+/// `-1` while no content container is mounted, and on the legacy path `-2`
+/// once a placeholder grid is showing (see [`SKELETON_SELECTOR`]).
+fn spa_poll_expression(fast_ready: bool) -> String {
+    if fast_ready {
+        r#"(() => { const t = (document.body && document.body.innerText) || ""; return t.trim().length; })()"#.to_string()
+    } else {
+        // -2 hands over to the skeleton wait: a page showing a placeholder
+        // grid is waiting for data, and the wait knows when it has filled.
+        // Without this, Kiwi's skeleton sat through most of the 8s budget
+        // here, below the text bar, and the fill wait left after it no
+        // longer fit the tier's nav budget.
+        format!(
+            r#"(() => {{
+                let k = 0;
+                for (const e of document.querySelectorAll({skel:?})) {{
+                    if (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') continue;
+                    const r = e.getBoundingClientRect();
+                    if (r.width === 0 || r.height === 0) continue;
+                    if (++k >= {min}) return -2;
+                }}
+                if (!document.querySelector({sel:?})) return -1;
+                const t = (document.body && document.body.innerText) || "";
+                return t.trim().length;
+            }})()"#,
+            sel = SPA_CONTENT_SELECTORS,
+            skel = SKELETON_SELECTOR,
+            min = SKELETON_MIN_ELEMENTS,
+        )
+    }
+}
+
 fn is_spa_text_ready(text_len: i64) -> bool {
     text_len >= SPA_BODY_TEXT_MIN_CHARS as i64
 }
@@ -4299,9 +4330,10 @@ fn is_spa_text_ready(text_len: i64) -> bool {
 mod tests {
     use super::{
         BLOCK_LABEL_RESUME_FAILED, BLOCK_LABEL_WORKER_RESUMED, CdpRenderer, ChildAction, CrwError,
-        STEALTH_DEFAULT_LANGUAGES, STEALTH_JS, SkeletonSample, SkeletonWait, build_auth_response,
-        child_enable_failure_action, geo_accept_language, is_content_stable, is_method_not_found,
-        is_proxy_tunnel_error, language_locale, outbound_block_label, screenshot_clip,
+        SKELETON_PROBE_JS, SKELETON_SELECTOR, STEALTH_DEFAULT_LANGUAGES, STEALTH_JS,
+        SkeletonSample, SkeletonWait, build_auth_response, child_enable_failure_action,
+        geo_accept_language, is_content_stable, is_method_not_found, is_proxy_tunnel_error,
+        language_locale, outbound_block_label, screenshot_clip, spa_poll_expression,
         split_caller_headers, ua_override_params,
     };
     use std::collections::HashMap;
@@ -5077,6 +5109,19 @@ mod tests {
             (5, 2411, 973_329, 549),
         ];
         assert_eq!(skeleton_stop(&trace), Some((8, "filled")));
+    }
+
+    #[test]
+    fn skeleton_probe_and_poll_handover_share_one_selector() {
+        let quoted = format!("{SKELETON_SELECTOR:?}");
+        assert!(SKELETON_PROBE_JS.contains(&quoted));
+        assert!(spa_poll_expression(false).contains(&quoted));
+        assert!(spa_poll_expression(false).contains("return -2"));
+        assert!(!spa_poll_expression(true).contains("return -2"));
+        if let Ok(dir) = std::env::var("CRW_DUMP_SKELETON_JS") {
+            std::fs::write(format!("{dir}/probe.js"), &*SKELETON_PROBE_JS).unwrap();
+            std::fs::write(format!("{dir}/poll.js"), spa_poll_expression(false)).unwrap();
+        }
     }
 
     #[test]
