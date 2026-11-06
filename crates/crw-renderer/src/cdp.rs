@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, Semaphore, broadcast};
+use tokio::sync::{Mutex, OnceCell, Semaphore, broadcast};
 use tokio_tungstenite::connect_async;
 
 use crate::blocklist::{BlockReason, Blocklist};
@@ -518,6 +518,9 @@ pub struct CdpRenderer {
     fast_ready: bool,
     /// UA for `Network.setUserAgentOverride`; empty = no override (browser default).
     user_agent: String,
+    /// The browser's own UA, presentable form, read once when the tier UA is
+    /// not a browser UA. See [`Self::tier_user_agent`].
+    native_ua: Arc<OnceCell<String>>,
 }
 
 impl CdpRenderer {
@@ -552,6 +555,50 @@ impl CdpRenderer {
             spa_selector_max: Duration::from_millis(SPA_SELECTOR_MAX_MS),
             fast_ready: false,
             user_agent: String::new(),
+            native_ua: Arc::new(OnceCell::new()),
+        }
+    }
+
+    /// The UA a Google render presents when the caller set none.
+    ///
+    /// The configured tier UA is shared with the HTTP fetcher, where a bot UA
+    /// like `CRW/0.0.1` is the honest choice, and most sites take it from a
+    /// render too: swapping it for a browser UA on every render got Chrome a
+    /// 403 block on conforama.fr and a timeout on ccdi.gov.cn that the bot UA
+    /// does not get. Google is the exception: with a bot UA every Google page
+    /// is its "unsupported browser" notice. So for Google only, a non-browser
+    /// tier UA is swapped for the browser's own, with the `HeadlessChrome`
+    /// token a headless build adds dropped; version and platform stay the real
+    /// ones. Read once; on any failure, and for a browser that is not Chrome
+    /// (lightpanda keeps its own identity, #622), the configured UA is kept.
+    async fn tier_user_agent(&self, conn: &CdpConnection) -> &str {
+        if self.name == "lightpanda"
+            || self.user_agent.is_empty()
+            || is_browser_ua(&self.user_agent)
+        {
+            return &self.user_agent;
+        }
+        let native = self
+            .native_ua
+            .get_or_try_init(|| async {
+                let v = conn
+                    .send_recv(
+                        "Browser.getVersion",
+                        serde_json::json!({}),
+                        None,
+                        self.page_timeout,
+                    )
+                    .await
+                    .map_err(|_| ())?;
+                v.get("userAgent")
+                    .and_then(|u| u.as_str())
+                    .and_then(presentable_chrome_ua)
+                    .ok_or(())
+            })
+            .await;
+        match native {
+            Ok(ua) => ua,
+            Err(()) => &self.user_agent,
         }
     }
 
@@ -810,6 +857,42 @@ async fn connect_chrome_with_retry(
         .with_label_values(&[outcome])
         .observe(t0.elapsed().as_secs_f64());
     result
+}
+
+/// A UA string a browser would send. Anything else (`CRW/0.0.1`, `curl/8`) is
+/// a client identifying itself as a bot.
+fn is_browser_ua(ua: &str) -> bool {
+    ua.starts_with("Mozilla/")
+}
+
+/// The browser's own UA as a headful Chrome of the same build would send it,
+/// or `None` when the browser is not Chrome.
+fn presentable_chrome_ua(native: &str) -> Option<String> {
+    (is_browser_ua(native) && native.contains("Chrome/"))
+        .then(|| native.replace("HeadlessChrome/", "Chrome/"))
+}
+
+/// `SOCS` value of a visitor who declined personalisation in Google's EU
+/// consent dialog: the minimal consent state.
+const GOOGLE_CONSENT_REJECT_ALL: &str = "CAI";
+
+/// Cookie domain for Google's consent state when `url` is a Google property.
+///
+/// From an EU egress every Google page (Search, Flights, Shopping) first
+/// redirects to `consent.google.<tld>`, so the render captures the dialog and
+/// never the page. Setting the state a visitor gets by declining
+/// personalisation skips the dialog without accepting any tracking.
+fn google_consent_domain(url: &str) -> Option<String> {
+    let host = url::Url::parse(url).ok()?.host_str()?.to_ascii_lowercase();
+    let labels: Vec<&str> = host.split('.').collect();
+    let i = labels.iter().position(|l| *l == "google")?;
+    let suffix = &labels[i + 1..];
+    let tld_ok = match suffix {
+        [tld] => tld.len() == 2 || *tld == "com",
+        [sld, cc] => matches!(*sld, "com" | "co") && cc.len() == 2,
+        _ => false,
+    };
+    tld_ok.then(|| format!(".{}", labels[i..].join(".")))
 }
 
 /// Split a caller-supplied header map into the UA override value and the rest.
@@ -3205,7 +3288,11 @@ impl CdpRenderer {
         // `Lightpanda/1.0`. That is deliberate: rewriting the value to get past
         // its check sends an identity no client sends (#622), which origins
         // block more often than the honest default. Skip if empty.
-        let effective_ua = caller_ua.as_deref().unwrap_or(&self.user_agent);
+        let effective_ua = match caller_ua.as_deref() {
+            Some(ua) => ua,
+            None if google_consent_domain(url).is_some() => self.tier_user_agent(conn).await,
+            None => &self.user_agent,
+        };
         // With an empty UA the override is still sent when a country-derived
         // language exists: Chromium treats an empty `userAgent` as "keep the
         // browser's own", so the language lands without touching the UA, and
@@ -3361,6 +3448,24 @@ impl CdpRenderer {
                 count = cookies.len(),
                 "injected cached clearance cookies",
             );
+        }
+        if self.name != "lightpanda"
+            && let Some(domain) = google_consent_domain(url)
+        {
+            let _ = conn
+                .send_recv(
+                    "Network.setCookie",
+                    serde_json::json!({
+                        "name": "SOCS",
+                        "value": GOOGLE_CONSENT_REJECT_ALL,
+                        "domain": domain,
+                        "path": "/",
+                        "secure": true,
+                    }),
+                    Some(&session_id),
+                    self.page_timeout,
+                )
+                .await;
         }
 
         // Subscribe to events BEFORE navigating so we don't miss loadEventFired.
@@ -4367,7 +4472,10 @@ mod tests {
         assert!(!is_content_stable(10_000, 5_000, true));
     }
 
-    use super::{SPA_BODY_TEXT_MIN_CHARS, is_spa_text_ready};
+    use super::{
+        SPA_BODY_TEXT_MIN_CHARS, google_consent_domain, is_browser_ua, is_spa_text_ready,
+        presentable_chrome_ua,
+    };
 
     #[test]
     fn spa_not_ready_when_selector_missing() {
@@ -4490,6 +4598,39 @@ mod tests {
         assert!(!is_capturable_mime("text/css"));
         assert!(!is_capturable_mime("application/javascript"));
         assert!(!is_capturable_mime(""));
+    }
+
+    #[test]
+    fn presentable_chrome_ua_drops_the_headless_token_and_keeps_the_build() {
+        let native = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.7871.47 Safari/537.36";
+        assert_eq!(
+            presentable_chrome_ua(native).as_deref(),
+            Some(
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7871.47 Safari/537.36"
+            )
+        );
+        assert_eq!(presentable_chrome_ua("Lightpanda/1.0"), None);
+        assert!(!is_browser_ua("CRW/0.0.1"));
+        assert!(is_browser_ua(native));
+    }
+
+    #[test]
+    fn google_consent_domain_covers_google_hosts_only() {
+        for (url, want) in [
+            (
+                "https://www.google.com/travel/flights?q=x",
+                Some(".google.com"),
+            ),
+            ("https://www.google.de/search?q=x", Some(".google.de")),
+            ("https://google.co.uk/", Some(".google.co.uk")),
+            ("https://www.google.com.tr/maps", Some(".google.com.tr")),
+            ("https://fonts.googleapis.com/css", None),
+            ("https://www.google.example.org/", None),
+            ("https://notgoogle.com/", None),
+            ("https://www.kiwi.com/de/search", None),
+        ] {
+            assert_eq!(google_consent_domain(url).as_deref(), want, "{url}");
+        }
     }
 
     #[test]
