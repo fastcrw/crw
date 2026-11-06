@@ -3056,18 +3056,17 @@ impl CdpRenderer {
     }
 
     /// Wait while the page shows a skeleton region that has not filled yet.
-    /// Returns whether it waited, so the caller knows to re-snapshot.
     async fn wait_for_skeleton_fill(
         conn: &CdpConnection,
         session_id: &str,
         url: &str,
         timeout: Duration,
-    ) -> bool {
+    ) {
         let Some(first) = Self::eval_skeleton(conn, session_id, timeout).await else {
-            return false;
+            return;
         };
         if first.skeletons < SKELETON_MIN_ELEMENTS {
-            return false;
+            return;
         }
         tracing::info!(
             url = %LogUrl(&url),
@@ -3099,7 +3098,6 @@ impl CdpRenderer {
             region_len = wait.prev.region_len,
             "Skeleton wait ended",
         );
-        true
     }
 
     /// Poll `document.documentElement.outerHTML` at a fixed interval until the
@@ -3926,6 +3924,20 @@ impl CdpRenderer {
         }
         let t_selector_ms = _sel_t.elapsed().as_millis() as u64;
 
+        // 3b. Skeleton region still filling → wait for its data. 4b only sees
+        // small pages with English loading copy; a search app is neither. On
+        // kiwi.com the selector poll above exits at ~3s on 1.2k chars of
+        // filters and footer, while the result list is still five grey
+        // placeholder cards that fill at 6-18s. It runs before the snapshot:
+        // a grid can fill between a snapshot and the probe, and the probe then
+        // sees nothing to wait for while the snapshot still holds the
+        // placeholders (jbhifi, after the poll hands over).
+        if wait_for_ms.is_none() {
+            let _sk_t = Instant::now();
+            Self::wait_for_skeleton_fill(conn, session_id, url, self.page_timeout).await;
+            t_stability_ms += _sk_t.elapsed().as_millis() as u64;
+        }
+
         // 4. Get rendered HTML.
         let mut html = Self::eval_html(conn, session_id, self.page_timeout).await?;
 
@@ -3940,20 +3952,7 @@ impl CdpRenderer {
                 Ok(stable) => html = stable,
                 Err(e) => tracing::warn!("Content stability polling failed: {e}"),
             }
-            t_stability_ms = _stab_t.elapsed().as_millis() as u64;
-        }
-
-        // 4b'. Skeleton region still filling → wait for its data. 4b only sees
-        // small pages with English loading copy; a search app is neither. On
-        // kiwi.com the selector poll above exits at ~3s on 1.2k chars of
-        // filters and footer, while the result list is still five grey
-        // placeholder cards that fill at 6-18s.
-        if wait_for_ms.is_none() {
-            let _sk_t = Instant::now();
-            if Self::wait_for_skeleton_fill(conn, session_id, url, self.page_timeout).await {
-                html = Self::eval_html(conn, session_id, self.page_timeout).await?;
-            }
-            t_stability_ms += _sk_t.elapsed().as_millis() as u64;
+            t_stability_ms += _stab_t.elapsed().as_millis() as u64;
         }
 
         // 4c. Auto-mode lazy-load pass: scroll viewport-by-viewport so
