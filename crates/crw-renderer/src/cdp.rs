@@ -4214,7 +4214,8 @@ struct SkeletonSample {
 /// recorded traces.
 #[derive(Debug)]
 struct SkeletonWait {
-    base_text: u64,
+    /// Most page text seen so far in this wait.
+    peak_text: u64,
     base_region: u64,
     prev: SkeletonSample,
     idle: u32,
@@ -4223,7 +4224,7 @@ struct SkeletonWait {
 impl SkeletonWait {
     fn new(first: SkeletonSample) -> Self {
         Self {
-            base_text: first.text_len,
+            peak_text: first.text_len,
             base_region: first.region_len,
             prev: first,
             idle: 0,
@@ -4233,16 +4234,21 @@ impl SkeletonWait {
     /// Feed one sample; `Some(reason)` means snapshot now.
     ///
     /// Filled: the skeleton region gained real text and held still for one
-    /// tick, or the skeleton went away without the page text shrinking.
+    /// tick, or the skeleton went away and the page holds at least as much
+    /// text as it has shown at any point in the wait.
     /// Whole-page text is no use for the first test: Kiwi's price calendar
     /// loads outside the result list and grows the page 1223 -> 1845 chars
     /// with no offer on screen. The shrink check matters for the second: Kiwi
-    /// swaps its skeleton for a shorter loading view (902 chars) first.
+    /// swaps its skeleton for a shorter loading view (902 chars) first. The
+    /// bar is the peak, not the text at the start: a wait that starts while the
+    /// page is still building (~400 chars on Kiwi) would otherwise read that
+    /// 902-char view as content.
     /// Idle: nothing changed at all for [`SKELETON_IDLE_TICKS`] ticks.
     fn observe(&mut self, s: SkeletonSample) -> Option<&'static str> {
         let arrived = s.region_len >= self.base_region + SKELETON_REGION_MIN_GROWTH
             && s.region_len.abs_diff(self.prev.region_len) <= (self.prev.region_len / 20).max(50);
-        let cleared = s.skeletons < SKELETON_MIN_ELEMENTS && s.text_len >= self.base_text;
+        let cleared = s.skeletons < SKELETON_MIN_ELEMENTS && s.text_len >= self.peak_text;
+        self.peak_text = self.peak_text.max(s.text_len);
         if s.text_len == self.prev.text_len && s.html_len == self.prev.html_len {
             self.idle += 1;
         } else {
@@ -5050,6 +5056,25 @@ mod tests {
             (10, 2402, 1_070_093, 540),
             (5, 2411, 973_329, 549),
             (5, 2553, 981_851, 677),
+        ];
+        assert_eq!(skeleton_stop(&trace), Some((8, "filled")));
+    }
+
+    #[test]
+    fn skeleton_wait_started_early_still_holds_through_the_kiwi_loading_view() {
+        // The same Kiwi trace with the wait starting while the page was still
+        // building (~400 chars). The 902-char loading view is more than the
+        // start but less than the 1223 the page already showed: not content.
+        let trace = [
+            (5, 400, 700_000, 0),
+            (5, 1223, 861_707, 0),
+            (5, 1223, 866_759, 0),
+            (0, 902, 770_457, 0),
+            (0, 902, 770_494, 0),
+            (5, 1845, 908_721, 0),
+            (5, 1819, 873_595, 0),
+            (10, 2402, 1_070_093, 540),
+            (5, 2411, 973_329, 549),
         ];
         assert_eq!(skeleton_stop(&trace), Some((8, "filled")));
     }
