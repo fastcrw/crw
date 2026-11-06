@@ -2,6 +2,34 @@
 
 All notable changes to CRW are documented here.
 
+## [0.42.0](https://github.com/fastcrw/crw/compare/v0.41.0...v0.42.0) (2026-11-06)
+
+
+### Features
+
+* **renderer:** opt-in gate and metered bytes for the cloak tier ([99f7ec8](https://github.com/fastcrw/crw/commit/99f7ec8ef8147199cedfff8c89702ea7b58311d9))
+
+
+### Bug Fixes
+
+* **connectors:** code throttling 503s as rate limits and fix wording ([b1ae223](https://github.com/fastcrw/crw/commit/b1ae223a725610ee9b510f1898bb0281c7cc1337))
+* **extract:** drop blurred placeholder images in onlyMainContent ([0c8d0fd](https://github.com/fastcrw/crw/commit/0c8d0fdde1cd883b4fa1377b62c8c0b15451dee9))
+* **extract:** drop markup hidden by an inline style in onlyMainContent ([b7dc889](https://github.com/fastcrw/crw/commit/b7dc889cfa1b977fa020537d464a40bd390a2fd5))
+* **extract:** keep opaque tokens out of the captured-JSON fallback ([18bc8d2](https://github.com/fastcrw/crw/commit/18bc8d2ab902618ae12f01d3e82e91b64f373bf8))
+* **extract:** match noise names on data-testid and treat wishlist as noise ([bf6f730](https://github.com/fastcrw/crw/commit/bf6f730f206a0b3db1845e022ca253973b111f4c))
+* **extract:** remove listing facets, sort and page-size controls ([4df2226](https://github.com/fastcrw/crw/commit/4df2226e11c71c0a65ac7b40e35613a1d63545f8))
+* **mcp:** accept --api-key=value and --api-url=value in install ([33cfe00](https://github.com/fastcrw/crw/commit/33cfe005fde8ddda8d981a12d93bb8ab5aeb5c6b))
+* **mcp:** add --version and reject unknown install flags ([aa3b35e](https://github.com/fastcrw/crw/commit/aa3b35e81ebf2db023e85dd1f4e3d6e07b58ccf4))
+* **mcp:** advertise plainText scrape output ([05a00b5](https://github.com/fastcrw/crw/commit/05a00b54152710530c0f56ed8d8b13e48ff59817))
+* **renderer:** allow the opt-in bit's extra fetch_with_js argument ([634cd43](https://github.com/fastcrw/crw/commit/634cd432f6bf104e958b9064ee24f0b5894e4b8f))
+* **renderer:** do not label a settled page as budget-truncated ([5513c11](https://github.com/fastcrw/crw/commit/5513c11a997cd5975053e6eb0740c2d9165d022b))
+* **renderer:** give a slow PDF body the request deadline ([eb157c9](https://github.com/fastcrw/crw/commit/eb157c9d4148ea26f549f32e13dc3060756e4826))
+* **renderer:** hand the selector poll over to the skeleton wait ([8eaf696](https://github.com/fastcrw/crw/commit/8eaf69612d90b94453f763258fb82deeb3b3d3a9))
+* **renderer:** judge a cleared skeleton against the peak page text ([a92afcf](https://github.com/fastcrw/crw/commit/a92afcfd08c3f076b65b9957defb2138d73a9c1d))
+* **renderer:** lay Chrome renders out in a tall desktop window ([2fa212a](https://github.com/fastcrw/crw/commit/2fa212a6c95a83fc49ff65df1bad95f3f4141343))
+* **renderer:** let Chrome renders of Google pages past consent and the UA gate ([c1491fd](https://github.com/fastcrw/crw/commit/c1491fd36e0242f196e6a4a5b33fef2e08fecd14))
+* **renderer:** wait for a skeleton grid before taking the snapshot ([898cc3c](https://github.com/fastcrw/crw/commit/898cc3c3d893e1ede341302a1cf405e49bfc6f0c))
+
 ## [0.41.0](https://github.com/fastcrw/crw/compare/v0.40.0...v0.41.0) (2026-11-04)
 
 
