@@ -1130,6 +1130,33 @@ fn extract_xhr_text(captured: &[CapturedNetworkResponse]) -> Option<String> {
     Some(joined)
 }
 
+/// Whether a JSON string is mostly an opaque token (booking tokens, cache keys,
+/// hashes) rather than prose: more than half of it sits in unbroken runs of 40+
+/// identifier characters. A Kiwi results API returns hundreds of such strings
+/// (`ItineraryOneWay:eyJ…`, base64 booking tokens), and on a page whose DOM is
+/// thin they won the candidate pick and filled the markdown with ~800 KB of
+/// them. Prose in any script keeps its spaces or has no ASCII runs, and a URL
+/// inside a sentence stays under half of it.
+fn is_machine_token(s: &str) -> bool {
+    const MIN_RUN: usize = 40;
+    let mut token_bytes = 0;
+    let mut run = 0;
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"+/=_-.:|~%".contains(&b) {
+            run += 1;
+            continue;
+        }
+        if run >= MIN_RUN {
+            token_bytes += run;
+        }
+        run = 0;
+    }
+    if run >= MIN_RUN {
+        token_bytes += run;
+    }
+    token_bytes * 2 > s.len()
+}
+
 fn walk_json_strings(value: &serde_json::Value, on_string: &mut dyn FnMut(&str)) {
     match value {
         serde_json::Value::String(s) => {
@@ -1139,6 +1166,7 @@ fn walk_json_strings(value: &serde_json::Value, on_string: &mut dyn FnMut(&str))
                 || trimmed.starts_with("https://")
                 || trimmed.starts_with('/')
                 || trimmed.starts_with('<')
+                || is_machine_token(trimmed)
             {
                 return;
             }
@@ -1229,30 +1257,110 @@ mod private_tests {
         assert!(extract_xhr_text(&[]).is_none());
     }
 
-    #[test]
-    fn xhr_extract_collects_long_string_fields() {
-        let body = serde_json::json!({
-            "title": "short",
-            "body": "a".repeat(300),
-            "meta": { "summary": "b".repeat(200) },
-            "tags": ["c".repeat(150), "short"],
-            "url": "https://example.com/should/skip",
-        })
-        .to_string();
-        let resp = vec![CapturedNetworkResponse {
+    fn json_response(body: String) -> Vec<CapturedNetworkResponse> {
+        vec![CapturedNetworkResponse {
             url: "https://api.example.com/article/1".to_string(),
             request_id: "1".to_string(),
             status: 200,
             mime_type: Some("application/json".to_string()),
+            body_size_bytes: body.len(),
             body: Some(body),
-            body_size_bytes: 800,
-        }];
-        let got = extract_xhr_text(&resp).expect("expected long-text fields");
-        assert!(got.contains(&"a".repeat(300)));
-        assert!(got.contains(&"b".repeat(200)));
-        assert!(got.contains(&"c".repeat(150)));
+        }]
+    }
+
+    const BODY: &str = "The council approved the new transit plan on Tuesday after a long debate about \
+         funding, and the first bus lines are expected to open next spring across the city.";
+    const SUMMARY: &str = "Residents can comment on the routes until the end of the month, and the \
+         final map will be published on https://example.com/transit/plan-2026 once it is ready.";
+    const TAG: &str = "新しい路線は来年の春に開業する予定で、市内の主要な駅を結び、通勤時間を大幅に短縮することが期待されています。住民は今月末まで路線案に意見を提出できます。";
+
+    #[test]
+    fn xhr_extract_collects_long_string_fields() {
+        let body = serde_json::json!({
+            "title": "short",
+            "body": BODY,
+            "meta": { "summary": SUMMARY },
+            "tags": [TAG, "short"],
+            "url": "https://example.com/should/skip",
+        })
+        .to_string();
+        let got = extract_xhr_text(&json_response(body)).expect("expected long-text fields");
+        assert!(got.contains(BODY));
+        assert!(got.contains(SUMMARY));
+        assert!(got.contains(TAG));
         assert!(!got.contains("short"));
         assert!(!got.contains("example.com/should/skip"));
+    }
+
+    // Shapes from a Kiwi results response: a cache key, a base64 booking
+    // token, a sector key and a bare token. None of them is text.
+    fn kiwi_tokens() -> Vec<String> {
+        let b64 = "eyJwcm92aWRlcnMiOiJLSVdJLUJBU0lDOktJV0kiLCJyb3V0ZV9kYXRhIjoiUEM6OTk4OkZSQToxNzk2NzUxMzAwOlNBVzoxNzk2NzYyNDAw";
+        vec![
+            format!("ItineraryOneWay:{b64}"),
+            format!("{b64}OmVjb25vbXk6RmFsc2U6OjpQQyIsImkiOlsiMTcyOTFkYjg1MTNiMDAwMDUzNzE5ODA2XzAiXSwidGhjIj"),
+            "Sector:2a9f8bc85ddfa42ffe196eab449335c8b818d33a~3d88d25a719f7ad51366a192b48562f1beaeb6c7|38685066414".to_string(),
+            "Hq1XDyuRQ9BRcHdvYAnCiekWXveMQIcGjRUTMscWZ0ibB3jC3rJZTTdSk_uJy6Ixwmo45tumXSsibmXY8c_b7tqjiT9K55STkwltPjWkDxWWkawCXKVkLv1".to_string(),
+        ]
+    }
+
+    #[test]
+    fn xhr_extract_skips_opaque_tokens() {
+        let records: Vec<_> = kiwi_tokens()
+            .into_iter()
+            .map(|t| serde_json::json!({ "id": t, "bookingToken": t }))
+            .collect();
+        let body =
+            serde_json::json!({ "data": { "records": records }, "notes": [BODY, SUMMARY, TAG] })
+                .to_string();
+        let got = extract_xhr_text(&json_response(body)).expect("the prose fields remain");
+        assert_eq!(got, [BODY, SUMMARY, TAG].join("\n\n"));
+    }
+
+    #[test]
+    fn xhr_extract_returns_none_when_only_tokens_are_long() {
+        let body = serde_json::json!({ "itineraries": kiwi_tokens() }).to_string();
+        assert!(extract_xhr_text(&json_response(body)).is_none());
+    }
+
+    #[test]
+    fn booking_tokens_do_not_reach_the_markdown_of_a_thin_page() {
+        let tokens: Vec<_> = (0..300)
+            .flat_map(|i| kiwi_tokens().into_iter().map(move |t| format!("{t}{i}")))
+            .collect();
+        let body = serde_json::json!({ "data": { "itineraries": tokens } }).to_string();
+        let formats = [OutputFormat::Markdown];
+        let data = extract(ExtractOptions {
+            raw_html: "<html><body><h1>Istanbul! Wer kommt mit mir mit?</h1></body></html>",
+            content_type: Some("text/html"),
+            source_url: "https://www.kiwi.com/de/search/results/frankfurt/istanbul/",
+            status_code: 200,
+            rendered_with: None,
+            elapsed_ms: 0,
+            render_decision: None,
+            credit_cost: 0,
+            warnings: vec![],
+            formats: &formats,
+            only_main_content: true,
+            include_tags: &[],
+            exclude_tags: &[],
+            css_selector: None,
+            xpath: None,
+            chunk_strategy: None,
+            query: None,
+            filter_mode: None,
+            top_k: None,
+            domain_selectors: None,
+            captured_responses: &json_response(body),
+            llm_fallback: None,
+            debug: false,
+            debug_sink: None,
+            normalize_tables: false,
+        })
+        .unwrap();
+        let md = data.markdown.unwrap_or_default();
+        assert!(!md.contains("ItineraryOneWay:"), "{} chars", md.len());
+        assert!(md.len() < 1_000, "{} chars", md.len());
     }
 
     #[test]
