@@ -8,6 +8,13 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.42.1](https://github.com/fastcrw/crw/compare/v0.42.0...v0.42.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **connectors:** give a source on the user's machine 60 s to answer ([3e3093b](https://github.com/fastcrw/crw/commit/3e3093ba2bdf1175b17c91a19eb0818b6e40d9b7))
+
 ## [0.42.0](https://github.com/fastcrw/crw/compare/v0.41.0...v0.42.0) (2026-11-06)
 
 
