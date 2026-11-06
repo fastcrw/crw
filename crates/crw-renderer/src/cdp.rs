@@ -136,6 +136,20 @@ const NET_CAPTURE_GETBODY_TIMEOUT: Duration = Duration::from_millis(800);
 /// NET_CAPTURE_MAX_TOTAL_BYTES. Override: CRW_RENDERER__SCREENSHOT_MAX_HEIGHT_PX.
 const SCREENSHOT_MAX_HEIGHT_PX: f64 = 15_000.0;
 
+/// Window a Chrome render lays the page out in. Without a size Chrome uses its
+/// 800x600 default, and pages that render list items only once their slot
+/// nears the viewport (Kiwi results: 3 cards at 800x600, 8 at 1280x1600, all
+/// 10 of the first page at 1280x2400) leave the rest as placeholders.
+const CHROME_WINDOW_WIDTH: u32 = 1280;
+const CHROME_WINDOW_HEIGHT: u32 = 2400;
+/// Screen reported around that window: a portrait monitor large enough to
+/// hold it, so `screen.*` never comes out smaller than `outerHeight`.
+const CHROME_SCREEN_WIDTH: u32 = 1440;
+const CHROME_SCREEN_HEIGHT: u32 = 2560;
+/// Height of a viewport-only screenshot: the first screen of the tall window
+/// above, so the capture stays a normal desktop shot.
+const SCREENSHOT_VIEWPORT_HEIGHT: u32 = 800;
+
 fn screenshot_max_height_px() -> f64 {
     std::env::var("CRW_RENDERER__SCREENSHOT_MAX_HEIGHT_PX")
         .ok()
@@ -3158,6 +3172,13 @@ impl CdpRenderer {
         // leak across contexts).
         let create_t0 = Instant::now();
         let mut create_params = serde_json::json!({ "url": "about:blank" });
+        // Tall desktop window (see CHROME_WINDOW_HEIGHT). Chrome family only:
+        // lightpanda has no layout.
+        let tall_window = self.name != "lightpanda";
+        if tall_window {
+            create_params["width"] = CHROME_WINDOW_WIDTH.into();
+            create_params["height"] = CHROME_WINDOW_HEIGHT.into();
+        }
         if let Some(ctx) = browser_context_id {
             create_params["browserContextId"] = serde_json::Value::String(ctx.to_string());
         }
@@ -3332,6 +3353,31 @@ impl CdpRenderer {
             {
                 tracing::debug!(renderer = %self.name, method, "locale override refused: {e}");
             }
+        }
+
+        // The tall window from createTarget keeps headless-shell's 800x600
+        // screen, and a window larger than its screen is a bot signal. Report
+        // a portrait monitor that holds the window instead; width/height 0 leave
+        // the window's own metrics untouched. Best-effort like the overrides
+        // above.
+        if tall_window
+            && let Err(e) = conn
+                .send_recv(
+                    "Emulation.setDeviceMetricsOverride",
+                    serde_json::json!({
+                        "width": 0,
+                        "height": 0,
+                        "deviceScaleFactor": 0,
+                        "mobile": false,
+                        "screenWidth": CHROME_SCREEN_WIDTH,
+                        "screenHeight": CHROME_SCREEN_HEIGHT,
+                    }),
+                    Some(&session_id),
+                    self.page_timeout,
+                )
+                .await
+        {
+            tracing::debug!(renderer = %self.name, "screen override refused: {e}");
         }
 
         // Forward the caller's custom request headers. These were dropped on the
@@ -3649,7 +3695,7 @@ impl CdpRenderer {
             // partial-snapshot branch above uses it too.
             let screenshot = match crate::current_screenshot_req() {
                 Some(req) => {
-                    self.capture_screenshot(conn, &session_id, req.full_page)
+                    self.capture_screenshot(conn, &session_id, req.full_page, tall_window)
                         .await
                 }
                 None => None,
@@ -4100,7 +4146,28 @@ impl CdpRenderer {
         conn: &CdpConnection,
         session_id: &str,
         full_page: bool,
+        tall_window: bool,
     ) -> Option<String> {
+        if full_page && tall_window {
+            // Shrink the layout viewport to one desktop screen first: the
+            // measured content size is never smaller than the viewport, so a
+            // short page would otherwise come out padded to the tall window.
+            let _ = conn
+                .send_recv(
+                    "Emulation.setDeviceMetricsOverride",
+                    serde_json::json!({
+                        "width": CHROME_WINDOW_WIDTH,
+                        "height": SCREENSHOT_VIEWPORT_HEIGHT,
+                        "deviceScaleFactor": 1,
+                        "mobile": false,
+                        "screenWidth": CHROME_SCREEN_WIDTH,
+                        "screenHeight": CHROME_SCREEN_HEIGHT,
+                    }),
+                    Some(session_id),
+                    self.page_timeout,
+                )
+                .await;
+        }
         let params = if full_page {
             match self.full_page_clip(conn, session_id).await {
                 Some((w, h)) => serde_json::json!({
@@ -4115,6 +4182,19 @@ impl CdpRenderer {
                     "fromSurface": true,
                 }),
             }
+        } else if tall_window {
+            serde_json::json!({
+                "format": "png",
+                "captureBeyondViewport": false,
+                "fromSurface": true,
+                "clip": {
+                    "x": 0,
+                    "y": 0,
+                    "width": CHROME_WINDOW_WIDTH,
+                    "height": SCREENSHOT_VIEWPORT_HEIGHT,
+                    "scale": 1,
+                },
+            })
         } else {
             serde_json::json!({
                 "format": "png",
