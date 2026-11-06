@@ -345,6 +345,9 @@ pub struct HttpFetcher {
     /// DIRECT one and demote every other caller's healthy direct traffic.
     has_static_proxy: bool,
     inject_stealth_headers: bool,
+    /// The total timeout the clients were built with (the tier budget). Kept so a
+    /// PDF fetch can lift it per request, see `fetch`.
+    request_timeout: std::time::Duration,
 }
 
 impl HttpFetcher {
@@ -395,6 +398,7 @@ impl HttpFetcher {
             ratelimit_proxy_client,
             has_static_proxy: proxy.is_some() || env_proxy_configured(),
             inject_stealth_headers,
+            request_timeout,
         }
     }
 
@@ -423,6 +427,7 @@ impl HttpFetcher {
             ratelimit_proxy_client,
             has_static_proxy: true,
             inject_stealth_headers,
+            request_timeout,
         })
     }
 }
@@ -443,6 +448,7 @@ impl PageFetcher for HttpFetcher {
             )));
         }
         let start = Instant::now();
+        let is_pdf_path = crate::url_path_is_pdf(url);
 
         // Build a fresh, fully-decorated request for each attempt. Closure
         // captures `self`, `url`, and `headers`; called once per attempt so
@@ -605,8 +611,25 @@ impl PageFetcher for HttpFetcher {
             } else {
                 &self.client
             };
-            let send_fut = build_request(active_client).send();
-            let send_result = tokio::time::timeout(remaining, send_fut).await;
+            let mut req = build_request(active_client);
+            // A PDF is the one body no later tier can fetch: chrome turns the
+            // navigation into a download and aborts it (`net::ERR_ABORTED`). The
+            // client's total timeout is the tier budget (4s in the docker config)
+            // and it covers the body, so a PDF that takes longer to stream was cut
+            // mid-body and the request ended as a 500. Measured over 7 days of
+            // prod: 59 customer 502s, nearly all PDFs of 3 to 27 MB on a 60s
+            // deadline. Lift the cap to this attempt's budget for a `.pdf` path.
+            // Never lowered: a budget below the tier timeout keeps the client's.
+            // Only the body gets the longer budget: the wait for headers stays at
+            // the tier timeout, so a `.pdf` origin that never answers still fails
+            // as fast as before instead of holding the request for the deadline.
+            let mut header_budget = remaining;
+            if is_pdf_path && remaining > self.request_timeout {
+                req = req.timeout(remaining);
+                header_budget = self.request_timeout;
+            }
+            let send_fut = req.send();
+            let send_result = tokio::time::timeout(header_budget, send_fut).await;
             // "The origin answered us at least once on this request." Recorded HERE,
             // once, rather than in the four `Ok(Ok(_))` arms below, so no future arm can
             // forget it. Direct egress only: a response relayed through the proxy could
@@ -1662,6 +1685,7 @@ mod tests {
                 .unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
 
         let res = fetcher
@@ -1692,6 +1716,7 @@ mod tests {
             ratelimit_proxy_client: None,
             has_static_proxy: false,
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let err = fetcher
             .fetch(
@@ -1754,6 +1779,7 @@ mod tests {
             ratelimit_proxy_client: None,
             has_static_proxy: false,
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let _ = fetcher
             .fetch(
@@ -1798,6 +1824,7 @@ mod tests {
                 .unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let err = fetcher
             .fetch(
@@ -1853,6 +1880,7 @@ mod tests {
                 .unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         // origin: 192.0.2.1 is RFC 5737 TEST-NET-1, never routed, so the SYN is
         // blackholed and the direct attempt is a connect-phase timeout. Same address
@@ -1905,6 +1933,7 @@ mod tests {
                 .unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let err = fetcher
             .fetch(
@@ -1954,6 +1983,7 @@ mod tests {
                 .unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let err = fetcher
             .fetch(
@@ -3516,6 +3546,99 @@ mod tests {
         );
     }
 
+    /// A PDF that streams for longer than the tier timeout must still arrive
+    /// whole when the caller's deadline allows it, because no browser tier can
+    /// fetch a PDF. The same slow body on a non-PDF path keeps the tier cap, so
+    /// HTML still fails fast into the JS ladder.
+    #[tokio::test]
+    async fn slow_pdf_body_gets_the_deadline_not_the_tier_timeout() {
+        async fn slow_pdf() -> impl axum::response::IntoResponse {
+            use futures::StreamExt as _;
+            let chunks = futures::stream::iter([&b"%PDF-1.4\n"[..], &b"1 0 obj\n%%EOF\n"[..]])
+                .then(|c| async move {
+                    if c.starts_with(b"1 0") {
+                        tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+                    }
+                    Ok::<_, std::io::Error>(axum::body::Bytes::from_static(c))
+                });
+            (
+                [(axum::http::header::CONTENT_TYPE, "application/pdf")],
+                axum::body::Body::from_stream(chunks),
+            )
+        }
+        let base = spawn_router(
+            axum::Router::new()
+                .route("/doc.pdf", axum::routing::get(slow_pdf))
+                .route("/doc", axum::routing::get(slow_pdf)),
+        )
+        .await;
+        let fetcher = HttpFetcher::with_timeout(
+            "crw-test",
+            None,
+            false,
+            std::time::Duration::from_millis(250),
+        );
+        let ok = fetcher
+            .fetch(
+                &format!("{base}/doc.pdf"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(10_000),
+            )
+            .await
+            .expect("a .pdf body slower than the tier timeout must arrive under the deadline");
+        assert_eq!(ok.content_type.as_deref(), Some("application/pdf"));
+
+        let err = fetcher
+            .fetch(
+                &format!("{base}/doc"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(10_000),
+            )
+            .await
+            .expect_err("a non-PDF path keeps the 250ms tier timeout");
+        assert!(
+            matches!(err, CrwError::HttpError(_) | CrwError::Timeout(_)),
+            "got {err:?}"
+        );
+    }
+
+    /// The longer budget is for the body only. A `.pdf` origin that never sends
+    /// headers must still give up at the tier timeout, not hold the request for
+    /// the caller's whole deadline.
+    #[tokio::test]
+    async fn pdf_path_header_wait_keeps_the_tier_timeout() {
+        async fn no_headers() -> impl axum::response::IntoResponse {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            (axum::http::StatusCode::OK, "late")
+        }
+        let base =
+            spawn_router(axum::Router::new().route("/hang.pdf", axum::routing::get(no_headers)))
+                .await;
+        let fetcher = HttpFetcher::with_timeout(
+            "crw-test",
+            None,
+            false,
+            std::time::Duration::from_millis(250),
+        );
+        let started = std::time::Instant::now();
+        fetcher
+            .fetch(
+                &format!("{base}/hang.pdf"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(10_000),
+            )
+            .await
+            .expect_err("an origin that sends no headers must fail");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(3),
+            "took {:?}: the header wait was not bounded by the 250ms tier timeout",
+            started.elapsed()
+        );
+    }
+
     // ── Q. mid-loop 429 / challenge-header rescue ───────────────────────
 
     fn spawn_429_origin() -> String {
@@ -3608,6 +3731,7 @@ mod tests {
                 build_client("ua", Some(&proxy), std::time::Duration::from_secs(5), false).unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let res = fetcher
             .fetch(
@@ -3674,6 +3798,7 @@ mod tests {
                 build_client("ua", Some(&proxy), std::time::Duration::from_secs(5), false).unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let target = format!("{origin}p/s3cret-seg?token=t0k3n#frag-9");
         fetcher
@@ -3786,6 +3911,7 @@ mod tests {
                 build_client("ua", Some(&proxy), std::time::Duration::from_secs(5), false).unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let res = fetcher
             .fetch(
@@ -3839,6 +3965,7 @@ mod tests {
                 .unwrap(),
             ),
             inject_stealth_headers: false,
+            request_timeout: HTTP_REQUEST_TIMEOUT,
         };
         let err = fetcher
             .fetch(

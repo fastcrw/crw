@@ -726,7 +726,7 @@ fn is_hard_block_status(status_code: u16) -> bool {
 /// Does this URL's path name a PDF? Only the lower-cased path is read, so a
 /// query string or fragment (`?download=1`, `#page=3`) neither hides nor fakes
 /// the extension. A URL that does not parse is not treated as one.
-fn url_path_is_pdf(url: &str) -> bool {
+pub(crate) fn url_path_is_pdf(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
 }
 
