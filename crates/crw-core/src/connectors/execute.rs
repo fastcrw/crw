@@ -14,7 +14,10 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(20);
+/// The call runs on the user's machine, so a long wait costs us nothing, and
+/// some sources are slow by nature: a Wayback CDX prefix or domain scan takes
+/// 11 to 45 s. The MCP tools that proxy to fastCRW already allow up to 120 s.
+const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(60);
 /// A 429's `Retry-After` is honoured once, and only when this short.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(10);
 

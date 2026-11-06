@@ -1437,11 +1437,11 @@ async fn connectors_exec_timeout_error_carries_no_key() {
     )
     .await;
     Mock::given(path("/up/works/T"))
-        .respond_with(json_ok(json!({})).set_delay(Duration::from_secs(60)))
+        .respond_with(json_ok(json!({})).set_delay(Duration::from_secs(120)))
         .mount(&server)
         .await;
     ctx.manifest().await.unwrap();
-    // Virtual time: the 20 s budget elapses without the test waiting for it.
+    // Virtual time: the 60 s budget elapses without the test waiting for it.
     tokio::time::pause();
     let err = get(&ctx, "openalex", json!({"id": "T"})).await.unwrap_err();
     assert!(err.starts_with("[upstream_timeout]"), "{err}");

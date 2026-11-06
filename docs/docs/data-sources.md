@@ -141,7 +141,7 @@ Errors come back as a tool error (`isError: true`) whose text starts with a code
 | `connector_misconfigured` | The source definition is unusable right now, or this crw cannot run the source | Try again later; upgrade crw when the message says so |
 | `blocked` | A safety rule stopped a request, or a redirect hop, before crw sent it (redirect to another origin, private address, too many redirects) | Nothing to fix locally; report it if it persists |
 | `upstream_error` | The source answered with an error status or could not be reached | Check the options; try again. If the source refused your stored key, store it again |
-| `upstream_timeout` | The source did not answer within 20 seconds | Try again |
+| `upstream_timeout` | The source did not answer in time (20 seconds for a source that runs on fastCRW, 60 seconds for one that runs on your machine) | Try again |
 | `upstream_rate_limited` | The source is limiting requests (from your machine, or from fastCRW for a source that runs there) | Wait and try again |
 | `invalid_response` | The source answered with something other than JSON, or over 8 MiB | Try again; narrow the options |
 | `result_too_large` | The result is over 256 KiB. For a source that runs on fastCRW, the call is refunded, so it costs nothing | Narrow the options |
