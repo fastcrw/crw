@@ -114,6 +114,31 @@ fn is_connection_failure(e: &reqwest::Error) -> bool {
     false
 }
 
+/// True when the origin redirected us to a host name that does not resolve.
+///
+/// `safe_redirect_policy` resolves every redirect target for its SSRF check, so
+/// a dead target surfaces as a redirect error carrying the check's
+/// "DNS resolution ..." message, never as the connect-phase DNS failure the
+/// first hop would produce. The verdict is the same as for that first hop: the
+/// caller's target sent us nowhere (seen on prod: a 301 to
+/// `www.example.com2026/...`), so it is `TargetUnreachable`, not our 502.
+/// An SSRF refusal ("Access to 10.0.0.1 is not allowed") does not match and
+/// stays an `HttpError`. The matched text is owned by `url_safety.rs`;
+/// `redirect_to_unresolvable_host_is_target_unreachable` breaks if it changes.
+fn is_dead_redirect_target(e: &reqwest::Error) -> bool {
+    if !e.is_redirect() {
+        return false;
+    }
+    let mut src: Option<&(dyn std::error::Error + 'static)> = std::error::Error::source(e);
+    while let Some(s) = src {
+        if s.to_string().contains("DNS resolution") {
+            return true;
+        }
+        src = std::error::Error::source(s);
+    }
+    false
+}
+
 /// Returns true if a response status warrants one retry. Limited to the
 /// canonical transient gateway/origin signals — 5xx errors that are not
 /// retriable (501, 505) are excluded so we don't waste time on permanent
@@ -943,12 +968,21 @@ impl PageFetcher for HttpFetcher {
                              reporting target_unreachable (was: http_error)",
                         );
                     }
-                    let unreachable = e.is_connect() && (!use_proxy || direct_connect_failed);
+                    let dead_redirect = is_dead_redirect_target(&e);
+                    let unreachable =
+                        (e.is_connect() && (!use_proxy || direct_connect_failed)) || dead_redirect;
                     // reqwest's " for url (...)" tail carries the request target, not
                     // the proxy, so dropping it here is for uniformity with every other
                     // site. `url` is the caller's own target and safe to echo, so both
                     // arms name it themselves.
-                    let msg = crw_core::error::reqwest_message(e);
+                    //
+                    // reqwest's own text for a refused redirect is only "error
+                    // following redirect", which reads as our fault; say why.
+                    let msg = if dead_redirect {
+                        "it redirects to a host name that does not resolve".to_string()
+                    } else {
+                        crw_core::error::reqwest_message(e)
+                    };
                     return Err(if unreachable {
                         CrwError::TargetUnreachable(format!(
                             "Could not reach {}: {msg}",
@@ -2973,6 +3007,12 @@ mod tests {
         axum::response::Redirect::to("/loop")
     }
 
+    /// The prod shape: a 301 whose Location is glued onto the path, so the host
+    /// becomes a name that never resolves (`.invalid` is reserved, RFC 2606).
+    async fn dead_redirect_handler() -> impl axum::response::IntoResponse {
+        axum::response::Redirect::permanent("http://www.crw-test.com2026.invalid/06/story")
+    }
+
     async fn clean_200_handler() -> impl axum::response::IntoResponse {
         (
             axum::http::StatusCode::OK,
@@ -2986,6 +3026,7 @@ mod tests {
             .route("/redirect-once", axum::routing::get(redirect_once_handler))
             .route("/target", axum::routing::get(redirect_target_handler))
             .route("/loop", axum::routing::get(redirect_loop_handler))
+            .route("/dead-redirect", axum::routing::get(dead_redirect_handler))
             .route("/clean", axum::routing::get(clean_200_handler))
     }
 
@@ -3012,6 +3053,36 @@ mod tests {
             .await
             .expect_err("a redirect to a loopback host must be blocked by default");
         assert!(matches!(err, CrwError::HttpError(_)), "got {err:?}");
+    }
+
+    /// A redirect to a host that does not resolve is the target's fault, the
+    /// same 422 a dead first-hop host gets, not a 502 "our gateway broke".
+    /// The SSRF check is what resolves the target, so the escape hatch stays
+    /// off here to exercise the production path.
+    #[tokio::test]
+    // Holds ENV_LOCK across awaits on purpose: the guard serialises these
+    // tests against each other while they mutate a process-wide env var.
+    #[allow(clippy::await_holding_lock)]
+    async fn redirect_to_unresolvable_host_is_target_unreachable() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::remove_var("CRW_ALLOW_LOOPBACK_FOR_TESTS") };
+        let base = spawn_router(redirect_router()).await;
+        let fetcher = HttpFetcher::new("crw-test", None, false);
+        let err = fetcher
+            .fetch(
+                &format!("{base}/dead-redirect"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(5_000),
+            )
+            .await
+            .expect_err("a redirect to an unresolvable host cannot succeed");
+        match err {
+            CrwError::TargetUnreachable(m) => {
+                assert!(m.contains("does not resolve"), "got: {m}")
+            }
+            other => panic!("expected TargetUnreachable, got {other:?}"),
+        }
     }
 
     #[tokio::test]
