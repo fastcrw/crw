@@ -2989,6 +2989,33 @@ impl FallbackRenderer {
     /// next renderer in the chain is tried.
     const MIN_RENDERED_TEXT_LEN: usize = 50;
 
+    /// Whether a kept result is content, by the strictest of the recovery
+    /// arms' verdicts (the cloak arm's: no wall, no challenge, no failed or
+    /// placeholder render, enough text).
+    fn keeper_is_content(r: &FetchResult) -> bool {
+        html_body_text_len(&r.html) >= Self::MIN_RENDERED_TEXT_LEN
+            && detector::looks_like_failed_render(&r.html).is_none()
+            && !detector::looks_like_loading_placeholder(&r.html)
+            && !detector::looks_like_cloudflare_challenge(&r.html)
+            && !detector::looks_like_generic_bot_wall(&r.html, r.truncated)
+            && detector::looks_like_vendor_block(&r.html).is_none()
+    }
+
+    /// Best-result-wins between a recovery arm's content-OK result and what
+    /// the ladder kept. The larger HTML wins only between two pages of content:
+    /// a kept wall or challenge loses to any content. Comparing sizes alone
+    /// threw away cleared pages smaller than the Cloudflare interstitial they
+    /// replaced (zmenu: about 30 KB of menu against a script-heavy challenge),
+    /// after the residential bytes to clear them were spent.
+    fn arm_result_replaces_keeper(
+        r_ok: bool,
+        r: &FetchResult,
+        keeper: Option<&FetchResult>,
+    ) -> bool {
+        r_ok && keeper
+            .is_none_or(|prev| !Self::keeper_is_content(prev) || r.html.len() > prev.html.len())
+    }
+
     /// Pure classification of a JS-renderer result: the accept-gate + thin/block
     /// signals, NO side-effects. Shared by the serial escalation loop and the
     /// conditional hedge so both apply the identical accept criteria (the red
@@ -4499,11 +4526,8 @@ impl FallbackRenderer {
                         // Ok(empty), nor replace a usable thin_result). The `None`
                         // case is gated on r_ok too, else an all-tiers-errored run
                         // would ship an empty proxy body as success.
-                        let better = r_ok
-                            && match &thin_result {
-                                Some(prev) => r.html.len() > prev.html.len(),
-                                None => true,
-                            };
+                        let better =
+                            Self::arm_result_replaces_keeper(r_ok, &r, thin_result.as_ref());
                         if self.latency_breakdown {
                             tracing::info!(
                                 target: "latency_breakdown",
@@ -4689,11 +4713,8 @@ impl FallbackRenderer {
                                 .with_label_values(&[kind.as_str(), "success"])
                                 .inc();
                         }
-                        let better = r_ok
-                            && match &thin_result {
-                                Some(prev) => r.html.len() > prev.html.len(),
-                                None => true,
-                            };
+                        let better =
+                            Self::arm_result_replaces_keeper(r_ok, &r, thin_result.as_ref());
                         // Ungated, host-only (these paths can be person names
                         // and stdout leaves the box): the one line `docker logs`
                         // needs to tell WHICH route fired and whether it won.
@@ -4959,6 +4980,94 @@ mod tests {
     #[cfg(feature = "cdp")]
     use crw_core::config::CdpEndpoint;
     use std::time::Duration;
+
+    fn page(html: String) -> FetchResult {
+        FetchResult {
+            url: "https://www.zmenu.com/".to_string(),
+            final_url: None,
+            status_code: 200,
+            html,
+            content_type: Some("text/html".to_string()),
+            raw_bytes: None,
+            rendered_with: Some("cloak".to_string()),
+            elapsed_ms: 0,
+            warning: None,
+            render_decision: None,
+            credit_cost: 0,
+            warnings: Vec::new(),
+            truncated: false,
+            budget_settled: false,
+            deadline_exceeded: false,
+            captured_responses: Vec::new(),
+            screenshot: None,
+            block: None,
+            residential_bytes: None,
+        }
+    }
+
+    fn menu_page(items: usize) -> FetchResult {
+        let rows: String = (0..items)
+            .map(|i| format!("<li>Dish number {i} with tomato, basil and mozzarella, 12.50</li>"))
+            .collect();
+        page(format!(
+            "<html><body><main><h1>Zizzi menu</h1><ul>{rows}</ul></main></body></html>"
+        ))
+    }
+
+    fn cloudflare_challenge() -> FetchResult {
+        let script = "var a=1;".repeat(6_000);
+        page(format!(
+            r#"<html><head><title>Just a moment...</title><script>{script}</script></head><body><div id="cf-browser-verification">Just a moment...</div><script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script></body></html>"#
+        ))
+    }
+
+    #[test]
+    fn a_cleared_page_replaces_a_larger_challenge_the_ladder_kept() {
+        let cleared = menu_page(20);
+        let wall = cloudflare_challenge();
+        assert!(cleared.html.len() < wall.html.len());
+        assert!(FallbackRenderer::arm_result_replaces_keeper(
+            true,
+            &cleared,
+            Some(&wall)
+        ));
+    }
+
+    #[test]
+    fn between_two_pages_of_content_the_larger_one_stays() {
+        let small = menu_page(5);
+        let large = menu_page(40);
+        assert!(!FallbackRenderer::arm_result_replaces_keeper(
+            true,
+            &small,
+            Some(&large)
+        ));
+        assert!(FallbackRenderer::arm_result_replaces_keeper(
+            true,
+            &large,
+            Some(&small)
+        ));
+    }
+
+    #[test]
+    fn a_rejected_arm_result_never_replaces_anything() {
+        let wall = cloudflare_challenge();
+        assert!(!FallbackRenderer::arm_result_replaces_keeper(
+            false,
+            &menu_page(20),
+            Some(&wall)
+        ));
+        assert!(!FallbackRenderer::arm_result_replaces_keeper(
+            false,
+            &menu_page(20),
+            None
+        ));
+        assert!(FallbackRenderer::arm_result_replaces_keeper(
+            true,
+            &menu_page(20),
+            None
+        ));
+    }
 
     /// Generous deadline used by tests that don't care about budget enforcement.
     fn tdl() -> crw_core::Deadline {
