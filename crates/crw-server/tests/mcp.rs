@@ -108,8 +108,8 @@ async fn mcp_tools_list_returns_all_tools() {
     let tools = json["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        9,
-        "Should have 9 tools including extract start/status/cancel"
+        10,
+        "Should have 10 tools including extract start/status/cancel and enrich"
     );
 
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -122,6 +122,7 @@ async fn mcp_tools_list_returns_all_tools() {
     assert!(tool_names.contains(&"crw_extract"));
     assert!(tool_names.contains(&"crw_check_extract_status"));
     assert!(tool_names.contains(&"crw_cancel_extract"));
+    assert!(tool_names.contains(&"crw_enrich"));
 
     // Every tool advertises annotations. Job-starting tools (crw_crawl,
     // crw_extract) have side effects and must NOT be marked read-only.
@@ -178,7 +179,7 @@ async fn mcp_tools_list_hides_search_without_backend() {
     let json: serde_json::Value = resp.json();
     let tools = json["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(tools.len(), 8, "crw_search hidden without a backend");
+    assert_eq!(tools.len(), 9, "crw_search hidden without a backend");
     assert!(!names.contains(&"crw_search"));
     assert!(names.contains(&"crw_scrape"));
 }

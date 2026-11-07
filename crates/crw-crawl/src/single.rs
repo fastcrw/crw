@@ -2006,7 +2006,10 @@ fn formats_include_summary(formats: &[OutputFormat]) -> bool {
 /// Build an `LlmConfig` from per-request BYOK fields, falling back to the
 /// server-config values for non-credential fields (concurrency, header
 /// guard) so a single request can't escape global limits.
-fn build_byok_llm_config(req: &ScrapeRequest, server_cfg: Option<&LlmConfig>) -> Option<LlmConfig> {
+pub fn build_byok_llm_config(
+    req: &ScrapeRequest,
+    server_cfg: Option<&LlmConfig>,
+) -> Option<LlmConfig> {
     let api_key = req.llm_api_key.as_ref()?.clone();
     let mut cfg = match server_cfg {
         Some(s) => s.clone(),

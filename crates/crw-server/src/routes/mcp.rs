@@ -176,6 +176,14 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
                 .map_err(|e| format!("{e}"))?;
             serde_json::to_value(&resp).map_err(|e| format!("serialize error: {e}"))
         }
+        "crw_enrich" => {
+            let req: crate::routes::enrich::EnrichRequest =
+                serde_json::from_value(args).map_err(|e| format!("invalid arguments: {e}"))?;
+            let resp = crate::routes::enrich::enrich_inner(state, req)
+                .await
+                .map_err(|e| format!("{e}"))?;
+            serde_json::to_value(&resp).map_err(|e| format!("serialize error: {e}"))
+        }
         "crw_extract" => {
             use crate::routes::extract::{ExtractRequest, ExtractStartResponse, prepare_extract};
             let req: ExtractRequest =
