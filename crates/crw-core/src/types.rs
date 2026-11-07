@@ -334,6 +334,12 @@ pub struct ScrapeRequest {
     /// `cloak_opt_in_only` is off.
     #[serde(skip_deserializing, skip_serializing)]
     pub cloak_allowed: Option<bool>,
+    /// The most residential bytes the cloak tier may spend on this page, its
+    /// failed attempts included. Same trust model as `cloak_allowed`: set only
+    /// from the trusted `x-crw-cloak-max-bytes` header. `None` leaves the
+    /// sidecar's own ceiling in force.
+    #[serde(skip_deserializing, skip_serializing)]
+    pub cloak_max_bytes: Option<u64>,
     /// End-to-end deadline budget in milliseconds. When unset, the configured
     /// `request.deadline_ms_default` (8000) applies. The SLO p95 metric is
     /// computed only over requests with `deadline_ms <= 8000`; longer values
@@ -515,6 +521,7 @@ impl Default for ScrapeRequest {
             renderer: None,
             force_cloak: None,
             cloak_allowed: None,
+            cloak_max_bytes: None,
             deadline_ms: None,
             debug: None,
             change_tracking: None,
@@ -2718,6 +2725,17 @@ mod tests {
             let json = serde_json::json!({ "url": "https://example.com", key: true });
             let req: ScrapeRequest = serde_json::from_value(json).unwrap();
             assert_eq!(req.cloak_allowed, None, "{key} must be ignored");
+        }
+    }
+
+    #[test]
+    fn scrape_request_cloak_max_bytes_cannot_be_set_from_a_request_body() {
+        // The byte ceiling bounds what the customer is billed for; a caller
+        // must not be able to lift it with a body field.
+        for key in ["cloakMaxBytes", "cloak_max_bytes"] {
+            let json = serde_json::json!({ "url": "https://example.com", key: 999_999_999u64 });
+            let req: ScrapeRequest = serde_json::from_value(json).unwrap();
+            assert_eq!(req.cloak_max_bytes, None, "{key} must be ignored");
         }
     }
 

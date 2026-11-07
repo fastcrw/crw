@@ -848,6 +848,7 @@ fn build_request(
         renderer: None,
         force_cloak: None,
         cloak_allowed: None,
+        cloak_max_bytes: None,
         deadline_ms: None,
         debug: None,
         change_tracking: None,

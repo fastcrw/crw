@@ -123,6 +123,50 @@ tokio::task_local! {
     pub static REQUEST_SCREENSHOT: Option<ScreenshotReq>;
 }
 
+/// What every cloak call of one scrape shares. The ladder can reach the cloak
+/// tier more than once for a page (cloak-first, then again on escalation), so
+/// the page, not the call, owns these:
+/// - one sidecar request id, so the sidecar keeps one byte ledger and one byte
+///   budget per page however many calls it takes;
+/// - the byte ceiling the caller set (`ScrapeRequest.cloak_max_bytes`);
+/// - every residential byte the sidecar reported for the page, whichever call
+///   reported it and whether or not that call's body was the one kept.
+#[derive(Debug)]
+pub struct CloakPage {
+    pub request_id: String,
+    pub max_bytes: Option<u64>,
+    reported: std::sync::Mutex<Option<u64>>,
+}
+
+impl CloakPage {
+    pub fn new(max_bytes: Option<u64>) -> Arc<Self> {
+        Arc::new(Self {
+            request_id: format!("crq{:016x}", rand::random::<u64>()),
+            max_bytes,
+            reported: std::sync::Mutex::new(None),
+        })
+    }
+
+    /// Add what one sidecar answer reported for this page.
+    pub fn record(&self, bytes: u64) {
+        let mut r = self.reported.lock().expect("cloak page poisoned");
+        *r = Some(r.unwrap_or(0).saturating_add(bytes));
+    }
+
+    /// Everything the sidecar reported for this page, `None` if nothing was.
+    pub fn reported(&self) -> Option<u64> {
+        *self.reported.lock().expect("cloak page poisoned")
+    }
+}
+
+tokio::task_local! {
+    /// The current scrape's [`CloakPage`]. Set by
+    /// [`crw_crawl::single::scrape_url`]; read in `cloak.rs` and by the cloak
+    /// gate. Unset (a direct renderer call) = a fresh request id per call and
+    /// no ceiling of our own.
+    pub static REQUEST_CLOAK_PAGE: Arc<CloakPage>;
+}
+
 /// Attach the browser-context pool to a CDP tier, when enabled and supported.
 ///
 /// Every pooled tier gets its own pool, sized from the shared
@@ -202,6 +246,11 @@ pub fn screenshot_requested() -> bool {
     REQUEST_SCREENSHOT
         .try_with(|s| s.is_some())
         .unwrap_or(false)
+}
+
+/// The current scrape's [`CloakPage`], if one is in scope.
+pub fn current_cloak_page() -> Option<Arc<CloakPage>> {
+    REQUEST_CLOAK_PAGE.try_with(Arc::clone).ok()
 }
 
 /// The resolved screenshot params for the current task, if any.
@@ -601,6 +650,19 @@ fn unclearable_wall_verdict() -> crw_core::types::BlockOutcome {
         vendor: "generic_block".to_string(),
         reason: "anti-bot wall that no renderer tier could clear".to_string(),
     }
+}
+
+/// Prefix of the error a cloak fetch ends with when the page's own byte budget
+/// stopped it (the sidecar's `x-cloak-cut: budget`).
+#[cfg_attr(not(feature = "cloak"), allow(dead_code))]
+pub(crate) const CLOAK_BUDGET_CUT: &str = "cloak: page byte budget reached";
+
+/// A cloak fetch stopped by the page's own byte budget: the customer's limit,
+/// so no breaker outcome is booked for it, scoped or global. Otherwise one
+/// customer's tight budget on a hard host would close cloak there for everyone.
+#[cfg_attr(not(feature = "cloak"), allow(dead_code))]
+fn is_cloak_budget_cut(e: &CrwError) -> bool {
+    matches!(e, CrwError::RendererError(m) if m.starts_with(CLOAK_BUDGET_CUT))
 }
 
 /// Is this failure the ORIGIN's fault, for breaker-scoping purposes only?
@@ -2085,7 +2147,9 @@ impl FallbackRenderer {
     ) -> CrwResult<FetchResult> {
         // One decision for every cloak entry below: with `cloak_opt_in_only`
         // set, a request reaches cloak only when the front end allowed it.
-        let cloak_permitted = !self.cloak_opt_in_only || cloak_allowed;
+        // A page allowed no residential bytes cannot use it either.
+        let cloak_permitted = (!self.cloak_opt_in_only || cloak_allowed)
+            && current_cloak_page().and_then(|p| p.max_bytes) != Some(0);
         // Per-eTLD+1 rate-limit + concurrency cap. Held across the entire
         // fetch (including any escalation to a JS renderer) so a host that
         // rate-limits HTTP doesn't get hammered by Chrome on retry.
@@ -2275,7 +2339,7 @@ impl FallbackRenderer {
                                 // thin -> fall through to the ladder.
                             }
                             Err(_e) => {
-                                if !host.is_empty() {
+                                if !host.is_empty() && !is_cloak_budget_cut(&_e) {
                                     // A body the sidecar returned and we rejected
                                     // is a page verdict, not a dead tier.
                                     let global = (!is_cloak_content_verdict(&_e))
@@ -4741,7 +4805,7 @@ impl FallbackRenderer {
                         }
                     }
                     Err(e) => {
-                        if !host.is_empty() {
+                        if !host.is_empty() && !is_cloak_budget_cut(&e) {
                             // Same split as the cloak-first arm: a body the tier
                             // returned and we rejected is the page's verdict, an
                             // unreachable sidecar or proxy is ours. The predicate
@@ -9473,6 +9537,80 @@ mod tests {
         let (called, tier) = recovery_arm_with_gate(false, false).await;
         assert!(called, "with the gate off the trigger flags alone decide");
         assert_eq!(tier.as_deref(), Some("cloak"));
+    }
+
+    /// A page allowed zero residential bytes never reaches the cloak arm, even
+    /// with the allow bit; a non-zero ceiling changes nothing about the gate.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn zero_byte_ceiling_closes_the_cloak_gate() {
+        let (called, tier) = REQUEST_CLOAK_PAGE
+            .scope(CloakPage::new(Some(0)), recovery_arm_with_gate(true, true))
+            .await;
+        assert!(!called, "a zero byte ceiling must keep cloak closed");
+        assert_eq!(tier.as_deref(), Some("chrome"));
+        let (called, _) = REQUEST_CLOAK_PAGE
+            .scope(CloakPage::new(Some(1)), recovery_arm_with_gate(true, true))
+            .await;
+        assert!(called, "a non-zero ceiling leaves the gate as it was");
+    }
+
+    /// A recovery-arm cloak attempt the page's own byte budget stopped books
+    /// nothing against the host; the same number of rejected bodies does.
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn a_budget_cut_never_opens_the_cloak_host_breaker() {
+        use crate::breaker::{BreakerConfig, BreakerRegistry};
+        async fn opens(cloak_error: &str) -> bool {
+            let cloak = Arc::new(MockFetcher {
+                name: "cloak",
+                behavior: MockBehavior::Err(cloak_error.to_string()),
+            }) as Arc<dyn PageFetcher>;
+            let ladder = Arc::new(MockFetcher {
+                name: "chrome",
+                behavior: MockBehavior::Ok(cf_challenge_html()),
+            });
+            let mut r = renderer_with_cloak(cloak, vec![ladder]);
+            r.cloak_recover_on_cf = true;
+            r.breakers = Arc::new(BreakerRegistry::new(BreakerConfig {
+                window_size: 10,
+                min_calls: 4,
+                failure_rate_threshold: 0.5,
+                base_cooldown: Duration::from_secs(60),
+                max_cooldown: Duration::from_secs(60),
+                max_probes: 1,
+                half_open_success_rate: 1.0,
+                eval_timeout: Duration::from_secs(1),
+                ejection_reset_after_closed: Duration::from_secs(60),
+                count_truncated_as_failure: false,
+            }));
+            for _ in 0..6 {
+                let _ = r
+                    .fetch_hinted(
+                        "https://glassdoor.com/x",
+                        &HashMap::new(),
+                        Some(true),
+                        None,
+                        None,
+                        false,
+                        true,
+                        crw_core::Deadline::from_request_ms(5_000),
+                    )
+                    .await;
+            }
+            r.breakers
+                .host_for("glassdoor.com", RendererKind::Cloak)
+                .await
+                .is_open()
+        }
+        assert!(
+            opens("cloak: still challenged (HTTP 403) for glassdoor.com").await,
+            "control: rejected bodies do open the host breaker"
+        );
+        assert!(
+            !opens(&format!("{CLOAK_BUDGET_CUT} (HTTP 200) for glassdoor.com")).await,
+            "the customer's own byte budget is no verdict on the host"
+        );
     }
 
     /// Opt-in-only without the allow bit closes the other two entries too: a

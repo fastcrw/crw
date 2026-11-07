@@ -1532,6 +1532,7 @@ async fn enrich_with_scrape(
                 renderer: None,
                 force_cloak: None,
                 cloak_allowed: None,
+                cloak_max_bytes: None,
                 deadline_ms: Some(deadline_ms),
                 debug: None,
                 change_tracking: None,

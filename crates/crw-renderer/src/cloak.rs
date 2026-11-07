@@ -151,8 +151,9 @@ impl CloakRenderer {
     }
 
     /// One mirror call. `bypass_cache` forces a fresh sidecar solve.
-    /// Returns the status, the body and the metered residential bytes the
-    /// sidecar reported for this call (`None` when it does not meter).
+    /// Returns the status, the body, the metered residential bytes the
+    /// sidecar reported for this call (`None` when it does not meter), and
+    /// whether the sidecar stopped because the page's own byte budget ran out.
     async fn mirror_once(
         &self,
         host: &str,
@@ -161,7 +162,7 @@ impl CloakRenderer {
         bypass_cache: bool,
         request_id: &str,
         deadline: &Deadline,
-    ) -> CrwResult<(u16, String, Option<u64>)> {
+    ) -> CrwResult<MirrorAnswer> {
         let budget = self.call_budget(deadline);
         if budget.is_zero() {
             return Err(CrwError::Timeout(deadline.requested_ms()));
@@ -179,6 +180,11 @@ impl CloakRenderer {
             .header("x-hostname", host)
             .header("x-cloak-allow", "1")
             .header("x-request-id", request_id);
+        // The page's byte ceiling, when the caller set one. The sidecar books
+        // every attempt of this request id against it.
+        if let Some(n) = crate::current_cloak_page().and_then(|p| p.max_bytes) {
+            rb = rb.header("x-cloak-max-bytes", n.to_string());
+        }
         if let Some(px) = self.sticky_proxy_url(sessid) {
             rb = rb.header("x-proxy", px);
         }
@@ -209,15 +215,27 @@ impl CloakRenderer {
             .get("x-cloak-bytes")
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.trim().parse::<u64>().ok());
+        // Booked to the page whatever happens to this body next: the sidecar
+        // reports each byte once, so a figure dropped here is never billed.
+        if let (Some(n), Some(p)) = (metered, crate::current_cloak_page()) {
+            p.record(n);
+        }
+        let budget_cut = resp
+            .headers()
+            .get("x-cloak-cut")
+            .is_some_and(|v| v.as_bytes() == b"budget");
         let body = resp.text().await.map_err(|e| {
             CrwError::RendererError(format!(
                 "cloak GET body: {}",
                 crw_core::error::reqwest_message(e)
             ))
         })?;
-        Ok((status, body, metered))
+        Ok((status, body, metered, budget_cut))
     }
 }
+
+/// Status, body, metered bytes, budget-cut flag: see `mirror_once`.
+type MirrorAnswer = (u16, String, Option<u64>, bool);
 
 #[async_trait]
 impl PageFetcher for CloakRenderer {
@@ -261,7 +279,11 @@ impl PageFetcher for CloakRenderer {
             }
         };
 
-        let request_id = format!("crq{:016x}", rand::random::<u64>());
+        let page = crate::current_cloak_page();
+        let request_id = match &page {
+            Some(p) => p.request_id.clone(),
+            None => format!("crq{:016x}", rand::random::<u64>()),
+        };
         let mut last_err: Option<CrwError> = None;
         for attempt in 0..MAX_ATTEMPTS {
             if deadline.remaining() < crate::MIN_TIER_BUDGET {
@@ -316,7 +338,7 @@ impl PageFetcher for CloakRenderer {
                 //
                 // The same floor the caller applies, so nothing that would have
                 // been accepted downstream is rejected here.
-                Ok((status, body, metered))
+                Ok((status, body, metered, _))
                     if !crate::detector::looks_like_cloudflare_challenge(&body)
                         && crate::html_body_text_len(&body)
                             >= crate::FallbackRenderer::MIN_RENDERED_TEXT_LEN =>
@@ -350,7 +372,17 @@ impl PageFetcher for CloakRenderer {
                         residential_bytes: metered,
                     });
                 }
-                Ok((status, body, _)) => {
+                // The page's own budget ran out: another attempt has nothing
+                // left to spend, and the verdict is the caller's limit, not
+                // the host's.
+                Ok((status, _, _, true)) => {
+                    last_err = Some(CrwError::RendererError(format!(
+                        "{} (HTTP {status}) for {host}",
+                        crate::CLOAK_BUDGET_CUT
+                    )));
+                    break;
+                }
+                Ok((status, body, _, false)) => {
                     let reason = if crate::html_body_text_len(&body)
                         < crate::FallbackRenderer::MIN_RENDERED_TEXT_LEN
                     {
@@ -526,6 +558,91 @@ mod tests {
         assert_eq!(r.residential_bytes, Some(123_456));
         let reqs = server.received_requests().await.unwrap();
         assert!(reqs[0].headers.get("x-request-id").is_some());
+    }
+
+    /// Every call of one page carries the page's request id and byte ceiling,
+    /// and the page tallies what each answer reported, kept body or not. No
+    /// ceiling header is sent outside a page scope.
+    #[tokio::test]
+    async fn page_scope_shares_id_ceiling_and_byte_tally() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-cloak-bytes", "1000")
+                    .set_body_string(REAL_BODY),
+            )
+            .mount(&server)
+            .await;
+        let r = renderer(&server.uri());
+        let url = format!("{}/page", server.uri());
+        let page = crate::CloakPage::new(Some(666_666));
+        crate::REQUEST_CLOAK_PAGE
+            .scope(page.clone(), async {
+                for _ in 0..2 {
+                    r.fetch(
+                        &url,
+                        &HashMap::new(),
+                        None,
+                        Deadline::from_request_ms(30_000),
+                    )
+                    .await
+                    .expect("served");
+                }
+            })
+            .await;
+        r.fetch(
+            &url,
+            &HashMap::new(),
+            None,
+            Deadline::from_request_ms(30_000),
+        )
+        .await
+        .expect("served");
+        let reqs = server.received_requests().await.unwrap();
+        let h = |i: usize, k: &str| {
+            reqs[i]
+                .headers
+                .get(k)
+                .map(|v| v.to_str().unwrap().to_string())
+        };
+        assert_eq!(h(0, "x-cloak-max-bytes").as_deref(), Some("666666"));
+        assert_eq!(
+            h(0, "x-request-id").as_deref(),
+            Some(page.request_id.as_str())
+        );
+        assert_eq!(h(1, "x-request-id"), h(0, "x-request-id"));
+        assert_eq!(page.reported(), Some(2000));
+        assert!(h(2, "x-cloak-max-bytes").is_none());
+        assert_ne!(h(2, "x-request-id"), h(0, "x-request-id"));
+    }
+
+    /// An answer the page's own budget stopped ends the fetch at once with the
+    /// budget-cut error: no second attempt, nothing left to spend.
+    #[tokio::test]
+    async fn a_budget_cut_answer_stops_without_retrying() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-cloak-bytes", "0")
+                    .insert_header("x-cloak-cut", "budget"),
+            )
+            .mount(&server)
+            .await;
+        let err = renderer(&server.uri())
+            .fetch(
+                &format!("{}/page", server.uri()),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .expect_err("a cut page is not served");
+        assert!(err.to_string().contains(crate::CLOAK_BUDGET_CUT), "{err}");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     /// A sidecar that does not meter leaves the figure unset, never zero.

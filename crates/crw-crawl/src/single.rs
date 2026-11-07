@@ -74,23 +74,30 @@ pub async fn scrape_url(
             .then_some(crw_renderer::ScreenshotReq {
                 full_page: req.screenshot_full_page,
             });
+    // One cloak page per scrape: every cloak call below shares its sidecar
+    // request id, byte ceiling and byte tally.
+    let cloak_page = crw_renderer::CloakPage::new(req.cloak_max_bytes);
     let result = crw_renderer::REQUEST_COUNTRY
         .scope(req.country.clone(), async move {
             crw_renderer::REQUEST_PROXY
                 .scope(resolved_proxy, async move {
                     crw_renderer::REQUEST_SCREENSHOT
                         .scope(screenshot_req, async move {
-                            scrape_url_inner(
-                                req,
-                                renderer,
-                                llm_config,
-                                extraction_cfg,
-                                user_agent,
-                                default_stealth,
-                                render_js_default,
-                                deadline,
-                            )
-                            .await
+                            crw_renderer::REQUEST_CLOAK_PAGE
+                                .scope(cloak_page, async move {
+                                    scrape_url_inner(
+                                        req,
+                                        renderer,
+                                        llm_config,
+                                        extraction_cfg,
+                                        user_agent,
+                                        default_stealth,
+                                        render_js_default,
+                                        deadline,
+                                    )
+                                    .await
+                                })
+                                .await
                         })
                         .await
                 })
@@ -283,7 +290,9 @@ async fn scrape_url_inner(
             wait_for: req.wait_for,
             renderer_pin: pinned,
             force_cloak: req.force_cloak.unwrap_or(false),
-            cloak_allowed: req.cloak_allowed.unwrap_or(false),
+            // The effective permission: a zero byte ceiling closes the gate,
+            // so its ladder-only page must not stand in for a cloak-able one.
+            cloak_allowed: req.cloak_allowed.unwrap_or(false) && req.cloak_max_bytes != Some(0),
             country: req.country.as_deref(),
             proxy_id: proxy_id.as_deref(),
             user_agent,
@@ -790,8 +799,6 @@ async fn scrape_url_inner(
                             // browser tier hardcodes it to `None`, and it is read
                             // later for `data.content_type`.
                             fetch_result.html = std::mem::take(&mut js_fetch.html);
-                            // And its metered cost: the body shipped is this one.
-                            fetch_result.residential_bytes = js_fetch.residential_bytes;
                             // Replace the original "Target returned 4xx" with the JS
                             // fetch's warning (which is None for a clean 2xx render),
                             // so a successful escalation doesn't leak the original
@@ -966,13 +973,13 @@ async fn scrape_url_inner(
     // A hit that then escalated returned a body fetched live milliseconds ago,
     // so it is not a cached answer however it started.
     data.cached = from_cache && !escalated;
-    // Only a page cloak served fresh carries its metered cost. A replay spent
-    // nothing; an accepted escalation already put its own figure on
-    // `fetch_result` (None unless cloak served the escalation).
+    // What the page cost in residential bytes: everything the sidecar
+    // reported to this scrape (`scrape_url` always scopes a page), attempts
+    // whose body was not kept included. A replay spent nothing.
     data.residential_bytes = if data.cached {
         None
     } else {
-        fetch_result.residential_bytes
+        crw_renderer::current_cloak_page().and_then(|p| p.reported())
     };
 
     // Phase 4: LLM structured extraction
