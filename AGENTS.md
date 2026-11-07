@@ -47,10 +47,11 @@ that boundary is a no-op by default: with an empty `[auth] api_keys` list
 (the out-of-the-box self-host default), the auth middleware is never
 attached and every route above is open. Default bind is `0.0.0.0:3000`.
 
-MCP exposes 9 tools (`crw_scrape`, `crw_crawl`, `crw_check_crawl_status`,
+MCP exposes 10 tools (`crw_scrape`, `crw_crawl`, `crw_check_crawl_status`,
 `crw_map`, `crw_extract`, `crw_check_extract_status`, `crw_cancel_extract`,
-`crw_search`, `crw_parse_file`); `crw_search` is withheld from `tools/list`
-when no search backend is configured, so a bare self-host advertises 8.
+`crw_enrich`, `crw_search`, `crw_parse_file`); `crw_search` is withheld from
+`tools/list` when no search backend is configured, so a bare self-host
+advertises 9. `crw_enrich` is embedded-only.
 
 ## Source-of-truth matrix
 

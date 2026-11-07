@@ -13,6 +13,9 @@
 
 pub mod antibot;
 mod basis;
+/// Upfront check that a schema can carry per-field evidence, for callers that
+/// want to refuse a request before paying for any fetch.
+pub use basis::reject_reason as basis_reject_reason;
 pub mod chunking;
 pub mod clean;
 pub mod dom_features;
