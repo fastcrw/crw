@@ -112,7 +112,7 @@ pub(crate) fn scalar_leaves(schema: &Value) -> Vec<String> {
 
 /// Why a schema cannot carry basis. Returned as a plain message the caller
 /// wraps in `CrwError::InvalidRequest`.
-pub(crate) fn reject_reason(schema: &Value, max_tokens: u32) -> Option<String> {
+pub fn reject_reason(schema: &Value, max_tokens: u32) -> Option<String> {
     if schema.get("type").and_then(Value::as_str) != Some("object") {
         return Some(
             "basis requires a 'jsonSchema' of type 'object' with top-level properties".into(),

@@ -36,6 +36,7 @@ pub struct Capabilities {
     pub screenshot: ScreenshotCapabilities,
     pub renderers: RendererCapabilities,
     pub extract: ExtractCapabilities,
+    pub enrich: EnrichCapabilities,
     pub documents: DocumentCapabilities,
     pub limits: Limits,
 }
@@ -64,6 +65,20 @@ pub struct ExtractCapabilities {
     /// worst-case leg cost to this exact number, so it is reported here rather
     /// than assumed — an ops change to `max_tokens` moves this value with it.
     pub max_output_tokens: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichCapabilities {
+    /// `POST /v1/enrich` works for a request with no credentials of its own.
+    /// Same LLM gate as `extract.supported`.
+    pub supported: bool,
+    /// Rows and columns accepted per call.
+    pub max_rows: usize,
+    pub max_columns: usize,
+    /// Rows without a website can still be filled: a search backend is
+    /// configured. When false, only rows that carry their own URL get cells.
+    pub search: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -324,6 +339,12 @@ pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
                 .llm
                 .as_ref()
                 .map_or(4096, |c| c.max_tokens),
+        },
+        enrich: EnrichCapabilities {
+            supported: llm_ready_without_caller_key,
+            max_rows: crate::routes::enrich::MAX_ROWS,
+            max_columns: crate::routes::enrich::MAX_COLUMNS,
+            search: search_supported,
         },
         documents: DocumentCapabilities {
             parsers: if pdf_on { vec!["pdf"] } else { vec![] },

@@ -571,6 +571,13 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
     //
     // Embedded/engine mode (`proxy_mode == false`) keeps its schemas: there the body is
     // ours and its shape is locked by tests.
+    // Embedded/engine only for now: the hosted API runs larger tables as an async
+    // job with a different start shape, so proxy mode gains this tool when the
+    // hosted route ships.
+    if !proxy_mode {
+        tools.push(enrich_tool_definition());
+    }
+
     if proxy_mode {
         for tool in &mut tools {
             if let Some(obj) = tool.as_object_mut() {
@@ -593,6 +600,50 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
     }
 
     json!({ "tools": tools })
+}
+
+/// `crw_enrich`: fill the empty cells of a small table, synchronously.
+fn enrich_tool_definition() -> Value {
+    json!({
+        "name": "crw_enrich",
+        "title": "Fill table cells",
+        "description": "Fill blank cells of up to 3 rows from the web. Reads each row's website, searches for the rest; every cell carries a source url, excerpt and status. Trust status 'supported'; 'notFound' = no page stated it. Needs an LLM.",
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": true
+        },
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "rows": {
+                    "type": "array",
+                    "items": { "type": "object" },
+                    "description": "Flat objects; a blank value in a listed column gets filled"
+                },
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "description": { "type": "string" },
+                            "type": { "type": "string", "enum": ["text", "number", "url", "options"] },
+                            "options": { "type": "array", "items": { "type": "string" } }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                "context": { "type": "string", "description": "What the table is about" },
+                "overwrite": { "type": "boolean" },
+                "llmApiKey": { "type": "string" },
+                "llmProvider": { "type": "string" },
+                "llmModel": { "type": "string" }
+            },
+            "required": ["rows", "columns"]
+        }
+    })
 }
 
 /// `crw_find_data` / `crw_get_data`, proxy mode only: the catalogue lives on the
@@ -1209,7 +1260,10 @@ mod tests {
     /// description note that it is JS-less; the wording itself was trimmed in
     /// the same change (the naive description growth alone would have been
     /// ~3726 est-tok).
-    const TOOLS_LIST_TOKEN_CEILING: usize = 3700;
+    ///
+    /// Raised 3700 -> 4100 for the tenth embedded tool, `crw_enrich`
+    /// (about 390 est-tok after trimming its descriptions to one line each).
+    const TOOLS_LIST_TOKEN_CEILING: usize = 4100;
 
     #[test]
     fn tools_list_token_budget() {
@@ -1778,9 +1832,14 @@ mod tests {
             "crw_extract",
             "crw_check_extract_status",
             "crw_cancel_extract",
+            "crw_enrich",
         ] {
             assert!(is_known_tool(name, false), "{name} should be known");
         }
+        assert!(
+            !is_known_tool("crw_enrich", true),
+            "proxy mode gains crw_enrich with the hosted route"
+        );
         assert!(!is_known_tool("nonexistent", false));
         assert!(!is_known_tool("", false));
     }
@@ -1809,10 +1868,10 @@ mod tests {
         }
         let with = list(true);
         assert!(with.contains(&"crw_search".to_string()));
-        assert_eq!(with.len(), 9);
+        assert_eq!(with.len(), 10);
         let without = list(false);
         assert!(!without.contains(&"crw_search".to_string()));
-        assert_eq!(without.len(), 8);
+        assert_eq!(without.len(), 9);
     }
 
     /// A4 — initialize advertises server usage `instructions` (the model-facing
@@ -2419,10 +2478,10 @@ mod tests {
     // --- tool_definitions(): tool set shape ---
 
     #[test]
-    fn tool_definitions_has_9_engine_tools_and_11_proxy_tools() {
+    fn tool_definitions_has_10_engine_tools_and_11_proxy_tools() {
         assert_eq!(
             tool_definitions(false)["tools"].as_array().unwrap().len(),
-            9
+            10
         );
         assert_eq!(
             tool_definitions(true)["tools"].as_array().unwrap().len(),
@@ -4077,7 +4136,11 @@ mod tests {
                 .map(|t| t["name"].as_str().unwrap().to_string())
                 .collect()
         };
-        let mut expected = names(&tool_definitions(false));
+        // `crw_enrich` is engine-only until the hosted route ships.
+        let mut expected: Vec<String> = names(&tool_definitions(false))
+            .into_iter()
+            .filter(|n| n != "crw_enrich")
+            .collect();
         expected.extend(["crw_find_data".to_string(), "crw_get_data".to_string()]);
         assert_eq!(names(&tool_definitions(true)), expected);
     }
