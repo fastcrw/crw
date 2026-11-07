@@ -35,6 +35,15 @@ pub async fn scrape(
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false),
     );
+    // Same trusted channel: the SaaS derives this byte ceiling from the
+    // credits the customer allowed for the page. A malformed value closes the
+    // cloak tier (0) rather than falling back to the sidecar's larger default.
+    req.cloak_max_bytes = headers.get("x-crw-cloak-max-bytes").map(|v| {
+        v.to_str()
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .unwrap_or(0)
+    });
     // Same trusted channel as `x-crw-force-cloak`: `cache_scope` is
     // `skip_deserializing`, so this header is its only source and a caller
     // cannot put themselves in someone else's cache scope.
