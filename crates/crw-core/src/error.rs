@@ -28,6 +28,12 @@ pub enum CrwError {
     #[error("Unsupported content type: {0}")]
     UnsupportedContentType(String),
 
+    /// The origin's body is over the response size cap. A property of the
+    /// target, not a failure of ours: the same document is too large on every
+    /// tier and every retry, so it must neither escalate nor read as a 502.
+    #[error("Response too large: {0}")]
+    ResponseTooLarge(String),
+
     #[error("Crawl error: {0}")]
     CrawlError(String),
 
@@ -67,6 +73,7 @@ impl CrwError {
             CrwError::RendererError(_) => "renderer_error",
             CrwError::ExtractionError(_) => "extraction_error",
             CrwError::UnsupportedContentType(_) => "unsupported_content_type",
+            CrwError::ResponseTooLarge(_) => "response_too_large",
             CrwError::CrawlError(_) => "crawl_error",
             CrwError::Timeout(_) => "timeout",
             CrwError::ConfigError(_) => "config_error",

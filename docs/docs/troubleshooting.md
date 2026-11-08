@@ -156,6 +156,7 @@ curl -X POST https://api.fastcrw.com/v1/scrape \
 CrwError::TargetUnreachable      → HTTP 422, error_code: "target_unreachable"
 CrwError::ExtractionError        → HTTP 422, error_code: "extraction_error"
 CrwError::UnsupportedContentType → HTTP 422, error_code: "unsupported_content_type"
+CrwError::ResponseTooLarge       → HTTP 422, error_code: "response_too_large"
 ```
 
 If the target URL is correct and externally reachable, the issue is intermittent — retry with backoff. If it is consistent, the target host has a problem unrelated to fastCRW.
@@ -416,6 +417,7 @@ if data["balance"] < 100:
 | `target_unreachable` | 422 | DNS failure, connection refused, host down |
 | `extraction_error` | 422 | LLM extraction failed or CSS/XPath selector invalid |
 | `unsupported_content_type` | 422 | The origin answered with a body that is neither a web page nor a PDF (an office document, an image, an archive). Not retryable: no renderer turns one into a page |
+| `response_too_large` | 422 | The origin's body is over the 50 MB response cap, most often a very large PDF. Not retryable: the same document is too large on every attempt |
 | `http_error` | 502, or 200 with `success: false` | The origin answered with a `>= 400` status and what came back is its error page. The body is kept in `data` so you can read the error page and `metadata.statusCode`. A large page served under an error status is still returned as a success: some sites answer 403/404 while serving the real content. If the page is also recognised as an anti-bot wall, `anti_bot` wins instead and the body is cleared. In the default auto mode, a URL whose path names a PDF and gets a 401, 403, 429 or 503 is `http_error` with `success: false` and the body kept, whatever the page's size, since no browser tier renders a PDF and nothing could have done better; unless the page is also recognised as an anti-bot wall (a short 429 page always is), which is answered as `anti_bot`. None of this applies when the request sets `renderJs` or asks for a `screenshot`, pins a renderer, the engine sets `render_js_default`, or the engine has no browser tier |
 | `no_usable_content` | 200 with `success: false` | The fetch worked and produced nothing you asked for — a parked domain, an un-hydrated JS shell, an error stub, an oversized PDF the decompression-bomb guard refused, or any requested format that came back empty. Not an anti-bot block |
 | `timeout` | 504 | Engine or upstream search timed out |

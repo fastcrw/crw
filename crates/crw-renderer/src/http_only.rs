@@ -1000,8 +1000,8 @@ impl PageFetcher for HttpFetcher {
         if let Some(len) = resp.content_length()
             && len as usize > MAX_RESPONSE_BYTES
         {
-            return Err(CrwError::HttpError(format!(
-                "Response too large: {len} bytes (max {MAX_RESPONSE_BYTES})"
+            return Err(CrwError::ResponseTooLarge(format!(
+                "the origin's body is {len} bytes (max {MAX_RESPONSE_BYTES})"
             )));
         }
 
@@ -1159,8 +1159,8 @@ pub(crate) async fn read_body_capped(resp: reqwest::Response, max: usize) -> Crw
             CrwError::HttpError(message)
         })?;
     if truncated {
-        return Err(CrwError::HttpError(format!(
-            "Response too large: exceeds {max} bytes"
+        return Err(CrwError::ResponseTooLarge(format!(
+            "the origin's body exceeds {max} bytes"
         )));
     }
     Ok(body)
@@ -1270,8 +1270,8 @@ pub(crate) fn build_http_fetch_result(
     tier_name: &str,
 ) -> CrwResult<FetchResult> {
     if bytes.len() > MAX_RESPONSE_BYTES {
-        return Err(CrwError::HttpError(format!(
-            "Response too large: {} bytes (max {MAX_RESPONSE_BYTES})",
+        return Err(CrwError::ResponseTooLarge(format!(
+            "the origin's body is {} bytes (max {MAX_RESPONSE_BYTES})",
             bytes.len()
         )));
     }
@@ -3190,10 +3190,7 @@ mod tests {
         let err = read_body_capped(resp, 1500)
             .await
             .expect_err("2048 bytes past a 1500-byte cap must be rejected");
-        assert!(
-            matches!(err, CrwError::HttpError(ref m) if m.contains("too large")),
-            "got {err:?}"
-        );
+        assert!(matches!(err, CrwError::ResponseTooLarge(_)), "got {err:?}");
     }
 
     /// Exactly the cap is accepted; one byte over is not.
@@ -3255,10 +3252,7 @@ mod tests {
         let err = read_body_capped(resp, 128 * 1024)
             .await
             .expect_err("1 MiB decompressed past a 128 KiB cap must be rejected");
-        assert!(
-            matches!(err, CrwError::HttpError(ref m) if m.contains("too large")),
-            "got {err:?}"
-        );
+        assert!(matches!(err, CrwError::ResponseTooLarge(_)), "got {err:?}");
     }
 
     /// A chunked body under the cap is reassembled whole, across chunks.
@@ -3320,10 +3314,7 @@ mod tests {
             )
             .await
             .expect_err("an oversized declared Content-Length must be rejected");
-        assert!(
-            matches!(err, CrwError::HttpError(ref msg) if msg.contains("too large")),
-            "got {err:?}"
-        );
+        assert!(matches!(err, CrwError::ResponseTooLarge(_)), "got {err:?}");
         assert!(
             started.elapsed() < std::time::Duration::from_secs(1),
             "must reject from the header alone, not wait to download; took {:?}",

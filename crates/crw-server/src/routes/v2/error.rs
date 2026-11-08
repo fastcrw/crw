@@ -76,7 +76,8 @@ fn firecrawl_code(e: &CrwError) -> Option<&'static str> {
         // still rides along, so no detail is lost.
         CrwError::HttpError(_)
         | CrwError::RendererError(_)
-        | CrwError::UnsupportedContentType(_) => Some("SCRAPE_ALL_ENGINES_FAILED"),
+        | CrwError::UnsupportedContentType(_)
+        | CrwError::ResponseTooLarge(_) => Some("SCRAPE_ALL_ENGINES_FAILED"),
         // Firecrawl validates with zod and returns a 400 without a code; its
         // taxonomy carries BAD_REQUEST for the hand-rolled cases.
         CrwError::InvalidRequest(_) | CrwError::UrlParseError(_) => Some("BAD_REQUEST"),
@@ -182,6 +183,19 @@ mod tests {
         assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["code"], "SCRAPE_ALL_ENGINES_FAILED");
         assert_eq!(body["errorCode"], "unsupported_content_type");
+    }
+
+    /// Same contract as the binary body: the Firecrawl surface keeps its
+    /// catch-all 500 and SCRAPE_ALL_ENGINES_FAILED, our own code rides along.
+    #[tokio::test]
+    async fn oversize_body_is_500_all_engines_failed() {
+        let (st, body) = wire(CrwError::ResponseTooLarge(
+            "the origin's body is 63783903 bytes (max 52428800)".into(),
+        ))
+        .await;
+        assert_eq!(st, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["code"], "SCRAPE_ALL_ENGINES_FAILED");
+        assert_eq!(body["errorCode"], "response_too_large");
     }
 
     /// `code` is what firecrawl-py / firecrawl-js read; `errorCode` is what the

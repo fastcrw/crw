@@ -92,8 +92,8 @@ async fn read_body_capped(resp: wreq::Response, max: usize, url: &str) -> CrwRes
         .await
         .map_err(|e| CrwError::HttpError(format!("{}: {e}", url_for_error(url))))?;
     if truncated {
-        return Err(CrwError::HttpError(format!(
-            "Response too large: exceeds {max} bytes"
+        return Err(CrwError::ResponseTooLarge(format!(
+            "the origin's body exceeds {max} bytes"
         )));
     }
     Ok(body)
@@ -172,8 +172,8 @@ impl PageFetcher for ImpersonatedFetcher {
         if let Some(len) = resp.content_length()
             && len as usize > http_only::MAX_RESPONSE_BYTES
         {
-            return Err(CrwError::HttpError(format!(
-                "Response too large: {len} bytes (max {})",
+            return Err(CrwError::ResponseTooLarge(format!(
+                "the origin's body is {len} bytes (max {})",
                 http_only::MAX_RESPONSE_BYTES
             )));
         }
@@ -491,7 +491,7 @@ mod tests {
         );
         let response = fetcher().unwrap().client.get(&url).send().await.unwrap();
         let error = read_body_capped(response, 1500, &url).await.unwrap_err();
-        assert!(matches!(error, CrwError::HttpError(message) if message.contains("too large")));
+        assert!(matches!(error, CrwError::ResponseTooLarge(_)));
     }
 
     #[tokio::test]
@@ -511,7 +511,7 @@ mod tests {
         let error = read_body_capped(response, 128 * 1024, &url)
             .await
             .unwrap_err();
-        assert!(matches!(error, CrwError::HttpError(message) if message.contains("too large")));
+        assert!(matches!(error, CrwError::ResponseTooLarge(_)));
     }
 
     // ── Live network verification (#[ignore], run explicitly) ───────────
