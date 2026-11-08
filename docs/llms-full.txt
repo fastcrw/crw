@@ -897,7 +897,7 @@ NEVER use "pending", "running", "queued", "processing" — they are not valid va
 | Invalid selector                       | CSS/XPath cannot be parsed                   |
 | Renderer timeout                       | JS rendering exceeded page timeout           |
 | Navigation failed                      | CDP browser could not load the page          |
-| Response too large                     | Page exceeded maximum allowed size           |
+| Response too large                     | Origin body over the 50 MB cap (HTTP 422)    |
 | Invalid JSON schema                    | Schema for extraction is malformed           |
 | Extraction failure                     | LLM extraction failed                        |
 | summary format requires LLM config    | formats:["summary"] without LLM configured  |

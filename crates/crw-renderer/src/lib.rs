@@ -794,15 +794,16 @@ pub(crate) fn url_path_is_pdf(url: &str) -> bool {
 
 /// An HTTP-tier error that says the body is a document no other client can turn
 /// into a page: not a web page at all (`UnsupportedContentType`: a .docx ZIP, an
-/// image), or over the size cap (every cap site's message starts with
-/// "Response too large"). Single owner for the set the JS escalation arms and
+/// image), or over the size cap (`ResponseTooLarge`). Single owner for the set the JS escalation arms and
 /// the impersonated hop all exclude. Escalating one costs a full browser climb
 /// that still fails: the ladder re-downloads the same document in a tier that
 /// cannot render it. Measured over 14 days of prod: 59 oversize escalations,
 /// every one a PDF, every one ending in `net::ERR_ABORTED` or empty markdown.
 fn is_unrenderable_body_error(e: &CrwError) -> bool {
-    matches!(e, CrwError::UnsupportedContentType(_))
-        || matches!(e, CrwError::HttpError(m) if m.starts_with("Response too large"))
+    matches!(
+        e,
+        CrwError::UnsupportedContentType(_) | CrwError::ResponseTooLarge(_)
+    )
 }
 
 /// Cap on the warm per-proxy fetcher caches (see
@@ -6376,8 +6377,8 @@ mod tests {
             _w: Option<u64>,
             _d: crw_core::Deadline,
         ) -> CrwResult<FetchResult> {
-            Err(CrwError::HttpError(
-                "Response too large: 62914560 bytes (max 52428800)".to_string(),
+            Err(CrwError::ResponseTooLarge(
+                "62914560 bytes (max 52428800)".to_string(),
             ))
         }
         fn name(&self) -> &str {
@@ -6424,7 +6425,7 @@ mod tests {
                 "render_js={render_js:?}: no browser may be spent on an oversize body"
             );
             assert!(
-                matches!(&err, CrwError::HttpError(m) if m.starts_with("Response too large")),
+                matches!(&err, CrwError::ResponseTooLarge(_)),
                 "render_js={render_js:?}: the size verdict must reach the caller; got {err:?}"
             );
         }
@@ -6658,11 +6659,10 @@ mod tests {
     }
 
     #[test]
-    fn unrenderable_body_error_covers_binary_bodies_and_both_size_cap_messages() {
+    fn unrenderable_body_error_covers_binary_bodies_and_the_size_cap() {
         for e in [
             CrwError::UnsupportedContentType("application/zip".into()),
-            CrwError::HttpError("Response too large: 62914560 bytes (max 52428800)".into()),
-            CrwError::HttpError("Response too large: exceeds 52428800 bytes".into()),
+            CrwError::ResponseTooLarge("62914560 bytes (max 52428800)".into()),
         ] {
             assert!(is_unrenderable_body_error(&e), "{e:?}");
         }
@@ -6671,6 +6671,7 @@ mod tests {
             CrwError::TargetUnreachable("Could not reach https://example.com".into()),
             CrwError::Timeout(5000),
             CrwError::RendererError("Response too large".into()),
+            CrwError::HttpError("Response too large: 62914560 bytes (max 52428800)".into()),
         ] {
             assert!(!is_unrenderable_body_error(&e), "{e:?}");
         }

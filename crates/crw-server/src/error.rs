@@ -52,6 +52,7 @@ impl IntoResponse for AppError {
             CrwError::TargetUnreachable(_) => StatusCode::UNPROCESSABLE_ENTITY,
             CrwError::ExtractionError(_) => StatusCode::UNPROCESSABLE_ENTITY,
             CrwError::UnsupportedContentType(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            CrwError::ResponseTooLarge(_) => StatusCode::UNPROCESSABLE_ENTITY,
             CrwError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             CrwError::SearchDisabled(_) => StatusCode::SERVICE_UNAVAILABLE,
             CrwError::SearchDegraded(_) => StatusCode::SERVICE_UNAVAILABLE,
@@ -92,6 +93,22 @@ mod tests {
         assert_eq!(
             status_for(CrwError::UnsupportedContentType("application/zip".into())),
             StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+
+    #[test]
+    fn app_error_response_too_large_422_not_502() {
+        // An oversize body is the origin's document, the same on every retry;
+        // a 502 would tell the caller our egress failed and invite a retry loop.
+        assert_eq!(
+            status_for(CrwError::ResponseTooLarge(
+                "63783903 bytes (max 52428800)".into()
+            )),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert_eq!(
+            CrwError::ResponseTooLarge("x".into()).error_code(),
+            "response_too_large"
         );
     }
 
