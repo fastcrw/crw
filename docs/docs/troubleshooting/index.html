@@ -445,7 +445,8 @@ curl -X POST https://api.fastcrw.com/v1/scrape \
 <p><strong>Error code mapping</strong> (from <code>crw-server/src/error.rs</code>):</p>
 <pre><code>CrwError::TargetUnreachable      → HTTP 422, error_code: &quot;target_unreachable&quot;
 CrwError::ExtractionError        → HTTP 422, error_code: &quot;extraction_error&quot;
-CrwError::UnsupportedContentType → HTTP 422, error_code: &quot;unsupported_content_type&quot;</code></pre>
+CrwError::UnsupportedContentType → HTTP 422, error_code: &quot;unsupported_content_type&quot;
+CrwError::ResponseTooLarge       → HTTP 422, error_code: &quot;response_too_large&quot;</code></pre>
 <p>If the target URL is correct and externally reachable, the issue is intermittent — retry with backoff. If it is consistent, the target host has a problem unrelated to fastCRW.</p>
 <hr>
 <h2 id="4-http-401-invalid-api-key">4. HTTP 401 Invalid API key</h2>
@@ -702,6 +703,11 @@ if data[&quot;balance&quot;] &lt; 100:
 <td><code>unsupported_content_type</code></td>
 <td>422</td>
 <td>The origin answered with a body that is neither a web page nor a PDF (an office document, an image, an archive). Not retryable: no renderer turns one into a page</td>
+</tr>
+<tr>
+<td><code>response_too_large</code></td>
+<td>422</td>
+<td>The origin&#39;s body is over the 50 MB response cap, most often a very large PDF. Not retryable: the same document is too large on every attempt</td>
 </tr>
 <tr>
 <td><code>http_error</code></td>

@@ -369,7 +369,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 </tr>
 <tr>
 <td>422</td>
-<td>Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (<code>unsupported_content_type</code>)</td>
+<td>Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (<code>unsupported_content_type</code>) or is over the size cap (<code>response_too_large</code>)</td>
 </tr>
 <tr>
 <td>402</td>
@@ -422,6 +422,11 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>Fetch the file yourself, or point the request at a PDF or an HTML page</td>
 </tr>
 <tr>
+<td><code>response_too_large</code></td>
+<td>The origin&#39;s body is over the 50 MB response cap (a very large PDF, most often)</td>
+<td>Do not retry; the same document is too large every time. Fetch the file yourself</td>
+</tr>
+<tr>
 <td>HTTP <code>402</code></td>
 <td>Out of credits (<code>insufficient_credits</code>) or a paid-plan feature on the FREE plan (<code>llm_not_available</code>)</td>
 <td>Do not retry; top up, upgrade or enable auto-recharge</td>
@@ -463,7 +468,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 </tr>
 <tr>
 <td>Response too large</td>
-<td>Page exceeded the maximum allowed size</td>
+<td>The origin&#39;s body exceeded the 50 MB response cap (<code>response_too_large</code>, HTTP 422)</td>
 </tr>
 <tr>
 <td>Invalid JSON schema</td>
