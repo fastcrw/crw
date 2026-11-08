@@ -2,6 +2,20 @@
 
 All notable changes to CRW are documented here.
 
+## [0.43.0](https://github.com/fastcrw/crw/compare/v0.42.1...v0.43.0) (2026-11-08)
+
+
+### Features
+
+* **renderer:** one cloak budget and byte tally per scraped page ([3656c4a](https://github.com/fastcrw/crw/commit/3656c4a72c7e834898ce3dcfa4bb0fea9e75a718))
+
+
+### Bug Fixes
+
+* **renderer:** answer an over-cap origin body as 422 response_too_large ([486b0bf](https://github.com/fastcrw/crw/commit/486b0bf0a39d4c513612a01010d640c67e69c146))
+* **renderer:** let a cleared page replace a kept wall regardless of size ([4feae45](https://github.com/fastcrw/crw/commit/4feae45b023214669e046e71cb3660ffab91673a))
+* **renderer:** report a redirect to an unresolvable host as target_unreachable ([8adfee0](https://github.com/fastcrw/crw/commit/8adfee023d4f43fbcf889c0a56aafd84ec322ab9))
+
 ## [0.42.1](https://github.com/fastcrw/crw/compare/v0.42.0...v0.42.1) (2026-11-06)
 
 
