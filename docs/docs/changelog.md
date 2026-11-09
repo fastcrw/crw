@@ -8,6 +8,14 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.43.1](https://github.com/fastcrw/crw/compare/v0.43.0...v0.43.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **mcp:** extract the Windows binary with the system bsdtar ([9d80b03](https://github.com/fastcrw/crw/commit/9d80b0399ed056f8e4c637561ff6d45c29286d24)), closes [#703](https://github.com/fastcrw/crw/issues/703)
+* **renderer:** open the sized Chrome target as a new window ([08b82e5](https://github.com/fastcrw/crw/commit/08b82e528f45f7e2fcbaafc58d25ba54fa68fa52)), closes [#702](https://github.com/fastcrw/crw/issues/702)
+
 ## [0.43.0](https://github.com/fastcrw/crw/compare/v0.42.1...v0.43.0) (2026-11-08)
 
 
