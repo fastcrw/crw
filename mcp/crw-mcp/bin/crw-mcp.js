@@ -160,6 +160,15 @@ function digestFor(sumsText, asset) {
   return null;
 }
 
+// Windows ships bsdtar in System32 (Windows 10 1803+), and it reads .zip. Git
+// for Windows often puts GNU tar ahead of it on PATH, and GNU tar cannot read
+// a zip at all, so ask for the system one by path.
+function tarCommand() {
+  if (process.platform !== "win32") return "tar";
+  const sys = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+  return fs.existsSync(sys) ? sys : "tar";
+}
+
 // 3. Download the matching release asset and extract it (cached per version).
 async function fromDownload() {
   const dir = cacheDir();
@@ -212,12 +221,14 @@ async function fromDownload() {
   const archive = path.join(stage, plat.asset);
   try {
     fs.writeFileSync(archive, data);
-    const tarArgs = plat.asset.endsWith(".zip")
-      ? ["-xf", archive, "-C", stage]
-      : ["-xzf", archive, "-C", stage];
-    const x = spawnSync("tar", tarArgs, { stdio: "inherit" });
+    // Archive named relative to the stage: GNU tar reads an absolute
+    // "C:\..." path as host:path and tries to connect to a host named "C".
+    const tar = tarCommand();
+    const flags = plat.asset.endsWith(".zip") ? "-xf" : "-xzf";
+    const x = spawnSync(tar, [flags, plat.asset], { cwd: stage, stdio: "inherit" });
     if (x.status !== 0) {
-      throw new Error(`failed to extract ${plat.asset} (tar exit ${x.status})`);
+      const why = x.error ? x.error.message : `exit ${x.status}`;
+      throw new Error(`failed to extract ${plat.asset} (${tar}: ${why})`);
     }
     const staged = path.join(stage, binName);
     if (!fs.existsSync(staged)) {
@@ -235,7 +246,7 @@ async function resolveBinary() {
   return fromEnv() || fromPackage() || (await fromDownload());
 }
 
-module.exports = { digestFor, fromDownload, cacheDir, plat, binName, proxyAgent };
+module.exports = { digestFor, fromDownload, cacheDir, plat, binName, proxyAgent, tarCommand };
 
 // Only run when invoked as the CLI, so tests can require this file.
 if (require.main === module) {
