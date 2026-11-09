@@ -150,6 +150,23 @@ const CHROME_SCREEN_HEIGHT: u32 = 2560;
 /// above, so the capture stays a normal desktop shot.
 const SCREENSHOT_VIEWPORT_HEIGHT: u32 = 800;
 
+/// `Target.createTarget` params for a fresh blank page. Desktop Chrome
+/// (156+) rejects a window size without `newWindow` (-32602 "Target position
+/// can only be set for new windows"); headless-shell lays it out the same
+/// either way, so the flag always rides along with the size.
+fn create_target_params(tall_window: bool, browser_context_id: Option<&str>) -> serde_json::Value {
+    let mut params = serde_json::json!({ "url": "about:blank" });
+    if tall_window {
+        params["width"] = CHROME_WINDOW_WIDTH.into();
+        params["height"] = CHROME_WINDOW_HEIGHT.into();
+        params["newWindow"] = true.into();
+    }
+    if let Some(ctx) = browser_context_id {
+        params["browserContextId"] = ctx.into();
+    }
+    params
+}
+
 fn screenshot_max_height_px() -> f64 {
     std::env::var("CRW_RENDERER__SCREENSHOT_MAX_HEIGHT_PX")
         .ok()
@@ -3171,17 +3188,10 @@ impl CdpRenderer {
         // context — load-bearing for pool isolation (cookies/storage do not
         // leak across contexts).
         let create_t0 = Instant::now();
-        let mut create_params = serde_json::json!({ "url": "about:blank" });
         // Tall desktop window (see CHROME_WINDOW_HEIGHT). Chrome family only:
         // lightpanda has no layout.
         let tall_window = self.name != "lightpanda";
-        if tall_window {
-            create_params["width"] = CHROME_WINDOW_WIDTH.into();
-            create_params["height"] = CHROME_WINDOW_HEIGHT.into();
-        }
-        if let Some(ctx) = browser_context_id {
-            create_params["browserContextId"] = serde_json::Value::String(ctx.to_string());
-        }
+        let create_params = create_target_params(tall_window, browser_context_id);
         let create_result = conn
             .send_recv(
                 "Target.createTarget",
@@ -4417,6 +4427,18 @@ mod tests {
     };
     use std::collections::HashMap;
     use std::time::Duration;
+
+    #[test]
+    fn create_target_params_sizes_only_as_a_new_window() {
+        let p = super::create_target_params(true, Some("ctx1"));
+        assert_eq!(p["width"], 1280);
+        assert_eq!(p["height"], 2400);
+        assert_eq!(p["newWindow"], true);
+        assert_eq!(p["browserContextId"], "ctx1");
+
+        let lp = super::create_target_params(false, None);
+        assert_eq!(lp, serde_json::json!({ "url": "about:blank" }));
+    }
 
     #[test]
     fn challenge_reserve_follows_the_configured_retry_count() {
