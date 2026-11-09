@@ -15,7 +15,7 @@ const os = require("os");
 const path = require("path");
 const { Readable } = require("stream");
 
-const { fromDownload, cacheDir, plat, binName, proxyAgent } = require("../bin/crw-mcp.js");
+const { fromDownload, cacheDir, plat, binName, proxyAgent, tarCommand } = require("../bin/crw-mcp.js");
 
 // Replace https.get with a queue of canned responses. The launcher holds the
 // same module object we mutate here, so this reaches the real code path.
@@ -259,3 +259,24 @@ function buildTarGz(name, content, mode = "0000755") {
   const tar = Buffer.concat([header, body, pad, Buffer.alloc(1024)]);
   return require("zlib").gzipSync(tar);
 }
+
+// Git for Windows puts GNU tar ahead of System32 on PATH; GNU tar cannot read
+// the .zip asset, so on win32 the launcher must name the system bsdtar.
+test("tarCommand prefers System32 bsdtar on win32", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "crw-sysroot-"));
+  const savedRoot = process.env.SystemRoot;
+  const platform = Object.getOwnPropertyDescriptor(process, "platform");
+  try {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env.SystemRoot = root;
+    assert.equal(tarCommand(), "tar", "no System32 tar.exe: fall back to PATH");
+    fs.mkdirSync(path.join(root, "System32"));
+    fs.writeFileSync(path.join(root, "System32", "tar.exe"), "");
+    assert.equal(tarCommand(), path.join(root, "System32", "tar.exe"));
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+    if (savedRoot === undefined) delete process.env.SystemRoot;
+    else process.env.SystemRoot = savedRoot;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
