@@ -1144,6 +1144,7 @@ dependencies = [
  "jsonschema",
  "lol_html",
  "lopdf 0.46.0",
+ "markup5ever_rcdom",
  "once_cell",
  "pdf-inspector",
  "phf 0.14.0",
