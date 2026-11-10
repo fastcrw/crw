@@ -1,7 +1,236 @@
+use htmd::element_handler::{HandlerResult, Handlers};
+use htmd::{Element, HtmlToMarkdown};
+use markup5ever_rcdom::{Node, NodeData};
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::rc::Rc;
 use std::sync::LazyLock;
+
+/// htmd with two of its handlers wrapped: `table` (padding removed) and `pre`
+/// (code rendered one element per line). Every other element converts exactly
+/// as `htmd::convert` would.
+static CONVERTER: LazyLock<HtmlToMarkdown> = LazyLock::new(|| {
+    HtmlToMarkdown::builder()
+        .add_handler(vec!["table"], compact_table)
+        .add_handler(vec!["pre"], line_element_code_block)
+        .build()
+});
+
+/// Two or more spaces closing a cell. htmd escapes a literal `|` inside a cell
+/// as `&#124;`, so in its table output every `|` is a column delimiter.
+static TABLE_PADDING_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r" {2,}\|").unwrap());
+static TABLE_RULE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"-{4,}").unwrap());
+
+/// htmd pads every cell to the widest cell in its column and draws the
+/// separator just as wide, so one long cell (a titled link) widens every row
+/// of the table. On wide tables that padding is most of the output and eats
+/// the caller's `maxLength`.
+///
+/// htmd only draws a GFM table for a `<table>` with a header cell that is not
+/// itself inside a table cell; any other table comes back as its plain child
+/// content, which can hold pipe-shaped text of its own (ASCII art in a
+/// `<pre>`) and is left alone. In a drawn table only the run of pipe lines
+/// that opens with the header and separator rows is rewritten, and only the
+/// separator row loses dashes, so a data row of `-----` keeps its content.
+fn compact_table(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
+    let drawn = htmd_draws_table(element.node);
+    let mut result = handlers.fallback(element)?;
+    if !drawn || !result.markdown_translated {
+        return Some(result);
+    }
+    let lines: Vec<&str> = result.content.split('\n').collect();
+    let Some(header) = lines.iter().position(|l| is_gfm_table_line(l)) else {
+        return Some(result);
+    };
+    if !lines
+        .get(header + 1)
+        .is_some_and(|l| is_gfm_separator_line(l))
+    {
+        return Some(result);
+    }
+    let mut in_table = false;
+    let compacted: Vec<Cow<'_, str>> = lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            in_table = (i == header || in_table) && is_gfm_table_line(line);
+            if i == header + 1 {
+                TABLE_RULE_RE.replace_all(line, "---")
+            } else if in_table {
+                TABLE_PADDING_RE.replace_all(line, " |")
+            } else {
+                Cow::Borrowed(*line)
+            }
+        })
+        .collect();
+    result.content = compacted.join("\n");
+    Some(result)
+}
+
+/// Mirrors the condition under which htmd 0.5's table handler draws a pipe
+/// table in its default (pure) mode: a `<th>` or `<thead>` that does not
+/// belong to a nested table, and no `<td>`/`<th>` ancestor.
+fn htmd_draws_table(table: &Rc<Node>) -> bool {
+    fn has_header(node: &Rc<Node>) -> bool {
+        node.children
+            .borrow()
+            .iter()
+            .any(|child| match element_tag(child) {
+                Some("table") => false,
+                Some("th" | "thead") => true,
+                _ => has_header(child),
+            })
+    }
+    let mut ancestor = parent_of(table);
+    while let Some(node) = ancestor {
+        if matches!(element_tag(&node), Some("td" | "th")) {
+            return false;
+        }
+        ancestor = parent_of(&node);
+    }
+    has_header(table)
+}
+
+fn parent_of(node: &Node) -> Option<Rc<Node>> {
+    // rcdom keeps the parent in a `Cell<Option<Weak>>`: take it to read it,
+    // then put it back.
+    let weak = node.parent.take();
+    let parent = weak.as_ref().and_then(std::rc::Weak::upgrade);
+    node.parent.set(weak);
+    parent
+}
+
+fn element_tag(node: &Node) -> Option<&str> {
+    match &node.data {
+        NodeData::Element { name, .. } => Some(name.local.as_ref()),
+        _ => None,
+    }
+}
+
+/// Some sites render a code sample as one element per line inside a `<pre>`,
+/// with no newline in the text and the line breaks coming only from CSS
+/// (docs.unity3d.com: `<pre><div><span>line</span><span>line</span>...`).
+/// htmd fences only `<pre><code>`, so such a sample came out as a single line
+/// of prose. When the `<pre>` text has no newline and one `<div>` inside it
+/// holds all of that text as a run of identical sibling elements, each sibling
+/// becomes a line of a fenced block. Anything else converts as before.
+fn line_element_code_block(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
+    match code_lines_from_elements(element.node) {
+        Some(lines) => Some(fenced_code_block(&lines).into()),
+        None => handlers.fallback(element),
+    }
+}
+
+fn code_lines_from_elements(pre: &Rc<Node>) -> Option<Vec<String>> {
+    let text = node_text(pre);
+    if text.contains('\n') || text.trim().is_empty() {
+        return None;
+    }
+    let visible = non_whitespace(&text);
+    let mut stack: Vec<Rc<Node>> = pre.children.borrow().iter().rev().cloned().collect();
+    while let Some(node) = stack.pop() {
+        if let Some(lines) = line_run(&node)
+            && non_whitespace(&lines.concat()) == visible
+        {
+            return Some(lines);
+        }
+        stack.extend(node.children.borrow().iter().rev().cloned());
+    }
+    None
+}
+
+/// The text of each child when `node` is a `<div>` whose content is two or
+/// more element children of the same tag and class, with no text between them.
+///
+/// Each child must also look like a line rather than a token: a block element
+/// (`<div>`, `<p>`), or an element that carries no text of its own and only
+/// wraps others. A run of bare `<span>word</span>` tokens on one line of code
+/// is the common highlighter shape and must stay one line.
+fn line_run(node: &Rc<Node>) -> Option<Vec<String>> {
+    let NodeData::Element { name, .. } = &node.data else {
+        return None;
+    };
+    if name.local.as_ref() != "div" {
+        return None;
+    }
+    let children = node.children.borrow();
+    let mut signature = None;
+    let mut lines = Vec::new();
+    for child in children.iter() {
+        match &child.data {
+            NodeData::Text { contents } if contents.borrow().trim().is_empty() => {}
+            NodeData::Element { name, attrs, .. } => {
+                let class = attrs
+                    .borrow()
+                    .iter()
+                    .find(|a| a.name.local.as_ref() == "class")
+                    .map(|a| a.value.to_string());
+                let sig = (name.local.to_string(), class);
+                if signature.get_or_insert_with(|| sig.clone()) != &sig {
+                    return None;
+                }
+                let is_block = matches!(name.local.as_ref(), "div" | "p");
+                let has_own_text = child.children.borrow().iter().any(|c| {
+                    matches!(&c.data, NodeData::Text { contents } if !contents.borrow().trim().is_empty())
+                });
+                if (!is_block && has_own_text) || !holds_only_text(child) {
+                    return None;
+                }
+                lines.push(node_text(child));
+            }
+            NodeData::Comment { .. } => {}
+            _ => return None,
+        }
+    }
+    (lines.len() >= 2).then_some(lines)
+}
+
+/// Whether everything under `node` is text in plain wrapper or emphasis
+/// elements. A link, a `<br>` or an image would lose its target or its break
+/// when the line is read as text, so such a `<pre>` keeps the old path.
+fn holds_only_text(node: &Rc<Node>) -> bool {
+    node.children
+        .borrow()
+        .iter()
+        .all(|child| match element_tag(child) {
+            Some("span" | "div" | "p" | "code" | "b" | "strong" | "i" | "em") => {
+                holds_only_text(child)
+            }
+            Some(_) => false,
+            None => true,
+        })
+}
+
+fn node_text(node: &Rc<Node>) -> String {
+    let mut out = String::new();
+    let mut stack = vec![Rc::clone(node)];
+    while let Some(n) = stack.pop() {
+        if let NodeData::Text { contents } = &n.data {
+            out.push_str(&contents.borrow());
+        }
+        stack.extend(n.children.borrow().iter().rev().cloned());
+    }
+    out
+}
+
+fn non_whitespace(s: &str) -> String {
+    s.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn fenced_code_block(lines: &[String]) -> String {
+    let lines: Vec<&str> = lines.iter().map(|l| l.trim_end()).collect();
+    let start = lines.iter().position(|l| !l.is_empty()).unwrap_or(0);
+    let end = lines
+        .iter()
+        .rposition(|l| !l.is_empty())
+        .map_or(0, |i| i + 1);
+    let body = lines[start..end].join("\n");
+    let longest_backtick_run = body.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat(longest_backtick_run.max(2) + 1);
+    format!("\n\n{fence}\n{body}\n{fence}\n\n")
+}
 
 /// Convert HTML to Markdown using htmd (turndown.js-inspired converter).
 ///
@@ -25,7 +254,7 @@ pub fn html_to_markdown_with(html: &str, normalize: bool) -> String {
     } else {
         html.to_string()
     };
-    let md = htmd::convert(&html).unwrap_or_default();
+    let md = CONVERTER.convert(&html).unwrap_or_default();
     let md = strip_anchor_artifacts(&md);
     let md = strip_data_uris(&md);
     if normalize {
@@ -611,5 +840,133 @@ mod tests {
             out.contains("```"),
             "legacy path keeps fencing indented pipes: {out}"
         );
+    }
+
+    #[test]
+    fn table_cells_are_not_padded_to_column_width() {
+        let long = "x".repeat(200);
+        let html = format!(
+            "<table><tr><th>Name</th><th>Note</th></tr>\
+             <tr><td>a</td><td>{long}</td></tr>\
+             <tr><td>b</td><td></td></tr>\
+             <tr><td>c &#124; d</td><td>short</td></tr></table>"
+        );
+        let md = html_to_markdown(&html);
+        assert!(md.contains("| Name | Note |"), "{md}");
+        assert!(md.contains("| --- | --- |"), "{md}");
+        assert!(md.contains("| b | |"), "{md}");
+        assert!(md.contains("| c &#124; d | short |"), "{md}");
+        assert!(md.contains(&format!("| a | {long} |")), "{md}");
+        assert!(!md.contains("  |"), "padding left in: {md}");
+        assert!(md.len() < long.len() + 200, "{} chars: {md}", md.len());
+    }
+
+    #[test]
+    fn padding_compaction_applies_with_normalize_tables() {
+        let html = "<table><tr><th>A</th><th>Bbbbbbbbbbbbbbbb</th></tr>\
+                    <tr><td colspan=\"2\">wide</td></tr></table>";
+        let md = html_to_markdown_with(html, true);
+        assert!(md.contains("| A | Bbbbbbbbbbbbbbbb |"), "{md}");
+        assert!(!md.contains("  |"), "{md}");
+    }
+
+    #[test]
+    fn spaces_outside_tables_are_untouched() {
+        let html = "<p>a  | b</p><pre><code>| x    | y |\n| ---- | - |</code></pre>";
+        let md = html_to_markdown(html);
+        assert!(md.contains("| x    | y |"), "code changed: {md}");
+        assert!(md.contains("| ---- | - |"), "code changed: {md}");
+    }
+
+    /// docs.unity3d.com 6000.3 markup: one span per code line, no newline.
+    const LINE_SPAN_PRE: &str = r#"<h3>Examples</h3><pre class="MuiTypography-root" data-code-block="true"><div class="MuiBox-root mui-0"><div class="MuiStack-root inline-code-block-controls"><button aria-label="Copy code to clipboard"><svg><path d="M0"></path></svg></button><button aria-label="Toggle fullscreen"><svg><path d="M1"></path></svg></button></div><div class="MuiStack-root mui-1u6odbp"><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k">using UnityEngine;</span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k"></span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k">public class Example : MonoBehaviour</span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k">{</span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k">    //Fetch the Rigidbody</span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k">    m_Rigidbody = GetComponent&lt;Rigidbody&gt;();</span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k">}</span></span><span class="MuiSkeleton-root mui-1y71r9t" style="height:18px"><span class="MuiTypography-code mui-15abx7k"></span></span></div></div></pre><p>After.</p>"#;
+
+    #[test]
+    fn line_per_element_pre_becomes_a_fenced_block() {
+        let md = html_to_markdown(LINE_SPAN_PRE);
+        let expected = "```\nusing UnityEngine;\n\npublic class Example : MonoBehaviour\n{\n    //Fetch the Rigidbody\n    m_Rigidbody = GetComponent<Rigidbody>();\n}\n```";
+        assert!(md.contains(expected), "{md}");
+        assert!(md.contains("After."), "{md}");
+    }
+
+    #[test]
+    fn line_per_element_pre_with_normalize_tables() {
+        let html = format!(
+            "<html><head><title>T</title></head><body><main><h1>AddForce</h1><p>Adds a force to the Rigidbody.</p>{LINE_SPAN_PRE}</main></body></html>"
+        );
+        let md = html_to_markdown_with(&html, true);
+        assert!(md.contains("```\nusing UnityEngine;\n"), "{md}");
+    }
+
+    #[test]
+    fn ordinary_pre_blocks_convert_as_before() {
+        // Real newlines: the line rule does not apply.
+        let with_newlines =
+            "<pre><div><span class=\"l\">a = 1</span>\n<span class=\"l\">b = 2</span></div></pre>";
+        assert_eq!(
+            html_to_markdown(with_newlines),
+            htmd::convert(with_newlines).unwrap()
+        );
+        // Token spans directly under <pre>/<code>, not a <div> of lines.
+        let tokens = "<pre><code><span class=\"t\">print</span><span class=\"t\">(</span><span class=\"t\">x</span><span class=\"t\">)</span></code></pre>";
+        assert!(html_to_markdown(tokens).contains("print(x)"));
+        // Mixed siblings: not a uniform run of lines.
+        let mixed = "<pre><div><span class=\"a\">one</span><b>two</b></div></pre>";
+        assert_eq!(html_to_markdown(mixed), htmd::convert(mixed).unwrap());
+        // Text outside the run (a visible "Copy" label): fall back.
+        let labelled = "<pre><div><button>Copy</button></div><div><span class=\"l\">a</span><span class=\"l\">b</span></div></pre>";
+        assert_eq!(html_to_markdown(labelled), htmd::convert(labelled).unwrap());
+    }
+
+    #[test]
+    fn fence_outgrows_backticks_in_the_code() {
+        let html = "<pre><div><div class=\"l\">let s = \"```\";</div><div class=\"l\">done</div></div></pre>";
+        let md = html_to_markdown(html);
+        assert!(md.contains("````\nlet s = \"```\";\ndone\n````"), "{md}");
+    }
+
+    #[test]
+    fn layout_tables_without_a_header_are_untouched() {
+        let html = "<table><tr><td><pre>| a    | b |\n| ---- | - |</pre></td></tr></table>";
+        assert_eq!(html_to_markdown(html), htmd::convert(html).unwrap());
+        let nested = "<table><tr><th>H</th></tr><tr><td><table><tr><th>x    </th></tr></table></td></tr></table>";
+        assert!(html_to_markdown(nested).contains("| H |"));
+    }
+
+    #[test]
+    fn a_data_row_of_dashes_keeps_its_content() {
+        let html = "<table><tr><th>Name</th><th>Value</th></tr>\
+                    <tr><td>a</td><td>-----</td></tr></table>";
+        let md = html_to_markdown(html);
+        assert!(md.contains("| Name | Value |\n| --- | --- |"), "{md}");
+        assert!(md.contains("| a | ----- |"), "{md}");
+    }
+
+    #[test]
+    fn single_line_token_spans_stay_one_line() {
+        for html in [
+            "<pre><div><span>git</span> <span>clone</span> <span>url</span></div></pre>",
+            "<pre><div><span class=\"p\">{</span><span class=\"p\">}</span></div></pre>",
+        ] {
+            assert_eq!(
+                html_to_markdown(html),
+                htmd::convert(html).unwrap(),
+                "{html}"
+            );
+        }
+    }
+
+    #[test]
+    fn lines_with_links_or_breaks_keep_the_old_path() {
+        for html in [
+            "<pre><div><p>a<br>b</p><p>c</p></div></pre>",
+            "<pre><div><div><a href=\"/x\">one</a></div><div><a href=\"/y\">two</a></div></div></pre>",
+        ] {
+            assert_eq!(
+                html_to_markdown(html),
+                htmd::convert(html).unwrap(),
+                "{html}"
+            );
+        }
     }
 }

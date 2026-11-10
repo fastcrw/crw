@@ -28,6 +28,7 @@ flate2 = { version = "1", optional = true }
 lol_html = { workspace = true }
 scraper = { workspace = true }
 htmd = { workspace = true }
+markup5ever_rcdom = { workspace = true }
 ego-tree = { workspace = true }
 xxhash-rust = { workspace = true }
 once_cell = { workspace = true }
