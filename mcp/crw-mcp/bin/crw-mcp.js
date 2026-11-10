@@ -254,13 +254,15 @@ if (require.main === module) {
   // `init` = skill only; `install` = skill + MCP server. Both are file copies
   // that need no binary, so they must run before the platform check: a 32-bit
   // Pi or FreeBSD user can still install the skill.
-  if (process.argv[2] === "init") {
-    require("./init.js");
-    process.exit(0);
-  }
-  if (process.argv[2] === "install") {
-    require("./install.js");
-    process.exit(0);
+  const sub = process.argv[2];
+  if (sub === "init" || sub === "install") {
+    // Drop the subcommand so the script sees only its own flags, exactly as
+    // when it is run directly (install rejects any argument it does not know).
+    process.argv.splice(2, 1);
+    require(sub === "init" ? "./init.js" : "./install.js");
+    // No explicit code: keep the exitCode the script set (install marks a
+    // partial failure with exitCode 1).
+    process.exit();
   }
   if (!plat) {
     console.error(
