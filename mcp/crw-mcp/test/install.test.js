@@ -154,3 +154,46 @@ test("install rejects an unknown flag and writes nothing", (t) => {
   assert.equal(eq.status, 0, eq.stderr || eq.stdout);
   assert.match(eq.stdout, /Mode: cloud/);
 });
+
+// `npx crw-mcp install` runs the launcher, not install.js, so the launcher's
+// argv still carries the subcommand. Exercise that real entry point.
+const launcher = path.join(__dirname, "..", "bin", "crw-mcp.js");
+
+function runLauncher(home, args) {
+  return spawnSync(process.execPath, [launcher, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: path.join(home, ".config"),
+      CRW_API_KEY: "",
+    },
+  });
+}
+
+test("the launcher's install and init subcommands accept their own name", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "crw-mcp-launcher-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const install = runLauncher(home, ["install", "--codex"]);
+  assert.equal(install.status, 0, install.stderr || install.stdout);
+  assert.match(
+    fs.readFileSync(path.join(home, ".codex", "config.toml"), "utf8"),
+    /\[mcp_servers\.crw\]/,
+  );
+
+  const init = runLauncher(home, ["init", "--codex"]);
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  assert.ok(fs.existsSync(path.join(home, ".codex", "skills", "crw", "SKILL.md")));
+});
+
+test("the launcher still rejects an unknown install flag", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "crw-mcp-launcher-bad-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const result = runLauncher(home, ["install", "--codex", "--dry-run"]);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /unknown argument "--dry-run"/);
+  assert.equal(fs.existsSync(path.join(home, ".codex")), false);
+});
