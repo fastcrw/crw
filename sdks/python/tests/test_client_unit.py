@@ -87,6 +87,22 @@ class TestScrape:
             client.scrape("https://example.com", only_main_content=False)
         assert mock_post.call_args[0][1]["onlyMainContent"] is False
 
+    def test_scrape_sends_mode_and_max_credits_camel_case(self) -> None:
+        client = CrwClient(api_url="https://fastcrw.com/api", api_key="crw_live_test")
+        with patch.object(client, "_http_post", return_value={}) as mock_post:
+            client.scrape("https://example.com", mode="max", max_credits=60)
+        body = mock_post.call_args[0][1]
+        assert body["mode"] == "max"
+        assert body["maxCredits"] == 60
+        assert "max_credits" not in body
+
+    def test_scrape_paid_mode_needs_http(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        client = _local_client(monkeypatch)
+        with patch.object(client, "_tool_call") as mock_tool:
+            with pytest.raises(CrwError, match="cloud feature"):
+                client.scrape("https://example.com", mode="auto")
+        mock_tool.assert_not_called()
+
     def test_scrape_subprocess_calls_tool(self, monkeypatch: pytest.MonkeyPatch) -> None:
         client = _local_client(monkeypatch)
         mock_response = {"markdown": "# Hello"}

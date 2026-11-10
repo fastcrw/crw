@@ -334,8 +334,11 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>validate that a target URL works before you automate it,</li>
 <li>compare <code>markdown</code> vs <code>html</code> vs <code>json</code>,</li>
 <li>test selectors or JS rendering settings,</li>
+<li>try a walled page in auto or max mode before you pay for it in code,</li>
 <li>and confirm response fields before you wire the request into your app or agent.</li>
 </ul>
+<h2 id="standard-auto-and-max">Standard, auto and max</h2>
+<p>The scrape toolbar has a Standard / Auto / Max switch next to the format. Auto and max run the page through the <a href="/scraping#auto-and-max-mode">auto and max mode</a> of <code>/v1/scrape</code>, billed to your account the same way an API call is, and show a cap field for <code>maxCredits</code>. The badge above the URL shows what the selected mode costs, and the code panel adds <code>mode</code> and <code>maxCredits</code> to the snippet. They need a signed-in account on the Standard plan or higher.</p>
 <h2 id="recommended-workflow">Recommended Workflow</h2>
 <ol>
 <li>Start with <code>scrape</code></li>

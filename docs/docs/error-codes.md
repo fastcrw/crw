@@ -70,6 +70,13 @@ The managed cloud adds these `errorCode` values on top of the engine's own. Self
 | `errorCode` | HTTP | When it happens |
 | --- | --- | --- |
 | `insufficient_credits` | 402 | The credit balance cannot cover the request: FREE lifetime credits used up, or a paid plan's included and top-up credits used up. Carries the `X-FASTCRW-Credits-Available`, `X-FASTCRW-Included-Remaining`, `X-FASTCRW-Purchased-Remaining` and `X-FASTCRW-Upgrade-Url` headers, plus `X-FASTCRW-Stop-Reason` when an enabled auto-recharge could not run. No `Retry-After`. Not sent on the legacy `/v2` surface, which answers `429` instead. |
+| `invalid_mode` | 400 | `mode` is not `standard`, `auto` or `max`; `maxCredits` is out of range, sent without auto or max, at or below the page's base price, or spelled `max_credits`; or `mode: "max"` came with `renderJs: false`, a pinned `renderer`, a screenshot or a `timeout` under 35000 ms. |
+| `mode_with_llm_format` | 400 | `mode: "auto"` or `"max"` combined with `summary`, `json` or the change-tracking judge. |
+| `mode_unavailable` | 403 | Auto and max mode are switched off right now. Nothing is charged; retry later or use standard mode. |
+| `plan_required` | 403 | Auto and max mode need the Standard plan or higher. |
+| `insufficient_credits_for_mode` | 402 | The balance cannot cover the hold of an auto or max page (its `maxCredits`, or the per-page limit). Plain scrapes still work. |
+| `mode_concurrency` | 429 | The account already has 4 auto or max pages in flight. Retry when one finishes. |
+| `mode_failure_budget` | 429 | Too many auto or max pages failed today. Failed pages are not charged; the limit resets at 00:00 UTC. |
 | `llm_not_available` | 402 | A managed-LLM feature (search `answer` / `summarizeResults`, `/v1/extract`) was requested on the FREE plan. The `/v1/crawl` LLM formats gate sends the same code with HTTP `403`. |
 
 Data source calls (`/v1/data/*`, `crw_find_data`, `crw_get_data`, and the SDKs' `findData` / `getData`) send their own codes, such as `client_execution_required`, `unknown_data_source`, `upstream_error`, `upstream_timeout`, `upstream_rate_limited`, `invalid_response` and `result_too_large`. The SDKs pass them on as `errorCode` (`error_code` in Python). The full list, with what to do about each, is in the Errors section of [Data Sources](/data-sources).

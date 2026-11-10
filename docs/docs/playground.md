@@ -11,7 +11,12 @@ The Playground is the fastest way to experiment with CRW without wiring up your 
 - validate that a target URL works before you automate it,
 - compare `markdown` vs `html` vs `json`,
 - test selectors or JS rendering settings,
+- try a walled page in auto or max mode before you pay for it in code,
 - and confirm response fields before you wire the request into your app or agent.
+
+## Standard, auto and max
+
+The scrape toolbar has a Standard / Auto / Max switch next to the format. Auto and max run the page through the [auto and max mode](/scraping#auto-and-max-mode) of `/v1/scrape`, billed to your account the same way an API call is, and show a cap field for `maxCredits`. The badge above the URL shows what the selected mode costs, and the code panel adds `mode` and `maxCredits` to the snippet. They need a signed-in account on the Standard plan or higher.
 
 ## Recommended Workflow
 
