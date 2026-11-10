@@ -505,6 +505,41 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>The credit balance cannot cover the request: FREE lifetime credits used up, or a paid plan&#39;s included and top-up credits used up. Carries the <code>X-FASTCRW-Credits-Available</code>, <code>X-FASTCRW-Included-Remaining</code>, <code>X-FASTCRW-Purchased-Remaining</code> and <code>X-FASTCRW-Upgrade-Url</code> headers, plus <code>X-FASTCRW-Stop-Reason</code> when an enabled auto-recharge could not run. No <code>Retry-After</code>. Not sent on the legacy <code>/v2</code> surface, which answers <code>429</code> instead.</td>
 </tr>
 <tr>
+<td><code>invalid_mode</code></td>
+<td>400</td>
+<td><code>mode</code> is not <code>standard</code>, <code>auto</code> or <code>max</code>; <code>maxCredits</code> is out of range, sent without auto or max, at or below the page&#39;s base price, or spelled <code>max_credits</code>; or <code>mode: &quot;max&quot;</code> came with <code>renderJs: false</code>, a pinned <code>renderer</code>, a screenshot or a <code>timeout</code> under 35000 ms.</td>
+</tr>
+<tr>
+<td><code>mode_with_llm_format</code></td>
+<td>400</td>
+<td><code>mode: &quot;auto&quot;</code> or <code>&quot;max&quot;</code> combined with <code>summary</code>, <code>json</code> or the change-tracking judge.</td>
+</tr>
+<tr>
+<td><code>mode_unavailable</code></td>
+<td>403</td>
+<td>Auto and max mode are switched off right now. Nothing is charged; retry later or use standard mode.</td>
+</tr>
+<tr>
+<td><code>plan_required</code></td>
+<td>403</td>
+<td>Auto and max mode need the Standard plan or higher.</td>
+</tr>
+<tr>
+<td><code>insufficient_credits_for_mode</code></td>
+<td>402</td>
+<td>The balance cannot cover the hold of an auto or max page (its <code>maxCredits</code>, or the per-page limit). Plain scrapes still work.</td>
+</tr>
+<tr>
+<td><code>mode_concurrency</code></td>
+<td>429</td>
+<td>The account already has 4 auto or max pages in flight. Retry when one finishes.</td>
+</tr>
+<tr>
+<td><code>mode_failure_budget</code></td>
+<td>429</td>
+<td>Too many auto or max pages failed today. Failed pages are not charged; the limit resets at 00:00 UTC.</td>
+</tr>
+<tr>
 <td><code>llm_not_available</code></td>
 <td>402</td>
 <td>A managed-LLM feature (search <code>answer</code> / <code>summarizeResults</code>, <code>/v1/extract</code>) was requested on the FREE plan. The <code>/v1/crawl</code> LLM formats gate sends the same code with HTTP <code>403</code>.</td>

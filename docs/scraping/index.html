@@ -628,6 +628,18 @@ console.log(body.data.markdown);</code></pre></div><div class="code-tab-panel" d
 <td>--</td>
 <td>Rejected with a clear error; use <code>cssSelector</code> or <code>xpath</code> instead</td>
 </tr>
+<tr>
+<td><code>mode</code></td>
+<td>string</td>
+<td><code>standard</code></td>
+<td>Cloud only. <code>standard</code>, <code>auto</code> or <code>max</code>. <code>auto</code> and <code>max</code> get through anti-bot walls and are billed by the traffic the page used. See <a href="#auto-and-max-mode">Auto and max mode</a></td>
+</tr>
+<tr>
+<td><code>maxCredits</code></td>
+<td>number</td>
+<td>--</td>
+<td>Cloud only, with <code>mode: &quot;auto&quot;</code> or <code>&quot;max&quot;</code>. The most this page may cost in credits, from 2 to 1000. A page that would cost more is stopped and not charged</td>
+</tr>
 </tbody></table>
 <h2 id="caching">Caching</h2>
 <p>A repeat of the same fetch is served from cache for one hour by default. What
@@ -726,6 +738,53 @@ a discount.</p>
 <li>Add <code>includeTags</code> and <code>excludeTags</code> after you confirm the raw markdown is noisy.</li>
 </ul>
 <p>If you turn on every targeting knob at once, debugging gets harder immediately.</p>
+<h2 id="auto-and-max-mode">Auto and max mode</h2>
+<div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Cloud only (fastcrw.com), Standard plan and up. A self-hosted engine ignores `mode`.</div></div><p>Some pages answer with an anti-bot challenge instead of content. The default <code>standard</code> mode reports those as a failed scrape, refunded. <code>mode</code> lets you pay to get through:</p>
+<table>
+<thead>
+<tr>
+<th><code>mode</code></th>
+<th>What it does</th>
+<th>Cost</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>standard</code> (default)</td>
+<td>The normal renderer ladder.</td>
+<td>1 credit</td>
+</tr>
+<tr>
+<td><code>auto</code></td>
+<td>Runs the normal ladder first and switches to the unblocking path only when the page is behind a wall.</td>
+<td>1 credit when the ladder gets the page; otherwise billed by traffic</td>
+</tr>
+<tr>
+<td><code>max</code></td>
+<td>Starts on the unblocking path and skips the ladder&#39;s failed tries. Use it for sites you already know are walled.</td>
+<td>Billed by traffic</td>
+</tr>
+</tbody></table>
+<p>&quot;Billed by traffic&quot; means 1 credit plus the network traffic the unblocking path used for this page. The page shows what it cost in <code>data.creditCost</code>. In our measurements a walled page on its own cost 20 to 45 credits; further pages on the same site while its clearance is still warm cost about 2.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;url&quot;: &quot;https://example.com/walled-page&quot;,
+  &quot;formats&quot;: [&quot;markdown&quot;],
+  &quot;mode&quot;: &quot;auto&quot;,
+  &quot;maxCredits&quot;: 60
+}</code></pre>
+<p>How the charge works:</p>
+<ul>
+<li>The request holds <code>maxCredits</code> (or the per-page limit when you leave it out) while it runs, then keeps only what the page cost and returns the rest within the same request. Your balance has to cover the hold; below it you get <code>402 insufficient_credits_for_mode</code> and plain scrapes keep working.</li>
+<li>A page that would cost more than <code>maxCredits</code> is stopped and not charged.</li>
+<li>A failed page is not charged, in any mode.</li>
+</ul>
+<p>Limits:</p>
+<ul>
+<li>Only <code>/v1/scrape</code>. Crawl, batch, map and the <code>/v2</code> surface ignore <code>mode</code>.</li>
+<li>Not with the LLM formats (<code>summary</code>, <code>json</code>, the change-tracking judge).</li>
+<li><code>max</code> needs JavaScript rendering: it rejects <code>renderJs: false</code>, a pinned <code>renderer</code>, a screenshot, and a <code>timeout</code> under 35000 ms. Leave <code>timeout</code> unset and the page gets 58 seconds. When the unblocking path is busy or the site keeps refusing it, a <code>max</code> page continues on the normal ladder, the same way <code>auto</code> does.</li>
+<li>At most 4 auto or max pages in flight per account.</li>
+</ul>
+<p>The errors these cases return are listed under <a href="/error-codes#cloud-only-error-codes">Cloud-only error codes</a>.</p>
 <h2 id="common-production-patterns">Common production patterns</h2>
 <ul>
 <li>Start with <code>markdown</code>, then add <code>links</code> or <code>json</code> only when downstream logic needs them.</li>

@@ -349,6 +349,14 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>1 credit + LLM cost for that call</td>
 </tr>
 <tr>
+<td><code>scrape</code> with <code>mode: &quot;auto&quot;</code></td>
+<td>1 credit when the normal ladder gets the page; 1 credit + the traffic the unblocking path used when the page is walled. Capped by <code>maxCredits</code></td>
+</tr>
+<tr>
+<td><code>scrape</code> with <code>mode: &quot;max&quot;</code></td>
+<td>1 credit + the traffic the unblocking path used. Capped by <code>maxCredits</code></td>
+</tr>
+<tr>
 <td><code>extract</code> (<code>POST /v1/extract</code>)</td>
 <td>The base scrape credit plus the actual LLM cost for that call, per URL. Dynamically metered: there is no flat credit number for extract</td>
 </tr>
@@ -385,7 +393,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <td>Not a billed cloud endpoint. It is a local CLI/companion capability, free either way</td>
 </tr>
 </tbody></table>
-<p>Every renderer costs 1 credit per page: there is no Chrome or proxy surcharge. <code>data.creditCost</code> matches the charge regardless of which renderer (HTTP, lightpanda, Chrome, chrome_proxy) actually served the page.</p>
+<p>Every renderer costs 1 credit per page: there is no Chrome or proxy surcharge. The one exception is the opt-in <a href="/scraping#auto-and-max-mode">auto and max mode</a>, which you ask for per request and which is billed by traffic. <code>data.creditCost</code> matches the charge regardless of which renderer (HTTP, lightpanda, Chrome, chrome_proxy) actually served the page.</p>
 <p><code>extract</code> and structured-extraction scrapes are never a flat fee. They cost the base 1-credit render plus the real LLM cost of that call, metered per request. The open-source engine itself adds no surcharge beyond the 1-credit render cost; the LLM portion is applied by the managed cloud billing layer and tracked separately in <code>creditsUsed</code>.</p>
 <p>A monitor&#39;s check runs one scrape per tracked page, so its cost scales with pages watched, not with how often you poll the monitor&#39;s own status. Creating, listing, or reading a monitor&#39;s configuration never consumes credits, only an executed check does.</p>
 <div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">**Managed-LLM billing (fastcrw.com cloud only)**: token usage for managed LLM features (`extract`, `json`/`summary` scrape extraction, `answer`, `summarizeResults`) is billed on top of the base credit by the cloud platform, not by the open-source engine. Self-hosted deployments have no billing layer and are unaffected.</div></div><h2 id="billing-on-failure">Billing on failure</h2>

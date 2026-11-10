@@ -321,6 +321,8 @@ class CrwClient:
         renderer: str | None = None,
         wait_for: int | None = None,
         json_schema: dict | None = None,
+        mode: str | None = None,
+        max_credits: int | None = None,
         **kwargs: Any,
     ) -> dict:
         """Scrape a single URL and return its content.
@@ -337,6 +339,11 @@ class CrwClient:
             json_schema: A JSON Schema for structured LLM extraction. Automatically
                 adds the ``json`` format. Requires an LLM provider configured on the
                 engine.
+            mode: Cloud only. ``"standard"`` (default), ``"auto"`` or ``"max"``.
+                Auto and max get through anti-bot walls and are billed by the
+                traffic the page used.
+            max_credits: Cloud only, with ``mode="auto"`` or ``"max"``: the most
+                this page may cost (``maxCredits``).
             **kwargs: Any other engine scrape option, passed through verbatim.
 
         Returns:
@@ -362,10 +369,19 @@ class CrwClient:
             fmts = args.get("formats") or []
             if "json" not in fmts:
                 args["formats"] = [*fmts, "json"]
+        if mode is not None:
+            args["mode"] = mode
+        if max_credits is not None:
+            args["maxCredits"] = max_credits
         args.update(kwargs)
 
         if self._api_url:
             return self._http_post("/v1/scrape", args)
+        if args.get("mode") in ("auto", "max"):
+            raise CrwError(
+                f'mode="{args["mode"]}" is a fastCRW cloud feature (it is billed per page). '
+                "Set CRW_API_KEY to use the cloud; a self-hosted engine ignores mode."
+            )
         return self._tool_call("crw_scrape", args)
 
     def crawl(

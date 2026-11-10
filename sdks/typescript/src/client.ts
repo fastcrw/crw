@@ -151,6 +151,12 @@ export class CrwClient {
     }
     Object.assign(args, rest);
     if (this.apiUrl) return this.httpPost("/v1/scrape", args) as Promise<ScrapeResult>;
+    if (args.mode === "auto" || args.mode === "max") {
+      throw new CrwError(
+        `mode "${args.mode}" is a fastCRW cloud feature (it is billed per page). ` +
+          "Set CRW_API_KEY to use the cloud; a self-hosted engine ignores mode.",
+      );
+    }
     return this.localTransport().toolCall("crw_scrape", args) as Promise<ScrapeResult>;
   }
 

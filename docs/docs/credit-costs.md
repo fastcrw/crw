@@ -11,6 +11,8 @@ Cloud only (fastcrw.com) -- self-hosted instances do not have credit-based billi
 | `scrape` (any render — HTTP, lightpanda, chrome, or `chrome_proxy`) | 1 credit |
 | `scrape` with `playwright` render | SaaS billing only; engine `data.creditCost` is omitted (0) |
 | `scrape` with structured extraction (`formats: ["json"]` / `summary`) | 1 credit + LLM cost for that call |
+| `scrape` with `mode: "auto"` | 1 credit when the normal ladder gets the page; 1 credit + the traffic the unblocking path used when the page is walled. Capped by `maxCredits` |
+| `scrape` with `mode: "max"` | 1 credit + the traffic the unblocking path used. Capped by `maxCredits` |
 | `extract` (`POST /v1/extract`) | The base scrape credit plus the actual LLM cost for that call, per URL. Dynamically metered: there is no flat credit number for extract |
 | `map` | 1 credit |
 | `crawl` start | 1 credit |
@@ -21,7 +23,7 @@ Cloud only (fastcrw.com) -- self-hosted instances do not have credit-based billi
 | `monitor` check (per run) | 1 credit per scraped page, plus 1 more credit per page judged changed |
 | `browse` | Not a billed cloud endpoint. It is a local CLI/companion capability, free either way |
 
-Every renderer costs 1 credit per page: there is no Chrome or proxy surcharge. `data.creditCost` matches the charge regardless of which renderer (HTTP, lightpanda, Chrome, chrome_proxy) actually served the page.
+Every renderer costs 1 credit per page: there is no Chrome or proxy surcharge. The one exception is the opt-in [auto and max mode](/scraping#auto-and-max-mode), which you ask for per request and which is billed by traffic. `data.creditCost` matches the charge regardless of which renderer (HTTP, lightpanda, Chrome, chrome_proxy) actually served the page.
 
 `extract` and structured-extraction scrapes are never a flat fee. They cost the base 1-credit render plus the real LLM cost of that call, metered per request. The open-source engine itself adds no surcharge beyond the 1-credit render cost; the LLM portion is applied by the managed cloud billing layer and tracked separately in `creditsUsed`.
 

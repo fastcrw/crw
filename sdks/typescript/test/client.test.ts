@@ -152,6 +152,7 @@ test("HTTP-only methods throw in local mode", async () => {
   await assert.rejects(() => c.startExtract({ urls: ["https://example.com"] }), /requires HTTP mode/);
   await assert.rejects(() => c.getExtract("job-1"), /requires HTTP mode/);
   await assert.rejects(() => c.cancelExtract("job-1"), /requires HTTP mode/);
+  await assert.rejects(() => c.scrape("https://example.com", { mode: "max" }), /cloud feature/);
   await assert.rejects(() => c.batchScrape(["https://example.com"]), /requires HTTP mode/);
   await assert.rejects(() => c.capabilities(), /requires HTTP mode/);
   await assert.rejects(() => c.changeTrackingDiff({ markdown: "a" }), /requires HTTP mode/);
@@ -767,3 +768,12 @@ test("data methods need the API in CRW_LOCAL mode", async () => {
 
 // silence unused import lint in some configs
 void CrwError;
+
+test("scrape sends mode and maxCredits as given", async () => {
+  const calls = mockFetch({ success: true, data: { markdown: "x" } });
+  const c = new CrwClient({ apiKey: "crw_live_test" });
+  await c.scrape("https://example.com", { mode: "auto", maxCredits: 60 });
+  const body = JSON.parse(calls[0].init!.body as string);
+  assert.equal(body.mode, "auto");
+  assert.equal(body.maxCredits, 60);
+});

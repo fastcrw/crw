@@ -33,6 +33,13 @@ export interface ScrapeOptions {
    * of `jsonSchema` comes back as a {@link Basis}. Requires `jsonSchema`.
    */
   basis?: boolean;
+  /**
+   * Cloud only. `"standard"` (default), `"auto"` or `"max"`. Auto and max get
+   * through anti-bot walls and are billed by the traffic the page used.
+   */
+  mode?: "standard" | "auto" | "max";
+  /** Cloud only, with `mode` auto or max: the most this page may cost. */
+  maxCredits?: number;
   /** Any other engine scrape option, passed through verbatim. */
   [key: string]: unknown;
 }

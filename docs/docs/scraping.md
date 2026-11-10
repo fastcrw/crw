@@ -177,6 +177,8 @@ That is the default CRW success shape: requested content plus a compact metadata
 | `debug` | boolean | `false` | When `true`, includes a `debugExtraction` field in the response with a trace of every extraction candidate considered and why one was selected. |
 | `parsers` | object[] | PDF auto-parsed | Firecrawl-compatible document parser directives. Omit for the default (PDFs auto-converted to markdown). Pass `[]` to disable PDF parsing. Pass `[{"type":"pdf","maxPages":10}]` to cap pages. Accepted fields: `type` (`"pdf"`), `mode` (`"auto"` \| `"fast"` \| `"ocr"`), `maxPages`. |
 | `actions` | any | -- | Rejected with a clear error; use `cssSelector` or `xpath` instead |
+| `mode` | string | `standard` | Cloud only. `standard`, `auto` or `max`. `auto` and `max` get through anti-bot walls and are billed by the traffic the page used. See [Auto and max mode](#auto-and-max-mode) |
+| `maxCredits` | number | -- | Cloud only, with `mode: "auto"` or `"max"`. The most this page may cost in credits, from 2 to 1000. A page that would cost more is stopped and not charged |
 
 ## Caching
 
@@ -286,6 +288,46 @@ Keep the first request simple:
 - Add `includeTags` and `excludeTags` after you confirm the raw markdown is noisy.
 
 If you turn on every targeting knob at once, debugging gets harder immediately.
+
+## Auto and max mode
+
+:::note
+Cloud only (fastcrw.com), Standard plan and up. A self-hosted engine ignores `mode`.
+:::
+
+Some pages answer with an anti-bot challenge instead of content. The default `standard` mode reports those as a failed scrape, refunded. `mode` lets you pay to get through:
+
+| `mode` | What it does | Cost |
+| --- | --- | --- |
+| `standard` (default) | The normal renderer ladder. | 1 credit |
+| `auto` | Runs the normal ladder first and switches to the unblocking path only when the page is behind a wall. | 1 credit when the ladder gets the page; otherwise billed by traffic |
+| `max` | Starts on the unblocking path and skips the ladder's failed tries. Use it for sites you already know are walled. | Billed by traffic |
+
+"Billed by traffic" means 1 credit plus the network traffic the unblocking path used for this page. The page shows what it cost in `data.creditCost`. In our measurements a walled page on its own cost 20 to 45 credits; further pages on the same site while its clearance is still warm cost about 2.
+
+```json
+{
+  "url": "https://example.com/walled-page",
+  "formats": ["markdown"],
+  "mode": "auto",
+  "maxCredits": 60
+}
+```
+
+How the charge works:
+
+- The request holds `maxCredits` (or the per-page limit when you leave it out) while it runs, then keeps only what the page cost and returns the rest within the same request. Your balance has to cover the hold; below it you get `402 insufficient_credits_for_mode` and plain scrapes keep working.
+- A page that would cost more than `maxCredits` is stopped and not charged.
+- A failed page is not charged, in any mode.
+
+Limits:
+
+- Only `/v1/scrape`. Crawl, batch, map and the `/v2` surface ignore `mode`.
+- Not with the LLM formats (`summary`, `json`, the change-tracking judge).
+- `max` needs JavaScript rendering: it rejects `renderJs: false`, a pinned `renderer`, a screenshot, and a `timeout` under 35000 ms. Leave `timeout` unset and the page gets 58 seconds. When the unblocking path is busy or the site keeps refusing it, a `max` page continues on the normal ladder, the same way `auto` does.
+- At most 4 auto or max pages in flight per account.
+
+The errors these cases return are listed under [Cloud-only error codes](/error-codes#cloud-only-error-codes).
 
 ## Common production patterns
 
