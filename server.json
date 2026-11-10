@@ -3,7 +3,7 @@
   "name": "io.github.fastcrw/crw",
   "title": "CRW Web Scraper",
   "description": "Open-source web scraper for AI agents with scrape, crawl, and map tools",
-  "version": "0.43.2",
+  "version": "0.44.0",
   "websiteUrl": "https://fastcrw.com",
   "repository": {
     "url": "https://github.com/fastcrw/crw",
