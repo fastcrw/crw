@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.43.2](https://github.com/fastcrw/crw/compare/v0.43.1...v0.43.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **extract:** compact table padding and fence line-per-element code ([e65b893](https://github.com/fastcrw/crw/commit/e65b8932dde040bb57c9053f763d46a7cb676530))
+
 ## [0.43.1](https://github.com/fastcrw/crw/compare/v0.43.0...v0.43.1) (2026-11-09)
 
 
