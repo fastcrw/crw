@@ -52,6 +52,10 @@
     {
       "name": "change-tracking",
       "description": "Stateless diff of a scrape against a caller-supplied previous snapshot (monitor primitive)"
+    },
+    {
+      "name": "enrich",
+      "description": "Fill table cells from the web with per-field evidence"
     }
   ],
   "paths": {
@@ -470,6 +474,7 @@
                     "screenshot",
                     "renderers",
                     "extract",
+                    "enrich",
                     "documents",
                     "limits"
                   ],
@@ -674,6 +679,33 @@
                         "perFieldAttribution": {
                           "type": "boolean",
                           "description": "Per-field `basis` attribution. This build ships `basis`, so it reports true; the flag reflects build capability, not whether an LLM is configured."
+                        }
+                      }
+                    },
+                    "enrich": {
+                      "type": "object",
+                      "required": [
+                        "supported",
+                        "maxRows",
+                        "maxColumns",
+                        "search"
+                      ],
+                      "properties": {
+                        "supported": {
+                          "type": "boolean",
+                          "description": "POST /v1/enrich works for a request that carries no credentials of its own. Same LLM gate as extract.supported."
+                        },
+                        "maxRows": {
+                          "type": "integer",
+                          "description": "Rows accepted per call."
+                        },
+                        "maxColumns": {
+                          "type": "integer",
+                          "description": "Columns accepted per call."
+                        },
+                        "search": {
+                          "type": "boolean",
+                          "description": "A search backend is configured, so rows without a website can be filled. When false, only rows that carry their own URL get cells."
                         }
                       }
                     },
@@ -892,6 +924,44 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/v1/enrich": {
+      "post": {
+        "tags": [
+          "enrich"
+        ],
+        "summary": "Fill the empty cells of a small table from the web",
+        "description": "Synchronous. Per row: reads the row's own website if it has one, searches once for whatever is still missing, extracts the top results, and returns one cell per target column with per-field evidence. A target cell is a listed column whose row value is absent, null or empty (or any listed column with `overwrite: true`). At most 3 rows and 10 columns per call; chunk larger tables. Use `status === \"supported\"` to keep only cells whose value was found verbatim on the cited page.",
+        "operationId": "enrich",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrichRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "All rows, in request order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
@@ -2555,6 +2625,188 @@
               "type": "string"
             },
             "description": "Custom HTTP request headers applied to every page the crawl fetches. On a browser render they apply to every request the page makes, subresources included, so avoid cross-origin-sensitive credentials here."
+          }
+        }
+      },
+      "EnrichColumn": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Row key to fill. Must not be `id`."
+          },
+          "description": {
+            "type": "string",
+            "description": "What the cell should contain, in plain language."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "url",
+              "options"
+            ],
+            "default": "text"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Allowed labels for `type: options`. A value that matches none of them comes back `notFound`."
+          }
+        }
+      },
+      "EnrichRequest": {
+        "type": "object",
+        "required": [
+          "rows",
+          "columns"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "description": "Flat objects. Non-target values identify the row's entity; a URL or domain value is read first. An `id` (string or number) is echoed as `rowId`."
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/EnrichColumn"
+            }
+          },
+          "context": {
+            "type": "string",
+            "description": "One line describing the table, used to tell apart entities with the same name."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Refill listed columns even when the row already has a value."
+          },
+          "llmApiKey": {
+            "type": "string"
+          },
+          "llmProvider": {
+            "type": "string"
+          },
+          "llmModel": {
+            "type": "string"
+          }
+        }
+      },
+      "EnrichRow": {
+        "type": "object",
+        "required": [
+          "index",
+          "status",
+          "cells",
+          "usage"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "rowId": {
+            "description": "The row's `id`, echoed untouched.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "incomplete",
+              "failed"
+            ],
+            "description": "`incomplete`: the row ran out of time and cells it never reached are absent. `failed`: no page could be read. Retry both."
+          },
+          "stopReason": {
+            "type": "string",
+            "enum": [
+              "timeout"
+            ],
+            "description": "Set on `incomplete` and `failed` rows when the row ran out of time."
+          },
+          "error": {
+            "type": "string",
+            "description": "Why a `failed` row read no page. A fixed crw message, never upstream text."
+          },
+          "cells": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Basis"
+            },
+            "description": "One entry per target column that was looked for, each a per-field evidence record. Status is `supported`, `unverified` or `notFound` (never `unsupported`). An absent column was not reached. Empty when the row had no blank target cells."
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "pages": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Pages read for this row."
+              },
+              "searches": {
+                "type": "integer"
+              },
+              "llmUsage": {
+                "type": "object",
+                "description": "Extraction token usage for the row. Informational; may change."
+              }
+            }
+          }
+        }
+      },
+      "EnrichResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "status",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "required": [
+              "rows"
+            ],
+            "properties": {
+              "rows": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/EnrichRow"
+                }
+              }
+            }
           }
         }
       }

@@ -50,6 +50,10 @@ pub fn router() -> Router<AppState> {
                 .fallback(method_not_allowed),
         )
         .route(
+            "/v1/enrich",
+            post(routes::enrich::enrich).fallback(method_not_allowed),
+        )
+        .route(
             "/v1/map",
             post(routes::map::map).fallback(method_not_allowed),
         )

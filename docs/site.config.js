@@ -24,7 +24,7 @@ export default {
     {
       label: "Endpoints",
       href: "/scraping",
-      match: ["scraping", "search", "map", "crawling", "extract", "pdf-parsing"],
+      match: ["scraping", "search", "map", "crawling", "extract", "enrich", "pdf-parsing"],
     },
     {
       label: "MCP",
@@ -83,6 +83,7 @@ export default {
         { title: "Map", slug: "map", icon: "map" },
         { title: "Crawl", slug: "crawling", icon: "globe" },
         { title: "Extract", slug: "extract", icon: "zap" },
+        { title: "Enrich", slug: "enrich", icon: "layers" },
         { title: "PDF Parsing", slug: "pdf-parsing", icon: "file-text" },
         { title: "Monitoring", slug: "monitoring", icon: "bell" },
       ],

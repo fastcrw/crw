@@ -7,7 +7,7 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 
 ## Overview
 
-`crw-mcp` is a self-contained MCP server that gives any MCP-compatible AI client (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools, plus 2 data source tools in proxy mode (11 in all). No external server needed: just add and go.
+`crw-mcp` is a self-contained MCP server that gives any MCP-compatible AI client (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 10 web scraping tools in embedded mode; proxy mode has 9 of them (no `crw_enrich`) plus 2 data source tools (11 in all). No external server needed: just add and go.
 
 **Two modes:**
 
@@ -16,7 +16,7 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 | **Embedded** (default) | `CRW_LOCAL` truthy, or no API URL resolved | Self-contained, zero setup |
 | **Proxy** | `CRW_LOCAL` unset or falsy, and an API URL resolved | Forwards to remote CRW server |
 
-**MCP tools** (9 in embedded mode, 11 in proxy mode):
+**MCP tools** (10 in embedded mode, 11 in proxy mode):
 
 | Tool | Description |
 |------|-------------|
@@ -27,6 +27,7 @@ MCP (Model Context Protocol) server for the [CRW](https://github.com/fastcrw/crw
 | `crw_extract` | Extract structured JSON from URLs via a prompt and/or JSON schema (async job, returns job ID) |
 | `crw_check_extract_status` | Poll extract job status and retrieve results |
 | `crw_cancel_extract` | Idempotently cancel an extract job and retrieve canonical status |
+| `crw_enrich` | Embedded mode only: fill blank table cells (up to 3 rows) with sourced values |
 | `crw_search` | Search the web (needs a configured search backend; always available in proxy mode, available in embedded mode only when a search backend is configured) |
 | `crw_parse_file` | Parse a local PDF (base64) to markdown |
 | `crw_find_data` | Proxy mode only: find structured data sources (papers, packages, registries) and the options each takes |

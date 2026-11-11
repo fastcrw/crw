@@ -1,6 +1,6 @@
 # MCP Server for AI Agents
 
-CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools (8 on a self-host with no search backend configured, since `crw_search` is hidden in that case). In proxy mode, including fastcrw.com cloud, it adds `crw_find_data` and `crw_get_data` (structured [data sources](/data-sources)) for 11 tools. Turn any AI coding agent into a web scraper with a single command.
+CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 10 web scraping tools in embedded mode (9 on a self-host with no search backend configured, since `crw_search` is hidden in that case). In proxy mode, including fastcrw.com cloud, it exposes 11: the same tools minus the embedded-only `crw_enrich`, plus `crw_find_data` and `crw_get_data` (structured [data sources](/data-sources)). Turn any AI coding agent into a web scraper with a single command.
 
 > Also available on the [MCP Registry](https://registry.modelcontextprotocol.io/?q=crw)
 
@@ -180,6 +180,7 @@ This yields a ~4.2 MB binary (vs ~17 MB for the default embedded build) because 
 | `crw_extract` | Extract structured JSON from URLs → async job ID | `POST /v1/extract` | All modes |
 | `crw_check_extract_status` | Poll extract status and get results | `GET /v1/extract/:id` | All modes |
 | `crw_cancel_extract` | Idempotently cancel extract and return canonical status | `DELETE /v1/extract/:id` | All modes |
+| `crw_enrich` | Fill blank table cells (up to 3 rows) with sourced values | `POST /v1/enrich` | Embedded mode |
 | `crw_search` | Search the web → titles, URLs, descriptions | `POST /v1/search` | Always in proxy mode; embedded only when a search backend is configured |
 | `crw_parse_file` | Parse a local PDF (base64) → markdown | `POST /firecrawl/v2/parse` (multipart) | All modes |
 | `crw_find_data` | Find structured data sources → provider, capability, options | `GET /v1/data/find` | Proxy mode only; a self-hosted server answers `[data_sources_unavailable]` |
