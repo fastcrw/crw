@@ -330,6 +330,11 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
       <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/changelog">https://docs.fastcrw.com/changelog</a>.</p><h1 id="changelog">Changelog</h1>
 <p>This page is generated from the root <a href="https://github.com/fastcrw/crw/blob/main/CHANGELOG.md"><code>CHANGELOG.md</code></a>, which is maintained by release-please during releases.</p>
 <div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">The source of truth is the repository root changelog. Do not edit this docs page manually.</div></div><p>All notable changes to CRW are documented here.</p>
+<h2 id="0440-2026-11-10"><a href="https://github.com/fastcrw/crw/compare/v0.43.2...v0.44.0">0.44.0</a> (2026-11-10)</h2>
+<h3 id="features">Features</h3>
+<ul>
+<li><strong>sdk:</strong> mode and maxCredits on scrape, with the auto and max docs (<a href="https://github.com/fastcrw/crw/commit/4d45920c498e0222d14dbb189fab11110dc06b59">4d45920</a>)</li>
+</ul>
 <h2 id="0432-2026-11-10"><a href="https://github.com/fastcrw/crw/compare/v0.43.1...v0.43.2">0.43.2</a> (2026-11-10)</h2>
 <h3 id="bug-fixes">Bug Fixes</h3>
 <ul>
@@ -342,7 +347,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> open the sized Chrome target as a new window (<a href="https://github.com/fastcrw/crw/commit/08b82e528f45f7e2fcbaafc58d25ba54fa68fa52">08b82e5</a>), closes <a href="https://github.com/fastcrw/crw/issues/702">#702</a></li>
 </ul>
 <h2 id="0430-2026-11-08"><a href="https://github.com/fastcrw/crw/compare/v0.42.1...v0.43.0">0.43.0</a> (2026-11-08)</h2>
-<h3 id="features">Features</h3>
+<h3 id="features-1">Features</h3>
 <ul>
 <li><strong>renderer:</strong> one cloak budget and byte tally per scraped page (<a href="https://github.com/fastcrw/crw/commit/3656c4a72c7e834898ce3dcfa4bb0fea9e75a718">3656c4a</a>)</li>
 </ul>
@@ -358,7 +363,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>connectors:</strong> give a source on the user&#39;s machine 60 s to answer (<a href="https://github.com/fastcrw/crw/commit/3e3093ba2bdf1175b17c91a19eb0818b6e40d9b7">3e3093b</a>)</li>
 </ul>
 <h2 id="0420-2026-11-06"><a href="https://github.com/fastcrw/crw/compare/v0.41.0...v0.42.0">0.42.0</a> (2026-11-06)</h2>
-<h3 id="features-1">Features</h3>
+<h3 id="features-2">Features</h3>
 <ul>
 <li><strong>renderer:</strong> opt-in gate and metered bytes for the cloak tier (<a href="https://github.com/fastcrw/crw/commit/99f7ec8ef8147199cedfff8c89702ea7b58311d9">99f7ec8</a>)</li>
 </ul>
@@ -383,7 +388,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> wait for a skeleton grid before taking the snapshot (<a href="https://github.com/fastcrw/crw/commit/898cc3c3d893e1ede341302a1cf405e49bfc6f0c">898cc3c</a>)</li>
 </ul>
 <h2 id="0410-2026-11-04"><a href="https://github.com/fastcrw/crw/compare/v0.40.0...v0.41.0">0.41.0</a> (2026-11-04)</h2>
-<h3 id="features-2">Features</h3>
+<h3 id="features-3">Features</h3>
 <ul>
 <li><strong>connectors:</strong> send a header key stored as a JSON set (<a href="https://github.com/fastcrw/crw/commit/47151992566d591355bc7189a1fd276ab9ff9ac6">4715199</a>)</li>
 <li><strong>mcp:</strong> add data source tools that can run sources locally (<a href="https://github.com/fastcrw/crw/commit/72227caf4c627655183955436849b17281e3406d">72227ca</a>)</li>
@@ -412,7 +417,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> wait for skeleton lists to fill before the snapshot (<a href="https://github.com/fastcrw/crw/commit/7aa0b23654162c75241920aeb13a152dd6faab92">7aa0b23</a>)</li>
 </ul>
 <h2 id="0400-2026-11-03"><a href="https://github.com/fastcrw/crw/compare/v0.39.1...v0.40.0">0.40.0</a> (2026-11-03)</h2>
-<h3 id="features-3">Features</h3>
+<h3 id="features-4">Features</h3>
 <ul>
 <li><strong>map:</strong> scope results to the seed path with filterByPath (<a href="https://github.com/fastcrw/crw/commit/e6ef1b938902b7e0f5d4b7c08392004f9bb55190">e6ef1b9</a>)</li>
 <li><strong>mcp:</strong> cut truncated content on block boundaries and add startIndex (<a href="https://github.com/fastcrw/crw/commit/884eb6f40e65392c061d84ed2f7643543fc82d92">884eb6f</a>)</li>
@@ -433,7 +438,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> log the cause of a failed response body read (<a href="https://github.com/fastcrw/crw/commit/3d5c2f122769679be30efa1c291df58c355f04b1">3d5c2f1</a>)</li>
 </ul>
 <h2 id="0390-2026-10-21"><a href="https://github.com/fastcrw/crw/compare/v0.38.0...v0.39.0">0.39.0</a> (2026-10-21)</h2>
-<h3 id="features-4">Features</h3>
+<h3 id="features-5">Features</h3>
 <ul>
 <li><strong>renderer:</strong> fresh impersonated session per hop attempt (<a href="https://github.com/fastcrw/crw/commit/b4d226ba29ecddc94ec841fda070fefdd1233b2c">b4d226b</a>)</li>
 </ul>
@@ -443,7 +448,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> check the key_share entry in the preset sentinel (<a href="https://github.com/fastcrw/crw/commit/48864affbcc7433d0bfd6e967be7bfe1dd1a1809">48864af</a>)</li>
 </ul>
 <h2 id="0380-2026-10-17"><a href="https://github.com/fastcrw/crw/compare/v0.37.2...v0.38.0">0.38.0</a> (2026-10-17)</h2>
-<h3 id="features-5">Features</h3>
+<h3 id="features-6">Features</h3>
 <ul>
 <li><strong>extract:</strong> configurable LLM timeout for JSON extraction (<a href="https://github.com/fastcrw/crw/commit/fa65e804223fc648067cee79f62047f31f10be10">fa65e80</a>)</li>
 <li><strong>renderer:</strong> configurable residential proxy username format (<a href="https://github.com/fastcrw/crw/commit/808f6540af69cc26445d4e3a5e5cf8501947d39c">808f654</a>)</li>
@@ -489,7 +494,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> own the Chrome profile dir and reap the browser tree on Windows (<a href="https://github.com/fastcrw/crw/commit/850bf3a5f34e94a99745834292f0ec0a7c329664">850bf3a</a>), closes <a href="https://github.com/fastcrw/crw/issues/594">#594</a></li>
 </ul>
 <h2 id="0370-2026-09-29"><a href="https://github.com/fastcrw/crw/compare/v0.36.0...v0.37.0">0.37.0</a> (2026-09-29)</h2>
-<h3 id="features-6">Features</h3>
+<h3 id="features-7">Features</h3>
 <ul>
 <li><strong>mcp:</strong> advertise maxAge on crw_scrape so callers can tune the fetch cache (<a href="https://github.com/fastcrw/crw/commit/c34da2d6f97fcbb9f3b225ede4a687eb605e613a">c34da2d</a>)</li>
 <li><strong>renderer:</strong> reach the solver tier on hosts that block datacenter addresses (<a href="https://github.com/fastcrw/crw/commit/63762e724b115915316bda2fa4944a3ce185a443">63762e7</a>)</li>
@@ -516,7 +521,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> stop spending the JS ladder on a 404 with nothing to hydrate (<a href="https://github.com/fastcrw/crw/commit/fc18b2cf6f610c50f251ad6686d4b99a660aebbe">fc18b2c</a>)</li>
 </ul>
 <h2 id="0360-2026-09-19"><a href="https://github.com/us/crw/compare/v0.35.1...v0.36.0">0.36.0</a> (2026-09-19)</h2>
-<h3 id="features-7">Features</h3>
+<h3 id="features-8">Features</h3>
 <ul>
 <li><strong>scrape:</strong> cache the fetch so a repeat scrape skips the network (<a href="https://github.com/us/crw/commit/601d5f50382cd2f793562a822b675a0231be4f0c">601d5f5</a>)</li>
 </ul>
@@ -542,7 +547,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>docker:</strong> cross-compile BoringSSL for the arm64 image leg (<a href="https://github.com/us/crw/commit/7d748e584aa0d76c83d2bc0230534bfbb055bea2">7d748e5</a>)</li>
 </ul>
 <h2 id="0350-2026-09-10"><a href="https://github.com/us/crw/compare/v0.34.1...v0.35.0">0.35.0</a> (2026-09-10)</h2>
-<h3 id="features-8">Features</h3>
+<h3 id="features-9">Features</h3>
 <ul>
 <li><strong>renderer:</strong> impersonated-http tier with a real Chrome TLS fingerprint (<a href="https://github.com/us/crw/commit/8a388ed83e0aca41370cc51d3ad1a179fc0d5218">8a388ed</a>)</li>
 </ul>
@@ -556,7 +561,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> report failures truthfully, scope breaker verdicts (<a href="https://github.com/us/crw/commit/36f4a0a7483ac78e9fd16beafcbd0ad25765618c">36f4a0a</a>)</li>
 </ul>
 <h2 id="0340-2026-09-08"><a href="https://github.com/us/crw/compare/v0.33.0...v0.34.0">0.34.0</a> (2026-09-08)</h2>
-<h3 id="features-9">Features</h3>
+<h3 id="features-10">Features</h3>
 <ul>
 <li><strong>renderer:</strong> align browser locale with the proxy exit country (<a href="https://github.com/us/crw/commit/6155ac6e670a65f594270f7a39157df8c66644b6">6155ac6</a>), closes <a href="https://github.com/us/crw/issues/385">#385</a></li>
 <li><strong>renderer:</strong> let camoufox wait out a JS challenge instead of reporting it (<a href="https://github.com/us/crw/commit/86766d5b329bdb2fa8af0f3d197dbae098ee9e6f">86766d5</a>)</li>
@@ -576,7 +581,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>v2:</strong> report per-URL batch and crawl failures on the errors route (<a href="https://github.com/us/crw/commit/c486731c52c509b6f9a7d356fef8c5b4d446c450">c486731</a>)</li>
 </ul>
 <h2 id="0330-2026-09-02"><a href="https://github.com/us/crw/compare/v0.32.0...v0.33.0">0.33.0</a> (2026-09-02)</h2>
-<h3 id="features-10">Features</h3>
+<h3 id="features-11">Features</h3>
 <ul>
 <li>enhance crawl error diagnostics and configurable headers (<a href="https://github.com/us/crw/commit/93b4c117dd7dd569f1f0b9abce8d3416cf162e75">93b4c11</a>)</li>
 </ul>
@@ -590,7 +595,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>scrape:</strong> classify a wall and an empty result as failures (<a href="https://github.com/us/crw/commit/96a4b4395366cafcd1a6314b7a0af8fb6db82cab">96a4b43</a>)</li>
 </ul>
 <h2 id="0320-2026-08-24"><a href="https://github.com/us/crw/compare/v0.31.0...v0.32.0">0.32.0</a> (2026-08-24)</h2>
-<h3 id="features-11">Features</h3>
+<h3 id="features-12">Features</h3>
 <ul>
 <li><strong>map:</strong> return discovered sitemap document URLs (<a href="https://github.com/us/crw/commit/c65ea1c607609b3f6c2e7874f2789c307fb56fa6">c65ea1c</a>), closes <a href="https://github.com/us/crw/issues/440">#440</a></li>
 <li><strong>setup:</strong> register MCP with detected agents on scripted setup (<a href="https://github.com/us/crw/commit/2cb5f711f48f8bbf04def1e6a62dc44ed3939272">2cb5f71</a>)</li>
@@ -606,7 +611,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>sdk:</strong> follow batch pagination and stop on cancel in both SDKs (<a href="https://github.com/us/crw/commit/47dd99b9ee4b56b13c86d44173af7b1a3ed70893">47dd99b</a>)</li>
 </ul>
 <h2 id="0310-2026-08-18"><a href="https://github.com/us/crw/compare/v0.30.0...v0.31.0">0.31.0</a> (2026-08-18)</h2>
-<h3 id="features-12">Features</h3>
+<h3 id="features-13">Features</h3>
 <ul>
 <li><strong>search:</strong> carry a paid-rescue entitlement to the search backend (<a href="https://github.com/us/crw/commit/d7812a0e62fd4f5d92660df3254ce01146f78d8e">d7812a0</a>)</li>
 <li><strong>search:</strong> per-request query-expand override and deadline-bounded scout (<a href="https://github.com/us/crw/commit/8436b434ca3b5ebc615bc81337ca7ec27e2c5118">8436b43</a>)</li>
@@ -630,7 +635,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>scrape:</strong> stop selling registrar parking pages as content (<a href="https://github.com/us/crw/commit/68f45456231bfc6895db81131b59a92ce1f14b6d">68f4545</a>)</li>
 </ul>
 <h2 id="0300-2026-08-07"><a href="https://github.com/us/crw/compare/v0.29.0...v0.30.0">0.30.0</a> (2026-08-07)</h2>
-<h3 id="features-13">Features</h3>
+<h3 id="features-14">Features</h3>
 <ul>
 <li><strong>mcp:</strong> add option to hide credit-billing fields (<a href="https://github.com/us/crw/commit/bc951f1ce687657341c8844e173b7664632c65a5">bc951f1</a>)</li>
 <li><strong>renderer:</strong> make the interactive render reserve configurable (<a href="https://github.com/us/crw/commit/9fdcde8d5ee071cc75e933b2dfdb92c7c4172508">9fdcde8</a>)</li>
@@ -653,7 +658,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> cut chrome challenge retries 3 to 1 in docker config (<a href="https://github.com/us/crw/commit/81774c767e09ab1be05c2ff4aff3d29d0e638531">81774c7</a>)</li>
 </ul>
 <h2 id="0290-2026-08-04"><a href="https://github.com/us/crw/compare/v0.28.0...v0.29.0">0.29.0</a> (2026-08-04)</h2>
-<h3 id="features-14">Features</h3>
+<h3 id="features-15">Features</h3>
 <ul>
 <li><strong>extract:</strong> expand table rowspan/colspan into a flat grid (<a href="https://github.com/us/crw/commit/0f486aa556fda6e24f2b683e9f593ae39f8013d4">0f486aa</a>)</li>
 <li><strong>extract:</strong> support openai-responses LLM provider (<a href="https://github.com/us/crw/commit/ed551e3257da61a238efc188c9c064462591851d">ed551e3</a>)</li>
@@ -681,7 +686,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> validate <code>lang</code> at the API boundary (<a href="https://github.com/us/crw/commit/52711fe42b1acbdff54b18b57f1e44653c2aad7c">52711fe</a>)</li>
 </ul>
 <h2 id="0280-2026-07-23"><a href="https://github.com/us/crw/compare/v0.27.1...v0.28.0">0.28.0</a> (2026-07-23)</h2>
-<h3 id="features-15">Features</h3>
+<h3 id="features-16">Features</h3>
 <ul>
 <li><strong>sdk:</strong> add typed response object interfaces (<a href="https://github.com/us/crw/commit/a2acacb1e6cbf3077fdd089f710cac75eb7eabda">a2acacb</a>), closes <a href="https://github.com/us/crw/issues/361">#361</a></li>
 </ul>
@@ -710,7 +715,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> distinguish a degraded backend from a zero-result query (<a href="https://github.com/us/crw/commit/c8c031a13793d96bbd05d4ebabd1846c5f88117a">c8c031a</a>)</li>
 </ul>
 <h2 id="0270-2026-07-21"><a href="https://github.com/us/crw/compare/v0.26.1...v0.27.0">0.27.0</a> (2026-07-21)</h2>
-<h3 id="features-16">Features</h3>
+<h3 id="features-17">Features</h3>
 <ul>
 <li><strong>docker:</strong> make published bind address configurable (<a href="https://github.com/us/crw/commit/79ac8f700895694a05d7c2f097617930e0784892">79ac8f7</a>)</li>
 <li><strong>renderer:</strong> route learned CF-managed domains straight to cloak (<a href="https://github.com/us/crw/commit/884ed635b19af2dd3b80092deb83072ff2f1982a">884ed63</a>)</li>
@@ -728,7 +733,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>server:</strong> require auth on admin and metrics routes, restrict CORS (<a href="https://github.com/us/crw/commit/1a662473da9a98173c4f7e6d42280049799d3895">1a66247</a>)</li>
 </ul>
 <h2 id="0260-2026-07-19"><a href="https://github.com/us/crw/compare/v0.25.2...v0.26.0">0.26.0</a> (2026-07-19)</h2>
-<h3 id="features-17">Features</h3>
+<h3 id="features-18">Features</h3>
 <ul>
 <li><strong>extract:</strong> expose extracted images in scrape response (<a href="https://github.com/us/crw/commit/7d632ef56cd20fd9a30784bb400b19593cdad74e">7d632ef</a>)</li>
 <li><strong>renderer:</strong> let the cloak arm self-provision its residential proxy (<a href="https://github.com/us/crw/commit/35bc4728913628f310f0872573c3bb7b5b93b87f">35bc472</a>)</li>
@@ -757,7 +762,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> avoid panic slicing multibyte HTML at the scan-size cap (<a href="https://github.com/us/crw/commit/95fe1894e6d98b6e32ef58fd9110020162e2655b">95fe189</a>)</li>
 </ul>
 <h2 id="0250-2026-07-16"><a href="https://github.com/us/crw/compare/v0.24.1...v0.25.0">0.25.0</a> (2026-07-16)</h2>
-<h3 id="features-18">Features</h3>
+<h3 id="features-19">Features</h3>
 <ul>
 <li><strong>engine:</strong> add opt-in cloak Turnstile-solver recovery tier (<a href="https://github.com/us/crw/commit/41f780e0ea5d4e74d363a79cd108b33663b00bb1">41f780e</a>)</li>
 <li><strong>extract:</strong> add canonical cancellation lifecycle (<a href="https://github.com/us/crw/commit/635679f3c279d1961db1ad021c3eb2bd800a34c4">635679f</a>)</li>
@@ -784,7 +789,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <ul>
 <li><strong>server:</strong> the <code>monitor</code> cargo feature and the crw-monitor crate are removed. Self-hosted scheduled monitoring must be driven by an external scheduler calling the stateless change-tracking primitives.</li>
 </ul>
-<h3 id="features-19">Features</h3>
+<h3 id="features-20">Features</h3>
 <ul>
 <li><strong>bench:</strong> live answer track + managed-endpoint support (<a href="https://github.com/us/crw/commit/278d6d52fb694e6820f27014413fb9f9dfd9f742">278d6d5</a>)</li>
 <li><strong>bench:</strong> multi-track benchmark discipline (<a href="https://github.com/us/crw/commit/887623c885c9a7299d34a622254f78a5882a3cb6">887623c</a>)</li>
@@ -813,7 +818,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <ul>
 <li><strong>server:</strong> SDK extract() now returns a per-URL results array instead of a merged object, and no longer accepts systemPrompt or baseUrl.</li>
 </ul>
-<h3 id="features-20">Features</h3>
+<h3 id="features-21">Features</h3>
 <ul>
 <li><strong>server:</strong> native /v1/extract endpoint (<a href="https://github.com/us/crw/commit/b5fc49441a440da37f9a094fb68a9a813380a814">b5fc494</a>)</li>
 <li><strong>server:</strong> reserve interactive capacity from batch + plan-scaled width (<a href="https://github.com/us/crw/commit/ada487de8b8b7b98ece7eed012da0d406e2d21de">ada487d</a>)</li>
@@ -827,7 +832,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>docker:</strong> build only requested binaries via CARGO_PKGS arg (<a href="https://github.com/us/crw/commit/98b6626bc949cc1b89401306b5bb31ab47e60b89">98b6626</a>)</li>
 </ul>
 <h2 id="0220-2026-07-09"><a href="https://github.com/us/crw/compare/v0.21.3...v0.22.0">0.22.0</a> (2026-07-09)</h2>
-<h3 id="features-21">Features</h3>
+<h3 id="features-22">Features</h3>
 <ul>
 <li><strong>cli:</strong> non-interactive cloud setup via &#39;crw setup --api-key&#39; (<a href="https://github.com/us/crw/commit/e7cc4f99b29d88608b1fbe3359fab8ba179695ce">e7cc4f9</a>)</li>
 <li><strong>installer:</strong> connect to cloud when CRW_API_KEY is set (<a href="https://github.com/us/crw/commit/fedb5de046da3578d2207ba40bf66671d198f9c9">fedb5de</a>)</li>
@@ -866,7 +871,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <ul>
 <li><strong>api:</strong> error responses now use <code>errorCode</code> instead of <code>error_code</code>. The managed API already strips the field, so managed clients are unaffected; self-hosted clients parsing <code>error_code</code> should read <code>errorCode</code>.</li>
 </ul>
-<h3 id="features-22">Features</h3>
+<h3 id="features-23">Features</h3>
 <ul>
 <li><strong>cli:</strong> add crw bench FRAMES harness (<a href="https://github.com/us/crw/commit/fb78bcb57b3add83db28e5ecdbaf39ef39d067fe">fb78bcb</a>)</li>
 <li><strong>cli:</strong> bench A/B flags, concurrency, crash-safe writes (<a href="https://github.com/us/crw/commit/7eb059edac5ea1f857aca34e97a83145928064ee">7eb059e</a>)</li>
@@ -889,7 +894,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> charset-aware scrape decode + per-result error + neutral answer warnings (<a href="https://github.com/us/crw/commit/a9870e2faa25a23de0d004054c37a7f04f026fa8">a9870e2</a>)</li>
 </ul>
 <h2 id="0200-2026-07-01"><a href="https://github.com/us/crw/compare/v0.19.0...v0.20.0">0.20.0</a> (2026-07-01)</h2>
-<h3 id="features-23">Features</h3>
+<h3 id="features-24">Features</h3>
 <ul>
 <li><strong>map:</strong> escalate anti-bot-gated sitemaps through the JS renderer (<a href="https://github.com/us/crw/commit/2634a7e0a5c2670d8075ef1ef5547716e62ad2e3">2634a7e</a>)</li>
 <li><strong>map:</strong> fix URL discovery on hard sites + configurable discovery limit (<a href="https://github.com/us/crw/commit/f5fe1f4a9487643e7e58ef7d5c29e5d988fcdc42">f5fe1f4</a>)</li>
@@ -899,7 +904,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> flat 1-credit cost for every renderer (<a href="https://github.com/us/crw/commit/35a604cabf375d5e956adc0ec18f017e57309e79">35a604c</a>)</li>
 </ul>
 <h2 id="0190-2026-06-28"><a href="https://github.com/us/crw/compare/v0.18.3...v0.19.0">0.19.0</a> (2026-06-28)</h2>
-<h3 id="features-24">Features</h3>
+<h3 id="features-25">Features</h3>
 <ul>
 <li><strong>renderer:</strong> proxy-retry on origin rate-limit (429) (<a href="https://github.com/us/crw/commit/da7ecdaff97b6d9aa995f4353afeadae91b328ef">da7ecda</a>)</li>
 <li><strong>renderer:</strong> relaxed-TLS fallback for cert-broken origins (<a href="https://github.com/us/crw/commit/13d39f692d42cc64f00389bf55943dd51a6a49ad">13d39f6</a>)</li>
@@ -924,7 +929,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>npm:</strong> ship bin/install.js + bin/agents.js in the crw-mcp package (<a href="https://github.com/us/crw/commit/437dbc760630e58819cfcb860d84dfb3ba5061b5">437dbc7</a>)</li>
 </ul>
 <h2 id="0180-2026-06-23"><a href="https://github.com/us/crw/compare/v0.17.0...v0.18.0">0.18.0</a> (2026-06-23)</h2>
-<h3 id="features-25">Features</h3>
+<h3 id="features-26">Features</h3>
 <ul>
 <li><strong>extract:</strong> optional reasoning_effort config field (<a href="https://github.com/us/crw/commit/e677190a6c54d0987e09ac9dcc5580f5df28371a">e677190</a>)</li>
 <li><strong>install:</strong> auto-launch <code>crw setup</code> after install + conversion-tuned copy (<a href="https://github.com/us/crw/commit/5cc35f915c54827481fbfc136d712928a84e66b0">5cc35f9</a>)</li>
@@ -941,7 +946,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>stealth:</strong> bump UA + Sec-Ch-Ua from Chrome 131 to 150 (<a href="https://github.com/us/crw/commit/695863cb09279e3bdee06928cbfb8b120a74e61b">695863c</a>)</li>
 </ul>
 <h2 id="0170-2026-06-21"><a href="https://github.com/us/crw/compare/v0.16.0...v0.17.0">0.17.0</a> (2026-06-21)</h2>
-<h3 id="features-26">Features</h3>
+<h3 id="features-27">Features</h3>
 <ul>
 <li><strong>renderer:</strong> add opt-in Camoufox stealth renderer tier (<a href="https://github.com/us/crw/commit/744beda540fad3e17b6d9c1d2127cad30ab83767">744beda</a>)</li>
 <li><strong>renderer:</strong> conditional hedge + event-driven readiness for p90 (<a href="https://github.com/us/crw/commit/90650079d8f34e65cf67f22aad5bf96f62c580ef">9065007</a>)</li>
@@ -967,7 +972,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> research concurrency 4-&gt;8, cache cap 20k-&gt;3k (<a href="https://github.com/us/crw/commit/e3a6ac3bef2a901a9f87b1cb710d594154ebe00f">e3a6ac3</a>)</li>
 </ul>
 <h2 id="0160-2026-06-14"><a href="https://github.com/us/crw/compare/v0.15.2...v0.16.0">0.16.0</a> (2026-06-14)</h2>
-<h3 id="features-27">Features</h3>
+<h3 id="features-28">Features</h3>
 <ul>
 <li><strong>mcp:</strong> optimize MCP server for context, weight, and conformance (<a href="https://github.com/us/crw/commit/aac7999b9379fd8b6ef818ce37f78634416f79c1">aac7999</a>)</li>
 <li><strong>proxy:</strong> add proxy list + rotation primitives and HTTP-path rotation (<a href="https://github.com/us/crw/commit/776e9fbad4ee509ec5201020772169d151e0587f">776e9fb</a>)</li>
@@ -999,7 +1004,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <ul>
 <li>CrwClient() with no API key now targets the cloud and raises if unauthenticated, instead of running locally. Set CRW_LOCAL=1 for the previous zero-config local behavior.</li>
 </ul>
-<h3 id="features-28">Features</h3>
+<h3 id="features-29">Features</h3>
 <ul>
 <li>add TypeScript SDK (crw-sdk) (<a href="https://github.com/us/crw/commit/1dd96f7037933f933773ef92d97b68af9134906a">1dd96f7</a>)</li>
 <li>cloud-first default + full client SDK parity (<a href="https://github.com/us/crw/commit/21e819ed8a863929bb67323c8b8c4b37ac5f712f">21e819e</a>)</li>
@@ -1017,7 +1022,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> reap CDP target + context on PoolGuard cancellation drop (<a href="https://github.com/us/crw/commit/0eebadcb1a4360a0dad5b682301c181a0c328259">0eebadc</a>)</li>
 </ul>
 <h2 id="0140-2026-06-08"><a href="https://github.com/us/crw/compare/v0.13.4...v0.14.0">0.14.0</a> (2026-06-08)</h2>
-<h3 id="features-29">Features</h3>
+<h3 id="features-30">Features</h3>
 <ul>
 <li><strong>onboarding:</strong> cloud-default messaging + api.fastcrw.com base URL (<a href="https://github.com/us/crw/commit/4ccc92c065027d900f0bd67e0273216bd76aa065">4ccc92c</a>)</li>
 <li><strong>pdf:</strong> PDF→markdown via pdf-inspector with Firecrawl-compatible parsers + /v2/parse (<a href="https://github.com/us/crw/commit/196b153db011807a80a2b19155ef0605a3ca692b">196b153</a>)</li>
@@ -1055,7 +1060,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>release:</strong> correct publish tier ordering + guard topology (<a href="https://github.com/us/crw/commit/c84deedeeeb2698f50d94247b770560cd6f3d0df">c84deed</a>)</li>
 </ul>
 <h2 id="0130-2026-06-06"><a href="https://github.com/us/crw/compare/v0.12.1...v0.13.0">0.13.0</a> (2026-06-06)</h2>
-<h3 id="features-30">Features</h3>
+<h3 id="features-31">Features</h3>
 <ul>
 <li><strong>search:</strong> deterministic Wikidata entity-relation lookup (W3) (<a href="https://github.com/us/crw/commit/aa96e3e182fad6d8e2caf03628461515ca5aab7f">aa96e3e</a>)</li>
 </ul>
@@ -1070,7 +1075,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>release:</strong> sync Cargo.lock with bumped internal dep versions (<a href="https://github.com/us/crw/commit/5c89d6037e32435a49cfd4fbdf1c2ba05ad83ae8">5c89d60</a>)</li>
 </ul>
 <h2 id="0120-2026-06-05"><a href="https://github.com/us/crw/compare/v0.11.0...v0.12.0">0.12.0</a> (2026-06-05)</h2>
-<h3 id="features-31">Features</h3>
+<h3 id="features-32">Features</h3>
 <ul>
 <li><strong>answer:</strong> gated moat-hardening abstention (answer_guarded) (<a href="https://github.com/us/crw/commit/7ef7f32c085f4e01429b4afa6794c52836cdd4e6">7ef7f32</a>)</li>
 <li><strong>mcp:</strong> emit structuredContent for crw_search; bump protocol to 2025-06-18 (<a href="https://github.com/us/crw/commit/0cd9a4fa0e338683b75c5719bc3c54cca3b2dba6">0cd9a4f</a>), closes <a href="https://github.com/us/crw/issues/89">#89</a></li>
@@ -1082,7 +1087,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> use resolvable searxng host in docker config (<a href="https://github.com/us/crw/issues/90">#90</a>) (<a href="https://github.com/us/crw/commit/d9660219d23bdd4364940c97c9911dd31e73567b">d966021</a>)</li>
 </ul>
 <h2 id="0110-2026-06-03"><a href="https://github.com/us/crw/compare/v0.10.0...v0.11.0">0.11.0</a> (2026-06-03)</h2>
-<h3 id="features-32">Features</h3>
+<h3 id="features-33">Features</h3>
 <ul>
 <li><strong>api:</strong> serve /openapi.json and /openapi-3.0.json from crw-server (<a href="https://github.com/us/crw/commit/3dc79b443b6a41c3f325865aaa6bccdf562fda49">3dc79b4</a>)</li>
 <li><strong>docs:</strong> ship OpenAPI spec, SKILL.md, and agent-shell (<a href="https://github.com/us/crw/commit/2145c977463b8d5577e5cf81d3c4106ea20eddb4">2145c97</a>)</li>
@@ -1129,7 +1134,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> calibrated answer top_n 8-&gt;5 (4x faster, accuracy holds) (<a href="https://github.com/us/crw/issues/80">#80</a>) (<a href="https://github.com/us/crw/commit/751f8ee160d28b84d352e533864ca4043793d294">751f8ee</a>)</li>
 </ul>
 <h2 id="0100-2026-05-20"><a href="https://github.com/us/crw/compare/v0.9.1...v0.10.0">0.10.0</a> (2026-05-20)</h2>
-<h3 id="features-33">Features</h3>
+<h3 id="features-34">Features</h3>
 <ul>
 <li><strong>detector:</strong> add vendor-specific anti-bot block markers (<a href="https://github.com/us/crw/commit/c88c508fb90b166dfe3727fd5dfb4f1597e43667">c88c508</a>)</li>
 <li><strong>renderer:</strong> add chrome_proxy as 4th fallback tier (<a href="https://github.com/us/crw/commit/b4da4f79bb4d0ed71c25f14aaae5137d00f8b26b">b4da4f7</a>)</li>
@@ -1147,12 +1152,12 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>release:</strong> sync crw-cli internal dep versions with workspace (<a href="https://github.com/us/crw/commit/26c528e737c5ed136d3c6e72da36b9324363805f">26c528e</a>)</li>
 </ul>
 <h2 id="090-2026-05-16"><a href="https://github.com/us/crw/compare/v0.8.3...v0.9.0">0.9.0</a> (2026-05-16)</h2>
-<h3 id="features-34">Features</h3>
+<h3 id="features-35">Features</h3>
 <ul>
 <li><strong>cli:</strong> add AI extraction flags and <code>crw setup --reset</code> (<a href="https://github.com/us/crw/commit/912eea0a1fa0db5a838560f2c25da44b3ee33d44">912eea0</a>)</li>
 </ul>
 <h2 id="083-2026-05-15"><a href="https://github.com/us/crw/compare/v0.8.2...v0.8.3">0.8.3</a> (2026-05-15)</h2>
-<h3 id="features-35">Features</h3>
+<h3 id="features-36">Features</h3>
 <ul>
 <li><strong>cli:</strong> two-phase auto-fallback for <code>crw &lt;url&gt;</code> scrape (<a href="https://github.com/us/crw/commit/a871e544443673751974a8dc5ebb4f2b0eafd59f">a871e54</a>)</li>
 <li><strong>setup:</strong> make config.toml the canonical source for <code>crw setup</code> (<a href="https://github.com/us/crw/commit/b07c1549932399a355d30e15632d424f0ad28b85">b07c154</a>)</li>
@@ -1163,7 +1168,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>release 0.8.3 (<a href="https://github.com/us/crw/commit/efba1b308d6ac3a5e7a5bbd3f132514bf631e86b">efba1b3</a>)</li>
 </ul>
 <h2 id="082-2026-05-15"><a href="https://github.com/us/crw/compare/v0.8.2...v0.8.2">0.8.2</a> (2026-05-15)</h2>
-<h3 id="features-36">Features</h3>
+<h3 id="features-37">Features</h3>
 <ul>
 <li><strong>cli:</strong> two-phase auto-fallback for <code>crw &lt;url&gt;</code> scrape (<a href="https://github.com/us/crw/commit/a871e544443673751974a8dc5ebb4f2b0eafd59f">a871e54</a>)</li>
 <li><strong>setup:</strong> make config.toml the canonical source for <code>crw setup</code> (<a href="https://github.com/us/crw/commit/b07c1549932399a355d30e15632d424f0ad28b85">b07c154</a>)</li>
@@ -1183,7 +1188,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>cli:</strong> mark crw-cli as publish=false to fix release (<a href="https://github.com/us/crw/commit/3104cc5acec6d6a0307adbb5cc9897ce04417a16">3104cc5</a>)</li>
 </ul>
 <h2 id="080-2026-05-14"><a href="https://github.com/us/crw/compare/v0.7.1...v0.8.0">0.8.0</a> (2026-05-14)</h2>
-<h3 id="features-37">Features</h3>
+<h3 id="features-38">Features</h3>
 <ul>
 <li><strong>cli:</strong> add interactive setup wizard (<a href="https://github.com/us/crw/commit/a5613b965d3444ab0ad214b976cbf6e56747e523">a5613b9</a>)</li>
 </ul>
@@ -1193,22 +1198,22 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>bump stale internal version pins to 0.7.0 (<a href="https://github.com/us/crw/issues/48">#48</a>) (<a href="https://github.com/us/crw/commit/0bec22a76e03f428e28281b30bb34364bf5e5edd">0bec22a</a>)</li>
 </ul>
 <h2 id="070-2026-05-12"><a href="https://github.com/us/crw/compare/v0.6.4...v0.7.0">0.7.0</a> (2026-05-12)</h2>
-<h3 id="features-38">Features</h3>
+<h3 id="features-39">Features</h3>
 <ul>
 <li>LLM summary and search answer (BYOK) (<a href="https://github.com/us/crw/issues/45">#45</a>) (<a href="https://github.com/us/crw/commit/ffcc2a52cd273dc334dd46b663be24fd45df4711">ffcc2a5</a>)</li>
 </ul>
 <h2 id="064-2026-05-12"><a href="https://github.com/us/crw/compare/v0.6.3...v0.6.4">0.6.4</a> (2026-05-12)</h2>
-<h3 id="features-39">Features</h3>
+<h3 id="features-40">Features</h3>
 <ul>
 <li><strong>renderer:</strong> add bounded browser-context pool for Chrome tier (<a href="https://github.com/us/crw/issues/43">#43</a>) (<a href="https://github.com/us/crw/commit/69b48610d269c37fa043bcd58855b3970f554f94">69b4861</a>)</li>
 </ul>
 <h2 id="063-2026-05-12"><a href="https://github.com/us/crw/compare/v0.6.2...v0.6.3">0.6.3</a> (2026-05-12)</h2>
-<h3 id="features-40">Features</h3>
+<h3 id="features-41">Features</h3>
 <ul>
 <li><strong>map:</strong> drop action URLs and strip tracking params (closes <a href="https://github.com/us/crw/issues/40">#40</a>) (<a href="https://github.com/us/crw/issues/41">#41</a>) (<a href="https://github.com/us/crw/commit/6d9ed39f67e4d92cc51ca16ccc21e451c4bb0373">6d9ed39</a>)</li>
 </ul>
 <h2 id="062-2026-05-10"><a href="https://github.com/us/crw/compare/v0.6.1...v0.6.2">0.6.2</a> (2026-05-10)</h2>
-<h3 id="features-41">Features</h3>
+<h3 id="features-42">Features</h3>
 <ul>
 <li><strong>search:</strong> add /v1/search endpoint backed by bundled SearXNG sidecar (<a href="https://github.com/us/crw/commit/f4bd7f46db9f286e3c49be95a968951802a90710">f4bd7f4</a>)</li>
 </ul>
@@ -1224,7 +1229,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>search:</strong> use real SearXNG image tag and add fallback secret_key (<a href="https://github.com/us/crw/commit/be1f403648d352bc68037b0c5ba208729b96d1fa">be1f403</a>)</li>
 </ul>
 <h2 id="061-2026-05-09"><a href="https://github.com/us/crw/compare/v0.6.0...v0.6.1">0.6.1</a> (2026-05-09)</h2>
-<h3 id="features-42">Features</h3>
+<h3 id="features-43">Features</h3>
 <ul>
 <li><strong>metrics:</strong> cdp_pending_requests, cdp_live_connections, (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
 <li><strong>renderer:</strong> live-connection registry + 60s telemetry sampler (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
@@ -1237,7 +1242,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> invalidate cached chrome WS URL on connect failure (<a href="https://github.com/us/crw/commit/b5f7bec28308e4f0094b7bbcbbecc5d2f734e385">b5f7bec</a>)</li>
 </ul>
 <h2 id="060-2026-05-09"><a href="https://github.com/us/crw/compare/v0.5.0...v0.6.0">0.6.0</a> (2026-05-09)</h2>
-<h3 id="features-43">Features</h3>
+<h3 id="features-44">Features</h3>
 <ul>
 <li><strong>extract:</strong> scale recall to 63.74% on 1000-URL benchmark (<a href="https://github.com/us/crw/commit/5b855554c5f7ba16981fbe2060e25cca4ba81686">5b85555</a>)</li>
 <li><strong>renderer:</strong> add browserless/chromium opt-in stealth profile (+2.5pt) (<a href="https://github.com/us/crw/commit/d2414c9cd89dc01447b9e52501aa26180ce7d326">d2414c9</a>)</li>
@@ -1249,7 +1254,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>release 0.6.0 (<a href="https://github.com/us/crw/commit/bd03a352922b293431e49722c052f90c945f1c56">bd03a35</a>)</li>
 </ul>
 <h2 id="050-2026-05-04"><a href="https://github.com/us/crw/compare/v0.4.2...v0.5.0">0.5.0</a> (2026-05-04)</h2>
-<h3 id="features-44">Features</h3>
+<h3 id="features-45">Features</h3>
 <ul>
 <li><strong>core:</strong> add deadline module and request/renderer config scaffolding (<a href="https://github.com/us/crw/commit/5a4e69ae605d15c0090f3d866db0f8f4fa23a715">5a4e69a</a>)</li>
 <li><strong>core:</strong> thread end-to-end Deadline through scrape pipeline (<a href="https://github.com/us/crw/commit/5991986cdac9756500dab40b8bf05ad454dbd21c">5991986</a>)</li>
@@ -1286,7 +1291,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>release 0.5.0 (<a href="https://github.com/us/crw/commit/3987de1b15b5d7605cc26645d14b74020c8eb7a9">3987de1</a>)</li>
 </ul>
 <h2 id="042-2026-04-29"><a href="https://github.com/us/crw/compare/v0.4.1...v0.4.2">0.4.2</a> (2026-04-29)</h2>
-<h3 id="features-45">Features</h3>
+<h3 id="features-46">Features</h3>
 <ul>
 <li><strong>core:</strong> add render decision types and prometheus metrics scaffold (<a href="https://github.com/us/crw/commit/e08682b761822a7100e0f40cffe4cd4f3dcf2a5c">e08682b</a>)</li>
 <li><strong>renderer:</strong> add per-host renderer preference cache (<a href="https://github.com/us/crw/commit/21e41d1330bed255854824f55c3419a590a86411">21e41d1</a>)</li>
@@ -1300,7 +1305,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> probe lifecycle, RAII guard, breaker counter (<a href="https://github.com/us/crw/commit/02044f573cd6274231b3856cd799d7e74d61f9ba">02044f5</a>)</li>
 </ul>
 <h2 id="041-2026-04-28"><a href="https://github.com/us/crw/compare/v0.4.0...v0.4.1">0.4.1</a> (2026-04-28)</h2>
-<h3 id="features-46">Features</h3>
+<h3 id="features-47">Features</h3>
 <ul>
 <li>add per-request renderer field for scrape and crawl APIs (<a href="https://github.com/us/crw/issues/29">#29</a>) (<a href="https://github.com/us/crw/commit/f1e0b63fd28be0ceb38342086a309f92bbbc1e53">f1e0b63</a>)</li>
 <li><strong>crw-browse:</strong> add interactive browser MCP server with phase-2 tools (<a href="https://github.com/us/crw/commit/e78879db18c7c4b3df2a4984349a65b4493b1cda">e78879d</a>)</li>
@@ -1313,7 +1318,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>docs:</strong> use absolute paths for logo and favicon assets (<a href="https://github.com/us/crw/commit/cdb14517da6425c105b95749dec35bbc9e977f5e">cdb1451</a>)</li>
 </ul>
 <h2 id="040-2026-04-22"><a href="https://github.com/us/crw/compare/v0.3.6...v0.4.0">0.4.0</a> (2026-04-22)</h2>
-<h3 id="features-47">Features</h3>
+<h3 id="features-48">Features</h3>
 <ul>
 <li>add crw-browse MCP server, SOCKS5 proxy, extract mcp-proto (<a href="https://github.com/us/crw/commit/9a53753baf6d87272bd2417fc87102a8ed34d41b">9a53753</a>)</li>
 </ul>
@@ -1322,7 +1327,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>release 0.4.0 (<a href="https://github.com/us/crw/commit/e15fc74cf0dfc7c02ca7e6b82258aeff57f74f17">e15fc74</a>)</li>
 </ul>
 <h2 id="036-2026-04-21"><a href="https://github.com/us/crw/compare/v0.3.5...v0.3.6">0.3.6</a> (2026-04-21)</h2>
-<h3 id="features-48">Features</h3>
+<h3 id="features-49">Features</h3>
 <ul>
 <li><strong>ci:</strong> add Google Indexing API notification for docs changes (<a href="https://github.com/us/crw/commit/3b5a3404e91a1d776275ac312ad08cad86339a98">3b5a340</a>)</li>
 <li><strong>docs:</strong> generate static HTML pages for SEO indexability (<a href="https://github.com/us/crw/commit/7b321c0a26cea0da32d42e952f6327b468bdb099">7b321c0</a>)</li>
@@ -1334,7 +1339,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>renderer:</strong> detect loading placeholders and poll for content stability (<a href="https://github.com/us/crw/commit/d3b642b2736b4568fa8a3502e521b8bede60317f">d3b642b</a>)</li>
 </ul>
 <h2 id="035-2026-04-09"><a href="https://github.com/us/crw/compare/v0.3.4...v0.3.5">0.3.5</a> (2026-04-09)</h2>
-<h3 id="features-49">Features</h3>
+<h3 id="features-50">Features</h3>
 <ul>
 <li><strong>mcp:</strong> add crw_search tool for cloud/proxy mode (<a href="https://github.com/us/crw/commit/7fe4a8e79aae9dfcd0b400c17f175af583a33eef">7fe4a8e</a>)</li>
 </ul>
@@ -1344,7 +1349,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>config:</strong> env var overrides not applied due to missing prefix_separator (<a href="https://github.com/us/crw/commit/71c7ae544bd74575cf30101190d65708934bcb1f">71c7ae5</a>), closes <a href="https://github.com/us/crw/issues/18">#18</a></li>
 </ul>
 <h2 id="033-2026-04-09"><a href="https://github.com/us/crw/compare/v0.3.2...v0.3.3">0.3.3</a> (2026-04-09)</h2>
-<h3 id="features-50">Features</h3>
+<h3 id="features-51">Features</h3>
 <ul>
 <li>add APT/Debian package distribution (<a href="https://github.com/us/crw/commit/c34b8e93563c0f3f4b3fa1a1e395e6041e97766c">c34b8e9</a>)</li>
 <li><strong>renderer:</strong> spawn all available browsers for multi-renderer fallback (<a href="https://github.com/us/crw/commit/f546437568eb833684978793e5b79880f2710016">f546437</a>)</li>
@@ -1355,7 +1360,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>cli:</strong> auto-prepend https:// when no scheme provided (<a href="https://github.com/us/crw/commit/105060644acb1ef930555869372f5413947ac194">1050606</a>)</li>
 </ul>
 <h2 id="031-2026-04-08"><a href="https://github.com/us/crw/compare/v0.3.0...v0.3.1">0.3.1</a> (2026-04-08)</h2>
-<h3 id="features-51">Features</h3>
+<h3 id="features-52">Features</h3>
 <ul>
 <li>add llms.txt, SKILL.md, MCP init command, and docs UI improvements (<a href="https://github.com/us/crw/commit/1b22d194ec9a8b8db8db39a1d44ce38a56716f5d">1b22d19</a>)</li>
 <li>add one-line install script with auto platform detection (<a href="https://github.com/us/crw/commit/6354f7929896bb9a12eeebb9d5bf439731fac874">6354f79</a>)</li>
@@ -1372,7 +1377,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>remove internal implementation detail from roadmap (<a href="https://github.com/us/crw/commit/a5013f07f039615de5c5988e6bbf64629b56aa0e">a5013f0</a>)</li>
 </ul>
 <h2 id="030-2026-04-02"><a href="https://github.com/us/crw/compare/v0.2.2...v0.3.0">0.3.0</a> (2026-04-02)</h2>
-<h3 id="features-52">Features</h3>
+<h3 id="features-53">Features</h3>
 <ul>
 <li>add search() method to Python SDK and docs (<a href="https://github.com/us/crw/commit/591e3fed4bbd14b4470fd2f5cbc24c02f7543dba">591e3fe</a>)</li>
 </ul>
@@ -1389,7 +1394,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>use latest tag in server.json OCI identifier (<a href="https://github.com/us/crw/commit/7ec3b82ab78aa2c7ff900d07400f8a2426cb955f">7ec3b82</a>)</li>
 </ul>
 <h2 id="020-2026-03-28"><a href="https://github.com/us/crw/compare/v0.1.2...v0.2.0">0.2.0</a> (2026-03-28)</h2>
-<h3 id="features-53">Features</h3>
+<h3 id="features-54">Features</h3>
 <ul>
 <li>add MCP Registry support for official server discovery (<a href="https://github.com/us/crw/commit/154b9f520015260d012ebf899513c3af1f9dfe3d">154b9f5</a>)</li>
 </ul>
@@ -1404,12 +1409,12 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li>skip already-published crates without masking real errors (<a href="https://github.com/us/crw/commit/010649c522e4e49edcf51873d4c1065e08d510b1">010649c</a>)</li>
 </ul>
 <h2 id="010-2026-03-26"><a href="https://github.com/us/crw/compare/v0.0.14...v0.1.0">0.1.0</a> (2026-03-26)</h2>
-<h3 id="features-54">Features</h3>
+<h3 id="features-55">Features</h3>
 <ul>
 <li>add PDF extraction support via pdf-inspector (<a href="https://github.com/us/crw/commit/06dd5bf89caf004929f22d41d00f8a297d09b825">06dd5bf</a>)</li>
 </ul>
 <h2 id="0014-2026-03-25"><a href="https://github.com/us/crw/compare/v0.0.13...v0.0.14">0.0.14</a> (2026-03-25)</h2>
-<h3 id="features-55">Features</h3>
+<h3 id="features-56">Features</h3>
 <ul>
 <li><strong>mcp:</strong> auto-download LightPanda binary for zero-config JS rendering (<a href="https://github.com/us/crw/commit/41f443b885326401b653cfcba0054cb943672ca6">41f443b</a>)</li>
 <li><strong>mcp:</strong> auto-spawn headless Chrome for JS rendering in embedded mode (<a href="https://github.com/us/crw/commit/9a6b0ae3f16399f8f9f233109e431f74a882d973">9a6b0ae</a>)</li>
@@ -1419,7 +1424,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><strong>ci:</strong> move crw-mcp to Tier 4 in release workflow and add workflow_dispatch (<a href="https://github.com/us/crw/commit/d7584a82c0dd4ac0c6cd8b169b19939d92eb4e95">d7584a8</a>)</li>
 </ul>
 <h2 id="0013-2026-03-24"><a href="https://github.com/us/crw/compare/v0.0.12...v0.0.13">0.0.13</a> (2026-03-24)</h2>
-<h3 id="features-56">Features</h3>
+<h3 id="features-57">Features</h3>
 <ul>
 <li><strong>mcp:</strong> add embedded mode — self-contained MCP server, no crw-server needed (<a href="https://github.com/us/crw/commit/75e54504487f24ee30c0272bb83eb9aab807a284">75e5450</a>)</li>
 </ul>
