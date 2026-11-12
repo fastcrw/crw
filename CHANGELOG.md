@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.44.1](https://github.com/fastcrw/crw/compare/v0.44.0...v0.44.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **renderer:** redirect to a non-HTTP scheme answers 422 not 502 ([18ac4c0](https://github.com/fastcrw/crw/commit/18ac4c057057c71d783835fe955303ea537819ac))
+
 ## [0.44.0](https://github.com/fastcrw/crw/compare/v0.43.2...v0.44.0) (2026-11-10)
 
 
