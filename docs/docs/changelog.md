@@ -8,6 +8,13 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.44.0](https://github.com/fastcrw/crw/compare/v0.43.2...v0.44.0) (2026-11-10)
+
+
+### Features
+
+* **sdk:** mode and maxCredits on scrape, with the auto and max docs ([4d45920](https://github.com/fastcrw/crw/commit/4d45920c498e0222d14dbb189fab11110dc06b59))
+
 ## [0.43.2](https://github.com/fastcrw/crw/compare/v0.43.1...v0.43.2) (2026-11-10)
 
 
