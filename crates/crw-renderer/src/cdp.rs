@@ -2268,11 +2268,24 @@ fn is_challenge_page(html: &str) -> bool {
         return false;
     }
     let lower = html.to_lowercase();
+    // Not the bare `challenge-platform` directory, nor "challenge" next to
+    // "cloudflare": Cloudflare adds its telemetry script
+    // (`/cdn-cgi/challenge-platform/scripts/jsd/main.js`) to ordinary pages,
+    // including the one a cleared challenge reloads into, so either one kept
+    // the retry loop below polling a page that had already cleared.
+    // `challenge-platform/h/` is the challenge's own orchestrator (see
+    // `detector::looks_like_cloudflare_challenge`). Kasada's challenge page
+    // (an HTTP 429) runs its script and reloads into the site the same way,
+    // and so does Akamai's interstitial (`sec-if-cpt`) when its proof of work
+    // passes.
     lower.contains("just a moment")
         || lower.contains("cf-browser-verification")
         || lower.contains("cf-challenge-running")
-        || lower.contains("challenge-platform")
-        || (lower.contains("challenge") && lower.contains("cloudflare"))
+        || lower.contains("challenge-platform/h/")
+        || lower.contains("_cf_chl_opt")
+        || lower.contains("kpsdk.start=kpsdk.now()")
+        || lower.contains("kpsdk.scriptstart")
+        || lower.contains("sec-if-cpt")
         || lower.contains("attention required")
 }
 
@@ -5468,8 +5481,17 @@ mod tests {
     }
 
     #[test]
-    fn challenge_page_detects_challenge_platform_marker() {
-        assert!(is_challenge_page("loading challenge-platform assets"));
+    fn challenge_page_detects_challenge_orchestrator_not_telemetry() {
+        assert!(is_challenge_page(
+            "<script src=\"/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1\"></script>"
+        ));
+        assert!(is_challenge_page(
+            "<script>window._cf_chl_opt = {};</script>"
+        ));
+        // Cloudflare's telemetry loader is on ordinary and cleared pages too.
+        assert!(!is_challenge_page(
+            "<script src=\"/cdn-cgi/challenge-platform/scripts/jsd/main.js\"></script>"
+        ));
     }
 
     #[test]
@@ -5478,13 +5500,34 @@ mod tests {
     }
 
     #[test]
-    fn challenge_page_requires_both_words_for_generic_challenge_cloudflare_combo() {
-        // "challenge" alone (no "cloudflare") must NOT trip the detector —
-        // otherwise any page mentioning a coding challenge would false-positive.
+    fn challenge_page_detects_kasada() {
+        // hyatt.com's, served with HTTP 429, and the older form.
+        assert!(is_challenge_page(
+            "<script>window.KPSDK={};KPSDK.now=Date.now.bind(Date);KPSDK.start=KPSDK.now();</script>"
+        ));
+        assert!(is_challenge_page(
+            "<script>window.KPSDK={};KPSDK.now=Date.now;KPSDK.scriptStart=KPSDK.now();</script>"
+        ));
+    }
+
+    #[test]
+    fn challenge_page_detects_akamai_interstitial() {
+        // marriott.com's.
+        assert!(is_challenge_page(
+            r#"<div id="sec-if-cpt-container" role="main" style="display: none"><div class="behavioral-content"></div></div>"#
+        ));
+    }
+
+    #[test]
+    fn challenge_page_ignores_pages_that_mention_challenges() {
         assert!(!is_challenge_page(
             "<p>Take our coding challenge to join!</p>"
         ));
-        assert!(is_challenge_page("<p>cloudflare challenge in progress</p>"));
+        // A cleared challenge's page can name both words (scrapingcourse.com's
+        // is titled "Cloudflare Challenge").
+        assert!(!is_challenge_page(
+            "<title>Cloudflare Challenge - ScrapingCourse.com</title>"
+        ));
     }
 
     #[test]

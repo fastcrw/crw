@@ -408,12 +408,17 @@ fn looks_like_wall(html: &str) -> Option<&'static str> {
     // a solved page. `crw_crawl::single::classify_block` and
     // `detector::looks_like_cloudflare_challenge` both dropped it for exactly
     // that reason, each after a live capture; this list had kept it.
+    // Kasada's and Akamai's interstitials also run a script and reload into
+    // the page when it passes.
     const CHALLENGES: &[&str] = &[
         "just a moment",
         "verifying you are human",
         "checking your browser before",
         "cf-challenge",
         "challenge-platform/h/",
+        "kpsdk.start=kpsdk.now()",
+        "kpsdk.scriptstart",
+        "sec-if-cpt",
     ];
     if CHALLENGES.iter().any(|needle| h.contains(needle)) {
         return Some("challenge");
@@ -1056,6 +1061,14 @@ mod tests {
     #[test]
     fn wall_needles_match_and_clean_html_passes() {
         assert_eq!(looks_like_wall("Just a moment..."), Some("challenge"));
+        assert_eq!(
+            looks_like_wall("<script>window.KPSDK={};KPSDK.start=KPSDK.now();</script>"),
+            Some("challenge")
+        );
+        assert_eq!(
+            looks_like_wall(r#"<div id="sec-if-cpt-container" style="display: none"></div>"#),
+            Some("challenge")
+        );
         assert_eq!(
             looks_like_wall("<script src=/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1>"),
             Some("challenge")
