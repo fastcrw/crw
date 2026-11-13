@@ -107,6 +107,9 @@ enum Backend {
         hide_credits: bool,
         /// State for `crw_find_data` / `crw_get_data` (manifest, pacing).
         data: Box<crw_core::connectors::DataToolContext>,
+        /// Whether the API serves data sources at all (see
+        /// [`data_tools_available`]); off, the two data tools are not listed.
+        data_tools: bool,
     },
     #[cfg(feature = "embedded")]
     Embedded { state: crw_server::state::AppState },
@@ -133,6 +136,15 @@ impl Backend {
 
     fn is_proxy(&self) -> bool {
         matches!(self, Backend::Proxy { .. })
+    }
+
+    /// Whether `crw_find_data` / `crw_get_data` should be advertised.
+    fn data_tools_listed(&self) -> bool {
+        match self {
+            Backend::Proxy { data_tools, .. } => *data_tools,
+            #[cfg(feature = "embedded")]
+            Backend::Embedded { .. } => false,
+        }
     }
 
     /// Whether `crw_search` should be advertised. Proxy: yes (the remote decides).
@@ -166,7 +178,12 @@ impl Backend {
             self.is_proxy(),
             self.search_available(),
         ) {
-            ProtocolResult::Response(resp) => return Some(resp),
+            ProtocolResult::Response(mut resp) => {
+                if !self.data_tools_listed() {
+                    hide_data_tools(&req.method, &mut resp);
+                }
+                return Some(resp);
+            }
             ProtocolResult::Notification => return None,
             ProtocolResult::NotHandled => {}
         }
@@ -181,7 +198,9 @@ impl Backend {
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 // Unknown tool name → JSON-RPC -32602 (not an isError result).
-                if !crw_core::mcp::is_known_tool(tool_name, self.is_proxy()) {
+                if !crw_core::mcp::is_known_tool(tool_name, self.is_proxy())
+                    || (!self.data_tools_listed() && crw_core::connectors::is_data_tool(tool_name))
+                {
                     return Some(JsonRpcResponse::error(
                         id,
                         -32602,
@@ -216,6 +235,54 @@ impl Backend {
                 }
             }
         }
+    }
+}
+
+/// Whether the API serves data sources. A crw server built from source has no
+/// `/v1/data` routes, so a proxy to it would list `crw_find_data` and
+/// `crw_get_data` and answer every call with `data_sources_unavailable`. Only
+/// a 404 for the manifest hides them: an API that is down, slow or asking for
+/// a key keeps them, as before.
+async fn data_tools_available(client: &reqwest::Client, api_url: &str) -> bool {
+    let url = format!("{}/v1/data/manifest", api_url.trim_end_matches('/'));
+    match client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+    {
+        Ok(resp) => resp.status() != reqwest::StatusCode::NOT_FOUND,
+        Err(_) => true,
+    }
+}
+
+/// Take the data tools out of a `tools/list` answer and their sentence out of
+/// an `initialize` answer.
+fn hide_data_tools(method: &str, resp: &mut JsonRpcResponse) {
+    let Some(result) = resp.result.as_mut() else {
+        return;
+    };
+    match method {
+        "tools/list" => {
+            if let Some(tools) = result.get_mut("tools").and_then(Value::as_array_mut) {
+                tools.retain(|t| {
+                    !t["name"]
+                        .as_str()
+                        .is_some_and(crw_core::connectors::is_data_tool)
+                });
+            }
+        }
+        "initialize" => {
+            if let Some(text) = result.get("instructions").and_then(Value::as_str) {
+                let kept = text
+                    .strip_suffix(crw_core::mcp::DATA_TOOLS_INSTRUCTION)
+                    .map(str::trim_end)
+                    .unwrap_or(text)
+                    .to_string();
+                result["instructions"] = Value::String(kept);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -587,12 +654,20 @@ async fn run() -> Result<(), CmdError> {
             crw_core::connectors::telemetry_enabled(),
         ));
 
+        let data_tools = data_tools_available(&client, &api_url).await;
+        if !data_tools {
+            tracing::info!(
+                "API has no data sources; crw_find_data and crw_get_data are not listed"
+            );
+        }
+
         Backend::Proxy {
             client,
             base_url: api_url,
             api_key: resolved_api_key,
             hide_credits,
             data,
+            data_tools,
         }
     } else {
         #[cfg(feature = "embedded")]
@@ -962,6 +1037,7 @@ mod tests {
                 None,
                 false,
             )),
+            data_tools: true,
         }
     }
 
@@ -1094,6 +1170,7 @@ mod tests {
                 None,
                 false,
             )),
+            data_tools: true,
         };
 
         let list = backend
@@ -1124,6 +1201,82 @@ mod tests {
             .filter(|r| r.url.path() != "/v1/data/manifest")
             .count();
         assert_eq!(forwarded, 0);
+    }
+
+    #[tokio::test]
+    async fn handle_request_hides_the_data_tools_when_the_api_has_none() {
+        let backend = Backend::Proxy {
+            client: reqwest::Client::new(),
+            base_url: "https://example.invalid".to_string(),
+            api_key: None,
+            hide_credits: false,
+            data: Box::new(crw_core::connectors::DataToolContext::new(
+                "https://example.invalid".to_string(),
+                None,
+                false,
+            )),
+            data_tools: false,
+        };
+
+        let init = backend
+            .handle_request(req("initialize", Some(json!(1)), json!({})))
+            .await
+            .expect("response");
+        let instructions = init.result.expect("result")["instructions"]
+            .as_str()
+            .expect("instructions")
+            .to_string();
+        assert!(!instructions.contains("crw_find_data"), "{instructions}");
+        assert!(!instructions.ends_with(' '), "{instructions:?}");
+
+        let list = backend
+            .handle_request(req("tools/list", Some(json!(2)), json!({})))
+            .await
+            .expect("response");
+        let tools = list.result.expect("result")["tools"].clone();
+        let names: Vec<&str> = tools
+            .as_array()
+            .expect("tools")
+            .iter()
+            .map(|t| t["name"].as_str().expect("name"))
+            .collect();
+        assert_eq!(names.len(), 9, "{names:?}");
+        assert!(names.contains(&"crw_search"));
+        assert!(!names.iter().any(|n| crw_core::connectors::is_data_tool(n)));
+
+        let resp = backend
+            .handle_request(req(
+                "tools/call",
+                Some(json!(3)),
+                json!({ "name": "crw_find_data", "arguments": {"query": "x"} }),
+            ))
+            .await
+            .expect("response");
+        assert_eq!(resp.error.expect("protocol error").code, -32602);
+    }
+
+    #[tokio::test]
+    async fn data_tools_available_hides_them_only_on_a_manifest_404() {
+        use wiremock::matchers::path;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let client = reqwest::Client::new();
+        let server = MockServer::start().await;
+        Mock::given(path("/v1/data/manifest"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        assert!(!data_tools_available(&client, &server.uri()).await);
+
+        let server = MockServer::start().await;
+        Mock::given(path("/v1/data/manifest"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server)
+            .await;
+        assert!(data_tools_available(&client, &server.uri()).await);
+
+        // Nothing listening: keep them, as before.
+        assert!(data_tools_available(&client, "http://127.0.0.1:9").await);
     }
 
     #[tokio::test]
