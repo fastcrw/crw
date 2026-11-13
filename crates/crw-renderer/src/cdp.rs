@@ -96,6 +96,16 @@ const SPA_CONTENT_FLOOR_CHARS: i64 = 200;
 /// chatty pages (analytics/polling keep ≥1) so the old ≤0 idle-exit never
 /// triggered → 8s ceiling burns. ≤2 is the correct "settled" signal.
 const ALMOST_IDLE_MAX_INFLIGHT: i64 = 2;
+/// Settle after the SPA poll: at least `SETTLE_MIN_MS`, then until the
+/// network has been quiet for `SETTLE_QUIET_MS`, for at most `SETTLE_MAX_MS`.
+/// The poll exits as soon as there is enough text, but pages that check the
+/// browser (bot detectors, anti-bot scripts) run those checks after load and
+/// write the verdict a moment later.
+const SETTLE_MIN_MS: u64 = 1000;
+const SETTLE_QUIET_MS: i64 = 1000;
+const SETTLE_MAX_MS: u64 = 4000;
+/// How long a JavaScript dialog stays open before crw accepts it.
+const DIALOG_ANSWER_DELAY: Duration = Duration::from_millis(700);
 /// Max iterations for the auto-scroll lazy-load pass. 12 viewports usually
 /// covers infinite-scroll feeds without making it a crawl.
 const AUTO_SCROLL_MAX_STEPS: u32 = 12;
@@ -181,54 +191,87 @@ fn screenshot_max_height_px() -> f64 {
 /// Every section is its own `try`: one property a renderer refuses to redefine
 /// (Lightpanda throws `Cannot redefine property: webdriver` in iframes) must not
 /// abort the sections after it.
+///
+/// Each section also patches only a value that is missing or wrong, so a
+/// desktop Chrome comes through untouched. Every override is findable (a
+/// non-native getter, a page value its own workers contradict), and real
+/// browsers have none.
 const STEALTH_JS: &str = r#"
-// 1. Hide navigator.webdriver (primary headless signal for Cloudflare)
-try {
-    Object.defineProperty(navigator, 'webdriver', { get: () => false });
-} catch (_) {}
+(() => {
+let patched = false;
 
-// 2. Fake chrome runtime object (missing in headless)
+// 1. Hide navigator.webdriver (primary headless signal for Cloudflare). Only
+//    when it is set, and on Navigator.prototype where real browsers keep it:
+//    an own `webdriver` property on `navigator` is itself a bot tell.
 try {
-    if (!window.chrome) {
-        window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){} };
+    if (navigator.webdriver) {
+        Object.defineProperty(Navigator.prototype, 'webdriver', { get: () => false, configurable: true });
+        patched = true;
     }
 } catch (_) {}
 
-// 3. Spoof plugins array (headless has 0 plugins)
+// 2. Fake chrome runtime object (missing in headless)
+let fakedChrome = false;
 try {
-    Object.defineProperty(navigator, 'plugins', {
-        get: () => {
-            const arr = [
-                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                { name: 'Native Client', filename: 'internal-nacl-plugin' },
-            ];
-            arr.item = (i) => arr[i];
-            arr.namedItem = (n) => arr.find(p => p.name === n);
-            arr.refresh = () => {};
-            return arr;
-        }
-    });
+    if (!window.chrome) {
+        window.chrome = { runtime: {}, loadTimes: function(){}, csi: function(){} };
+        fakedChrome = patched = true;
+    }
 } catch (_) {}
 
-// 4. Spoof languages (headless sometimes returns empty)
+// 3. Spoof plugins array (old headless has 0 plugins). New headless Chrome
+//    has the real PDF plugins, and swapping its PluginArray for a plain array
+//    is itself a bot tell, so only fill an empty one.
 try {
-    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    if (!navigator.plugins || navigator.plugins.length === 0) {
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+                const arr = [
+                    { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                    { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                    { name: 'Native Client', filename: 'internal-nacl-plugin' },
+                ];
+                arr.item = (i) => arr[i];
+                arr.namedItem = (n) => arr.find(p => p.name === n);
+                arr.refresh = () => {};
+                return arr;
+            }
+        });
+        patched = true;
+    }
 } catch (_) {}
 
-// 5. Override permissions query to hide "denied" for notifications
+// 4. Languages: headless sometimes returns none, and a pinned country swaps
+//    in its own list (crw rewrites the array below). Otherwise the browser's
+//    own list stays, so its workers (which this script does not reach) and
+//    its Accept-Language header agree with the page.
 try {
-    const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
-    window.navigator.permissions.query = (params) =>
-        params.name === 'notifications'
-            ? Promise.resolve({ state: Notification.permission })
-            : originalQuery(params);
+    const languages = ['en-US', 'en'];
+    const pinned = languages.join() !== 'en-US,en';
+    const current = (navigator.languages || []).join();
+    if (!current || (pinned && current !== languages.join())) {
+        Object.defineProperty(Navigator.prototype, 'languages', { get: () => languages, configurable: true });
+        patched = true;
+    }
 } catch (_) {}
 
-// 6. Prevent detection via iframe contentWindow
+// 5. Override permissions query to hide "denied" for notifications. Headless
+//    reports Notification.permission "denied" while the query says "prompt".
+try {
+    if (window.Notification && Notification.permission === 'denied') {
+        const originalQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+        window.navigator.permissions.query = (params) =>
+            params.name === 'notifications'
+                ? Promise.resolve({ state: Notification.permission })
+                : originalQuery(params);
+        patched = true;
+    }
+} catch (_) {}
+
+// 6. Prevent detection via iframe contentWindow, for the faked chrome object
 try {
     const origHTMLElement = HTMLIFrameElement.prototype.__lookupGetter__('contentWindow');
-    if (origHTMLElement) {
+    if (fakedChrome && origHTMLElement) {
         Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
             get: function() {
                 const w = origHTMLElement.call(this);
@@ -241,37 +284,23 @@ try {
 
 // 7. Fix broken toString for overridden functions (anti-detection fingerprinting)
 try {
-    const nativeToString = Function.prototype.toString;
-    const overrides = new Map();
-    const proxy = new Proxy(nativeToString, {
-        apply(target, thisArg, args) {
-            const override = overrides.get(thisArg);
-            return override || nativeToString.call(thisArg);
-        }
-    });
-    Function.prototype.toString = proxy;
-    overrides.set(Function.prototype.toString, 'function toString() { [native code] }');
-} catch (_) {}
-
-// 8. WebGL vendor/renderer spoof — anti-bot scripts inspect UNMASKED_VENDOR_WEBGL
-// (37445) and UNMASKED_RENDERER_WEBGL (37446) to detect headless software rendering.
-// Returning real GPU strings makes the browser look like a normal Windows desktop.
-try {
-    const getParameter = WebGLRenderingContext.prototype.getParameter;
-    WebGLRenderingContext.prototype.getParameter = function(parameter) {
-        if (parameter === 37445) return 'Intel Inc.';
-        if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-        return getParameter.call(this, parameter);
-    };
-    if (typeof WebGL2RenderingContext !== 'undefined') {
-        const getParameter2 = WebGL2RenderingContext.prototype.getParameter;
-        WebGL2RenderingContext.prototype.getParameter = function(parameter) {
-            if (parameter === 37445) return 'Intel Inc.';
-            if (parameter === 37446) return 'Intel Iris OpenGL Engine';
-            return getParameter2.call(this, parameter);
-        };
+    if (patched) {
+        const nativeToString = Function.prototype.toString;
+        const overrides = new Map();
+        const proxy = new Proxy(nativeToString, {
+            apply(target, thisArg, args) {
+                const override = overrides.get(thisArg);
+                return override || nativeToString.call(thisArg);
+            }
+        });
+        Function.prototype.toString = proxy;
+        overrides.set(Function.prototype.toString, 'function toString() { [native code] }');
     }
 } catch (_) {}
+
+// No WebGL vendor/renderer spoof: "Intel Iris OpenGL Engine" is a macOS GPU,
+// which a Linux UA, the browser's workers and its own rendering contradict.
+})();
 "#;
 
 /// One-shot consent banner / CMP dismissal. Runs once after page load,
@@ -1593,6 +1622,28 @@ async fn run_intercept_pump(
                     .boxed(),
                 );
             }
+            continue;
+        }
+        // An alert, confirm or prompt stops the page, and every evaluate after
+        // it, until someone answers. Answer it the way a person would, after
+        // a moment; pages time how long a dialog stays open.
+        if ev.method == "Page.javascriptDialogOpening"
+            && ev.session_id.as_deref() == Some(session_id)
+        {
+            in_flight.push(
+                async move {
+                    tokio::time::sleep(DIALOG_ANSWER_DELAY).await;
+                    let _ = conn
+                        .send_recv(
+                            "Page.handleJavaScriptDialog",
+                            serde_json::json!({ "accept": true }),
+                            Some(session_id),
+                            cmd_timeout,
+                        )
+                        .await;
+                }
+                .boxed(),
+            );
             continue;
         }
         if ev.method != "Fetch.requestPaused" {
@@ -3238,7 +3289,10 @@ impl CdpRenderer {
             .ok_or_else(|| CrwError::RendererError("CDP attach did not return sessionId".into()))?
             .to_string();
 
-        for method in ["Page.enable", "Network.enable", "Runtime.enable"] {
+        // No `Runtime.enable`: pages can detect it (the client gets their
+        // console arguments serialized, which fires getters a page planted),
+        // and nothing here needs it; `Runtime.evaluate` works without it.
+        for method in ["Page.enable", "Network.enable"] {
             conn.send_recv(
                 method,
                 serde_json::json!({}),
@@ -3320,7 +3374,26 @@ impl CdpRenderer {
         // browser's own", so the language lands without touching the UA, and
         // the header stays in step with the script and the locale override.
         let accept_language = lang_locale.map(|l| l.cdp_accept_language());
-        if !effective_ua.is_empty() || accept_language.is_some() {
+        // Chromium empties `navigator.userAgentData` and drops the Sec-CH-UA
+        // headers when the UA is overridden without client-hint metadata,
+        // which detectors check for. So leave a browser that already sends
+        // this UA alone.
+        let native_ua = conn
+            .send_recv(
+                "Browser.getVersion",
+                serde_json::json!({}),
+                None,
+                self.page_timeout,
+            )
+            .await
+            .ok()
+            .and_then(|v| {
+                v.get("userAgent")
+                    .and_then(|u| u.as_str())
+                    .map(str::to_owned)
+            });
+        let ua_is_native = native_ua.as_deref() == Some(effective_ua);
+        if (!effective_ua.is_empty() && !ua_is_native) || accept_language.is_some() {
             conn.send_recv(
                 "Network.setUserAgentOverride",
                 ua_override_params(effective_ua, accept_language.as_deref()),
@@ -3698,6 +3771,31 @@ impl CdpRenderer {
                     (html, true, settled)
                 }
             };
+            // The status above is the first document's. An anti-bot challenge
+            // (Cloudflare's answers 403, AWS WAF's 202) reloads into the real
+            // page once it clears, and that page is the HTML read here, so
+            // report its status, not the challenge's.
+            let status_code = if (status_code >= 400 || status_code == 202)
+                && !is_challenge_page(&html)
+            {
+                conn.send_recv(
+                    "Runtime.evaluate",
+                    serde_json::json!({
+                        "expression": "performance.getEntriesByType('navigation')[0]?.responseStatus || 0",
+                        "returnByValue": true,
+                    }),
+                    Some(&session_id),
+                    Duration::from_secs(2),
+                )
+                .await
+                .ok()
+                .and_then(|v| v.pointer("/result/value").and_then(|s| s.as_u64()))
+                .and_then(|s| u16::try_from(s).ok())
+                .filter(|s| *s != 0)
+                .unwrap_or(status_code)
+            } else {
+                status_code
+            };
             // Screenshot capture runs AFTER the page-load budget race resolves,
             // with its own timeout. A full-page capture of a heavy page must not
             // be cancelled by the nav budget (which closes the WS mid-capture and
@@ -3977,6 +4075,15 @@ impl CdpRenderer {
         .await
         {
             tracing::debug!(url = %LogUrl(&url), "SPA selector poll exhausted budget");
+        }
+        if wait_for_ms.is_none() {
+            let settle_end = Instant::now() + Duration::from_millis(SETTLE_MAX_MS);
+            tokio::time::sleep(Duration::from_millis(SETTLE_MIN_MS)).await;
+            while Instant::now() < settle_end
+                && !net.is_settled(SETTLE_QUIET_MS, ALMOST_IDLE_MAX_INFLIGHT)
+            {
+                tokio::time::sleep(Duration::from_millis(SPA_SELECTOR_TICK_MS)).await;
+            }
         }
         let t_selector_ms = _sel_t.elapsed().as_millis() as u64;
 
