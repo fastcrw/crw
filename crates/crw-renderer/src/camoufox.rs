@@ -50,6 +50,11 @@ const CHALLENGE_POLL_INTERVAL: Duration = Duration::from_secs(3);
 /// evaluate. Below it the call can only time out, which would replace the
 /// informative wall error with a bare "timed out".
 const MIN_POLL_EVALUATE_BUDGET: Duration = Duration::from_millis(250);
+/// Request-deadline time a caller's `waitFor` leaves for reading the DOM.
+const WAIT_FOR_READ_RESERVE: Duration = Duration::from_secs(2);
+/// With no `waitFor`, the most camofox-browser's readiness wait (network idle,
+/// then the DOM settled) may take before the tab is read.
+const SETTLE_MAX: Duration = Duration::from_secs(6);
 /// What the poll can still spend after its ceiling before the caller sees the
 /// result: one last evaluate at its floor plus the awaited session teardown.
 /// A reserve handed to [`CamoufoxRenderer::with_challenge_reserve`] on behalf
@@ -264,10 +269,11 @@ impl CamoufoxRenderer {
         url: &str,
         user_id: &str,
         session_key: &str,
+        wait_for: Option<Duration>,
         deadline: &Deadline,
     ) -> CrwResult<(u16, String)> {
         let inner = self
-            .run_sequence_inner(url, user_id, session_key, deadline)
+            .run_sequence_inner(url, user_id, session_key, wait_for, deadline)
             .await;
         self.destroy_session(user_id).await;
         inner
@@ -278,9 +284,32 @@ impl CamoufoxRenderer {
         url: &str,
         user_id: &str,
         session_key: &str,
+        wait_for: Option<Duration>,
         deadline: &Deadline,
     ) -> CrwResult<(u16, String)> {
         let tab_id = self.create_tab(url, user_id, session_key, deadline).await?;
+        // The tab would otherwise be read as soon as navigation returns,
+        // before most page scripts have run. The caller's `waitFor` is
+        // honored as the CDP tiers honor it; without one, camofox-browser
+        // waits for the page to settle. Either is capped so the read still
+        // fits in the deadline.
+        let room = deadline.remaining().saturating_sub(WAIT_FOR_READ_RESERVE);
+        match wait_for {
+            Some(wait) => tokio::time::sleep(wait.min(room)).await,
+            None => {
+                let settle = SETTLE_MAX.min(room);
+                let body = serde_json::json!({
+                    "userId": user_id,
+                    "timeout": settle.as_millis() as u64,
+                });
+                // Best-effort: a page that never settles is read as it is.
+                let _ = tokio::time::timeout(
+                    settle,
+                    self.post_json(&format!("/tabs/{tab_id}/wait"), &body, deadline),
+                )
+                .await;
+            }
+        }
         let mut html = self.evaluate_outer_html(&tab_id, user_id, deadline).await?;
 
         // A Cloudflare-style JS challenge resolves client-side, empirically
@@ -313,7 +342,14 @@ impl CamoufoxRenderer {
         let challenge_budget = self.challenge_wait.min(remaining_for_poll);
         let poll_start = Instant::now();
         let mut missed_poll = false;
-        while looks_like_wall(&html) == Some("challenge") {
+        // A page still loading is work in progress too. On a busy machine the
+        // settle above can run out while the document is still arriving, and
+        // that shell (eBay's is its header over an empty #mainContent) would
+        // ship as a thin but successful scrape.
+        while match looks_like_wall(&html) {
+            Some(kind) => kind == "challenge",
+            None => crate::detector::looks_like_loading_placeholder(&html),
+        } {
             let remaining = challenge_budget.saturating_sub(poll_start.elapsed());
             if remaining.is_zero() {
                 break;
@@ -455,7 +491,7 @@ impl PageFetcher for CamoufoxRenderer {
         &self,
         url: &str,
         _headers: &HashMap<String, String>,
-        _wait_for_ms: Option<u64>,
+        wait_for_ms: Option<u64>,
         deadline: Deadline,
     ) -> CrwResult<FetchResult> {
         if deadline.expired() {
@@ -465,7 +501,13 @@ impl PageFetcher for CamoufoxRenderer {
         let user_id = Self::rand_id("crw_");
         let session_key = Self::rand_id("task_");
         let (status, html) = self
-            .run_sequence(url, &user_id, &session_key, &deadline)
+            .run_sequence(
+                url,
+                &user_id,
+                &session_key,
+                wait_for_ms.map(Duration::from_millis),
+                &deadline,
+            )
             .await?;
 
         Ok(FetchResult {
@@ -761,6 +803,44 @@ mod tests {
             CrwError::RendererError(m) => assert!(m.contains("challenge")),
             other => panic!("expected RendererError, got {other:?}"),
         }
+    }
+
+    /// A document still arriving when the settle ran out is read again.
+    #[tokio::test]
+    async fn page_still_loading_is_read_again() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tabs"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"tabId": "t1"})),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tabs/t1/evaluate"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "result": "<html><head><title>Item | eBay</title></head><body><div id=\"mainContent\"></div></body></html>"
+            })))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tabs/t1/evaluate"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "result": "<html><head><title>Item | eBay</title></head><body><div id=\"mainContent\"><h1>real page</h1></div></body></html>"
+            })))
+            .mount(&server)
+            .await;
+        mount_delete_session(&server).await;
+
+        let r = renderer(&server.uri()).with_challenge_wait(200);
+        let res = r
+            .fetch("https://example.com", &HashMap::new(), None, deadline())
+            .await
+            .expect("the page finished loading, so it must be returned");
+        assert!(res.html.contains("real page"));
     }
 
     /// The point of the poll: a challenge that clears between evaluates now
