@@ -1387,7 +1387,8 @@ impl RendererConfig {
     /// | `Camoufox`                        | `true` when configured (pinned) |
     /// | `Auto` + `include_in_auto = true` | `true`                          |
     /// | `Auto` + `include_in_auto = false`| `false` (opt-in default)        |
-    /// | `Lightpanda`/`Chrome`/`Playwright`| `false`                         |
+    /// | `Chrome` + `include_in_auto`      | as for `Auto` (after Chrome)    |
+    /// | `Lightpanda`/`Playwright`         | `false`                         |
     ///
     /// This method is intentionally NOT `#[cfg(feature = "camoufox")]`: callers
     /// in the deadline math (`min_deadline_for_full_ladder_ms`,
@@ -1410,7 +1411,9 @@ impl RendererConfig {
         let configured = |c: &CamoufoxEndpoint| !c.base_url.trim().is_empty();
         match self.mode {
             RendererMode::Camoufox => self.camoufox.as_ref().is_some_and(configured),
-            RendererMode::Auto => self
+            // `mode = "chrome"` is auto with Chrome as the only CDP tier, so
+            // Camoufox can follow it the same way.
+            RendererMode::Auto | RendererMode::Chrome => self
                 .camoufox
                 .as_ref()
                 .is_some_and(|c| c.include_in_auto && configured(c)),
@@ -2492,9 +2495,19 @@ mod tests {
             ..Default::default()
         };
         assert!(!c.camoufox_in_ladder());
-        // (5) other CDP-pinned modes -> never.
+        // (5) mode=Chrome + include_in_auto=true -> in ladder, after Chrome;
+        // other CDP-pinned modes -> never.
         let c = RendererConfig {
             mode: RendererMode::Chrome,
+            camoufox: Some(CamoufoxEndpoint {
+                include_in_auto: true,
+                ..ep()
+            }),
+            ..Default::default()
+        };
+        assert!(c.camoufox_in_ladder());
+        let c = RendererConfig {
+            mode: RendererMode::Lightpanda,
             camoufox: Some(CamoufoxEndpoint {
                 include_in_auto: true,
                 ..ep()
