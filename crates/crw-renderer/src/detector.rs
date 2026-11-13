@@ -1,10 +1,11 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// Akamai bot-manager reference ID: `Reference #<digits>.<hex>.<digits>.<hex>`.
+/// Akamai bot-manager reference ID: `Reference #<digits>.<hex>.<digits>.<hex>`,
+/// or `Reference Error: …` on the block page adidas serves.
 /// Used only in [`looks_like_vendor_block`] — see the Akamai arm there.
 static AKAMAI_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"Reference #\d+\.[0-9a-f]+\.\d+\.[0-9a-f]+").expect("static regex")
+    Regex::new(r"Reference (?:#|Error: ?)\d+\.[0-9a-f]+\.\d+\.[0-9a-f]+").expect("static regex")
 });
 
 /// Heuristic: does the HTML look like an SPA shell that needs JS rendering?
@@ -164,6 +165,10 @@ pub fn looks_like_generic_bot_wall(html: &str, truncated: bool) -> bool {
         // Host strings are deliberately not matched; block detection stays
         // host-agnostic.
         "fai clic sul pulsante qui sotto per continuare a fare acquisti",
+        // The Home Depot's block page, verified live 2026-10-29: an "Error
+        // Page" with this line and a Refresh button, served to a browser its
+        // bot manager turned away.
+        "something went wrong. please refresh page",
     ];
     phrases.iter().any(|p| body_text.contains(p))
 }
@@ -188,22 +193,33 @@ pub fn looks_like_vendor_block(html: &str) -> Option<&'static str> {
     let lower_head = head.to_lowercase();
 
     // Cloudflare: challenge form with cf-managed token, error code span, or
-    // challenge-platform JS loader. All three are unique to CF's anti-bot.
+    // the challenge's orchestrator, which is served from `challenge-platform/h/`.
+    // Not the bare directory: the telemetry loader under it
+    // (`scripts/jsd/main.js`) ships on pages that already cleared.
     if (lower_head.contains("challenge-form") && lower_head.contains("__cf_chl_f_tk="))
         || lower_head.contains("cf-error-code")
-        || lower_head.contains("/cdn-cgi/challenge-platform/")
+        || lower_head.contains("/cdn-cgi/challenge-platform/h/")
     {
         return Some("cloudflare");
     }
 
     // Akamai: bot-manager reference IDs follow `Reference #<hex>.<hex>.<hex>.<hex>`.
-    // "Pardon Our Interruption" is the canonical block page headline.
-    if lower_head.contains("pardon our interruption") || AKAMAI_REF_RE.is_match(head) {
+    // "Pardon Our Interruption" is the canonical block page headline, and
+    // `sec-if-cpt` its interstitial (a proof-of-work or behavioral challenge).
+    if lower_head.contains("pardon our interruption")
+        || lower_head.contains("sec-if-cpt")
+        || AKAMAI_REF_RE.is_match(head)
+    {
         return Some("akamai");
     }
 
-    // PerimeterX: window._pxAppId SDK assignment, owned captcha CDN.
-    if lower_head.contains("window._pxappid =") || lower_head.contains("captcha.px-cdn.net") {
+    // PerimeterX: the press-and-hold captcha, its block page title, or its
+    // owned captcha CDN. Not `window._pxAppId =`: the sensor sets that on every
+    // page it protects, including ones that loaded.
+    if lower_head.contains("id=\"px-captcha\"")
+        || lower_head.contains("access to this page has been denied")
+        || lower_head.contains("captcha.px-cdn.net")
+    {
         return Some("perimeterx");
     }
 
@@ -1103,9 +1119,32 @@ mod tests {
     }
 
     #[test]
-    fn vendor_perimeterx_pxappid_detected() {
-        let html = r#"<html><head><script>window._pxAppId = 'PXabc123';</script></head></html>"#;
+    fn vendor_perimeterx_block_page_detected() {
+        let html = r#"<html><head><title>Access to this page has been denied</title><script>window._pxAppId = 'PXabc123';</script></head><body><div id="px-captcha"></div></body></html>"#;
         assert_eq!(looks_like_vendor_block(html), Some("perimeterx"));
+    }
+
+    #[test]
+    fn vendor_perimeterx_sensor_alone_is_not_a_block() {
+        let html = r#"<html><head><script>window._pxAppId = 'PXabc123';</script></head><body><h1>tv - Walmart.com</h1></body></html>"#;
+        assert_eq!(looks_like_vendor_block(html), None);
+    }
+
+    #[test]
+    fn generic_wall_home_depot_error_page() {
+        let html = r#"<html><head><title>Error Page</title></head><body><div class="hdr">#1 Home Improvement Retailer</div>
+            <main class="err"><div class="msg">Oops!! Something went wrong. Please refresh page</div>
+            <button class="btn" id="refreshBtn" type="button">Refresh</button></main></body></html>"#;
+        assert!(looks_like_generic_bot_wall(html, false));
+    }
+
+    #[test]
+    fn vendor_akamai_reference_error_and_interstitial_detected() {
+        let adidas =
+            "<html><body><p>Reference Error: 0.333b2f17.1793287426.7e59a54</p></body></html>";
+        assert_eq!(looks_like_vendor_block(adidas), Some("akamai"));
+        let cpt = r#"<html><body><div id="sec-if-cpt-container" role="main" style="display: none"></div></body></html>"#;
+        assert_eq!(looks_like_vendor_block(cpt), Some("akamai"));
     }
 
     #[test]
@@ -1691,21 +1730,12 @@ mod tests {
     }
 
     #[test]
-    fn vendor_cloudflare_cleared_page_telemetry_loader_is_still_flagged() {
-        // BUG: looks_like_vendor_block's Cloudflare check matches ANY
-        // `/cdn-cgi/challenge-platform/` substring, unlike the more precise
-        // looks_like_cloudflare_challenge (see its STRONG list comment), which
-        // deliberately requires the `/h/` orchestrate segment because the bare
-        // `/scripts/jsd/` telemetry loader ships on ordinary, ALREADY-CLEARED
-        // Bot-Management responses too. That fix was applied to
-        // looks_like_cloudflare_challenge and to
-        // crw_crawl::single::classify_block, but looks_like_vendor_block was
-        // never updated — the two lists drifted, and this is the copy that
-        // still has the bug. A real cleared page carrying only the telemetry
-        // loader is currently misreported as a Cloudflare block by this
-        // function (while looks_like_cloudflare_challenge correctly says no).
+    fn vendor_cloudflare_cleared_page_telemetry_loader_is_not_flagged() {
+        // The bare `/scripts/jsd/` telemetry loader ships on ordinary,
+        // ALREADY-CLEARED Bot-Management responses, so like
+        // looks_like_cloudflare_challenge this requires the `/h/` orchestrator.
         let html = r#"<html><head><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script></head><body><article>Real page content that loaded successfully after Cloudflare cleared it.</article></body></html>"#;
-        assert_eq!(looks_like_vendor_block(html), Some("cloudflare"));
+        assert_eq!(looks_like_vendor_block(html), None);
         assert!(!looks_like_cloudflare_challenge(html));
     }
 

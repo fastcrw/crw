@@ -87,9 +87,19 @@ type SignalPattern = (Regex, AntibotSignal, &'static str);
 static TIER1_PATTERNS: Lazy<Vec<SignalPattern>> = Lazy::new(|| {
     vec![
         (
-            Regex::new(r"(?i)Reference\s*#\s*\d+\.[0-9a-f]+\.\d+\.[0-9a-f]+").unwrap(),
+            // "Reference Error: 0.333b2f17.1793287426.7e59a54" is the same
+            // ID on the block page adidas serves.
+            Regex::new(r"(?i)Reference\s*(?:#|Error\s*:)\s*\d+\.[0-9a-f]+\.\d+\.[0-9a-f]+")
+                .unwrap(),
             AntibotSignal::Akamai,
             "Akamai block (Reference #)",
+        ),
+        // Akamai's interstitial: a proof-of-work script that reloads into the
+        // page when it passes, or shows a behavioral challenge when it does not.
+        (
+            Regex::new(r#"(?i)id=["']sec-if-cpt-container|sec-cpt-if"#).unwrap(),
+            AntibotSignal::Akamai,
+            "Akamai challenge (sec-cpt)",
         ),
         (
             Regex::new(r"(?i)Pardon\s+Our\s+Interruption").unwrap(),
@@ -112,7 +122,14 @@ static TIER1_PATTERNS: Lazy<Vec<SignalPattern>> = Lazy::new(|| {
             "Cloudflare JS challenge",
         ),
         (
-            Regex::new(r"(?i)window\._pxAppId\s*=").unwrap(),
+            // Not `window._pxAppId =`: PerimeterX's sensor sets it on every
+            // page it protects (Walmart, Wayfair, Trulia), so it flagged
+            // pages that had loaded. Its block page is the one with the
+            // press-and-hold captcha and this title.
+            Regex::new(
+                r#"(?i)id=["']px-captcha["']|<title>\s*Access\s+to\s+this\s+page\s+has\s+been\s+denied"#,
+            )
+            .unwrap(),
             AntibotSignal::PerimeterX,
             "PerimeterX block",
         ),
@@ -179,6 +196,12 @@ static TIER1_PATTERNS: Lazy<Vec<SignalPattern>> = Lazy::new(|| {
             Regex::new(r"(?i)Error\s+429\s*\(Too\s+Many\s+Requests").unwrap(),
             AntibotSignal::RateLimited,
             "Google rate limit (Error 429 page)",
+        ),
+        // Reddit's reCAPTCHA wall, served with HTTP 200 under its own title.
+        (
+            Regex::new(r"(?i)<title>[^<]*Prove\s+your\s+humanity").unwrap(),
+            AntibotSignal::GenericBlock,
+            "Captcha wall (Prove your humanity)",
         ),
         // Google's bot wall served with HTTP 200 (the /sorry reCAPTCHA page).
         (
@@ -496,10 +519,42 @@ mod tests {
     }
 
     #[test]
-    fn perimeterx_app_id_detected() {
-        let html = r#"<html><body><script>window._pxAppId = "PXabc";</script></body></html>"#;
+    fn perimeterx_block_page_detected() {
+        let html = r#"<html><head><title>Access to this page has been denied</title></head><body><script>window._pxAppId = "PXabc";</script><div id="px-captcha"></div></body></html>"#;
         let r = classify(Some(403), html);
         assert_eq!(r.signal, AntibotSignal::PerimeterX);
+    }
+
+    #[test]
+    fn perimeterx_sensor_on_a_page_that_loaded_is_not_a_block() {
+        let body =
+            "<p>Wayfair.com - Online Home Store for Furniture, Decor, Outdoors &amp; More</p>"
+                .repeat(20);
+        let html = format!(
+            r#"<html><head><script>window._pxAppId = "PXabc";</script></head><body>{body}</body></html>"#
+        );
+        assert_eq!(classify(Some(200), &html).signal, AntibotSignal::None);
+    }
+
+    #[test]
+    fn akamai_reference_error_detected() {
+        let html = "<html><body><p>Unfortunately we are unable to give you access to our site at this time.</p><p>Reference Error: 0.333b2f17.1793287426.7e59a54</p></body></html>";
+        assert_eq!(classify(Some(200), html).signal, AntibotSignal::Akamai);
+    }
+
+    #[test]
+    fn reddit_captcha_wall_detected() {
+        let html = "<html><head><title>Reddit - Prove your humanity</title></head><body><h1>Prove your humanity</h1><p>Complete the challenge below and let us know you’re a real person.</p></body></html>";
+        assert_eq!(
+            classify(Some(200), html).signal,
+            AntibotSignal::GenericBlock
+        );
+    }
+
+    #[test]
+    fn akamai_interstitial_detected() {
+        let html = r#"<html><body><div id="sec-if-cpt-container" role="main" style="display: none"><div class="behavioral-content"></div></div></body></html>"#;
+        assert_eq!(classify(Some(200), html).signal, AntibotSignal::Akamai);
     }
 
     #[test]
