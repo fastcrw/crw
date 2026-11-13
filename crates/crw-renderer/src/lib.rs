@@ -806,6 +806,32 @@ fn is_unrenderable_body_error(e: &CrwError) -> bool {
     )
 }
 
+/// A plain-HTTP failure the Chrome-impersonating client may get past: the
+/// origin turned reqwest's TLS handshake or headers away. Not a body no
+/// client turns into a page, not a dead origin (`TargetUnreachable`: DNS,
+/// refused, blackholed), and not a stall (`Timeout`): a slow origin is slow
+/// to every client, and a second request would only re-learn that. The auto
+/// arm's comment at its call site has the measurements.
+fn is_fingerprint_shaped_transport_error(e: &CrwError) -> bool {
+    !is_unrenderable_body_error(e)
+        && !matches!(e, CrwError::TargetUnreachable(_))
+        && !matches!(e, CrwError::Timeout(_))
+}
+
+/// Did plain HTTP get a wall: a block page or a challenge, by body or by
+/// header, or a hard-block status? The auto arm's trigger for the
+/// impersonated hop, as one predicate for the `renderJs: false` arm, which
+/// has no `needs_js` or thin-page business of its own to fold it into.
+#[cfg(feature = "impersonated")]
+fn plain_http_was_walled(r: &FetchResult) -> bool {
+    matches!(
+        r.warning.as_deref(),
+        Some("cloudflare_mitigated") | Some("waf_challenge")
+    ) || detector::looks_like_cloudflare_challenge(&r.html)
+        || detector::looks_like_generic_bot_wall(&r.html, r.truncated)
+        || is_hard_block_status(r.status_code)
+}
+
 /// Cap on the warm per-proxy fetcher caches (see
 /// `cached_per_proxy_fetcher`): bound growth under arbitrary BYOP proxies,
 /// where config pools are small but the space of raw proxy URLs is not.
@@ -1731,6 +1757,12 @@ impl FallbackRenderer {
     /// SPA/thin/empty shapes, and never when `is_fingerprint_vendor_wall`
     /// says the wall needs JS. Returns the accepted result, or `None` to
     /// continue exactly as today (ladder, then today's fallbacks).
+    ///
+    /// `ladder_follows` says what runs when the hop does not accept: the
+    /// browser ladder, for the auto arm, which holds half the budget back for
+    /// it and accepts only a page no browser would improve on; or nothing,
+    /// for `renderJs: false`, which hands the hop the whole budget and takes
+    /// any answer that is not a wall.
     #[cfg(feature = "impersonated")]
     async fn try_impersonated_hop(
         &self,
@@ -1738,6 +1770,7 @@ impl FallbackRenderer {
         headers: &HashMap<String, String>,
         deadline: crw_core::Deadline,
         trigger: ImpersonatedTrigger,
+        ladder_follows: bool,
     ) -> Option<FetchResult> {
         self.impersonated.as_ref()?;
         // Budget split, mirroring the cloak-first arm's
@@ -1753,12 +1786,13 @@ impl FallbackRenderer {
         // A reserve is only owed when there IS a ladder to protect. An
         // HTTP-only deployment has nothing to fall through to, so it hands
         // the hop the whole remaining budget (this is the deployment the
-        // tier helps most: it gets the wall fix with zero browsers).
+        // tier helps most: it gets the wall fix with zero browsers). So does
+        // a `renderJs: false` request, which runs no ladder either.
         let remaining = deadline.remaining();
         if remaining < MIN_TIER_BUDGET {
             return None;
         }
-        let deadline = if self.js_renderers.is_empty() {
+        let deadline = if self.js_renderers.is_empty() || !ladder_follows {
             deadline
         } else {
             let share = remaining / 2;
@@ -1794,7 +1828,15 @@ impl FallbackRenderer {
         };
         match fetcher.fetch(url, headers, None, deadline).await {
             Ok(mut r) => {
-                if self.impersonation_accepted(&r) {
+                // With nothing after the hop, any answer that is not a wall
+                // beats the wall plain HTTP got, a JavaScript shell included:
+                // `renderJs: false` asked for exactly that.
+                let accepted = if ladder_follows {
+                    self.impersonation_accepted(&r)
+                } else {
+                    !self.impersonation_blocked(&r)
+                };
+                if accepted {
                     r.credit_cost = credit_for(kind);
                     r.render_decision = Some(RenderDecision::Failover {
                         chain: vec![RendererKind::Http, kind],
@@ -2473,10 +2515,43 @@ impl FallbackRenderer {
         let is_hard_pinned = matches!(requested_renderer, Some(name) if name != "auto");
         match effective {
             Some(false) => {
-                let mut r = self
+                // Plain HTTP, and when its answer is a wall, the hop the auto
+                // arm makes: one more request through the Chrome-impersonating
+                // client. That is still no browser, which is what
+                // `renderJs: false` asks for. Without it, a site that turns
+                // reqwest's handshake away answered every `renderJs: false`
+                // scrape with its block (JB Hi-Fi: a 429 to reqwest, a 200 to
+                // the impersonating client, every time). Unlike the auto arm,
+                // this one hops on a vendor's challenge page too: auto skips
+                // those because Chrome follows and clears them, but nothing
+                // follows here, and Cloudflare serves JB Hi-Fi's product pages
+                // with a challenge to reqwest and without one to the
+                // impersonating client. A hard renderer pin asked for one
+                // tier, as the other arms read it, and gets no hop.
+                let fetched = self
                     .http_fetcher_for_request()?
                     .fetch(url, headers, None, deadline)
-                    .await?;
+                    .await;
+                #[cfg(feature = "impersonated")]
+                if !is_hard_pinned && self.impersonated.is_some() {
+                    let trigger = match &fetched {
+                        Ok(r) if plain_http_was_walled(r) => Some(ImpersonatedTrigger::Wall),
+                        Err(e) if is_fingerprint_shaped_transport_error(e) => {
+                            Some(ImpersonatedTrigger::Transport)
+                        }
+                        _ => None,
+                    };
+                    if let Some(trigger) = trigger
+                        && let Some(hop) = self
+                            .try_impersonated_hop(url, headers, deadline, trigger, false)
+                            .await
+                    {
+                        return Ok(hop);
+                    }
+                    // Still walled, or the hop failed: the plain answer
+                    // stands, block and all, as before.
+                }
+                let mut r = fetched?;
                 stamp_http_decision(&mut r, requested_renderer);
                 Ok(r)
             }
@@ -2710,13 +2785,8 @@ impl FallbackRenderer {
                 // request under a Chrome fingerprint cannot make it fast. It
                 // would only spend the ladder's remaining budget re-learning
                 // that the origin is slow.
-                let fingerprint_shaped = |e: &CrwError| {
-                    !is_unrenderable_body_error(e)
-                        && !matches!(e, CrwError::TargetUnreachable(_))
-                        && !matches!(e, CrwError::Timeout(_))
-                };
                 let fetched = match fetched {
-                    Err(e) if fingerprint_shaped(&e) => {
+                    Err(e) if is_fingerprint_shaped_transport_error(&e) => {
                         #[cfg(feature = "impersonated")]
                         if let Some(r) = self
                             .try_impersonated_hop(
@@ -2724,6 +2794,7 @@ impl FallbackRenderer {
                                 headers,
                                 deadline,
                                 ImpersonatedTrigger::Transport,
+                                true,
                             )
                             .await
                         {
@@ -2878,7 +2949,13 @@ impl FallbackRenderer {
                         self.antibot_result(result.status_code, &result.html).signal,
                     )
                     && let Some(r) = self
-                        .try_impersonated_hop(url, headers, deadline, ImpersonatedTrigger::Wall)
+                        .try_impersonated_hop(
+                            url,
+                            headers,
+                            deadline,
+                            ImpersonatedTrigger::Wall,
+                            true,
+                        )
                         .await
                 {
                     return Ok(r);
@@ -6364,6 +6441,145 @@ mod tests {
             matches!(err, CrwError::UnsupportedContentType(_)),
             "got {err:?}"
         );
+    }
+
+    /// `renderJs: false` is plain HTTP, and when that answer is a wall, a
+    /// hard-block status or a fingerprint-shaped transport failure, the
+    /// impersonated hop, with any answer that is not a wall accepted, a
+    /// JavaScript shell included. A clean answer and a hard renderer pin stay
+    /// on plain HTTP, and a hop that is walled too leaves plain HTTP's answer
+    /// standing. No browser runs in any case.
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn render_js_false_hops_to_impersonated_on_a_wall() {
+        let rate_limited = MockBehavior::OkStatus(
+            429,
+            "<html><body><h1>Too Many Requests</h1></body></html>".to_string(),
+        );
+        // Cloudflare's interstitial, as JB Hi-Fi's product pages answer
+        // reqwest (and not the impersonating client).
+        let cf_challenge = MockBehavior::Ok(
+            "<html><head><title>Just a moment...</title>\
+             <script>window._cf_chl_opt={cvId:'3'};</script></head>\
+             <body><div id=\"cf-browser-verification\"></div></body></html>"
+                .to_string(),
+        );
+        let refused = MockBehavior::Err("tls handshake eof".to_string());
+        let hop_wins = MockBehavior::Ok(rich_html("IMP-"));
+        let no_hop = |why: &'static str| MockBehavior::Panic(why);
+        // (plain HTTP's answer, the hop's answer, renderer pin, who answered,
+        // a marker the body carries)
+        let cases: Vec<(MockBehavior, MockBehavior, Option<&str>, &str, &str)> = vec![
+            (
+                rate_limited.clone(),
+                hop_wins.clone(),
+                None,
+                "impersonated-http",
+                "IMP-",
+            ),
+            (
+                rate_limited.clone(),
+                hop_wins.clone(),
+                Some("auto"),
+                "impersonated-http",
+                "IMP-",
+            ),
+            (refused, hop_wins.clone(), None, "impersonated-http", "IMP-"),
+            (
+                cf_challenge.clone(),
+                hop_wins,
+                None,
+                "impersonated-http",
+                "IMP-",
+            ),
+            (
+                rate_limited.clone(),
+                MockBehavior::Ok(spa_shell_html()),
+                None,
+                "impersonated-http",
+                "id=\"root\"",
+            ),
+            (
+                rate_limited.clone(),
+                rate_limited.clone(),
+                None,
+                "http",
+                "Too Many Requests",
+            ),
+            (
+                rate_limited.clone(),
+                cf_challenge,
+                None,
+                "http",
+                "Too Many Requests",
+            ),
+            (
+                MockBehavior::Ok(rich_html("PLAIN-")),
+                no_hop("a clean answer stays on plain HTTP"),
+                None,
+                "http",
+                "PLAIN-",
+            ),
+            (
+                rate_limited,
+                no_hop("a hard renderer pin gets no hop"),
+                Some("http"),
+                "http",
+                "Too Many Requests",
+            ),
+        ];
+        for (plain, hop, pin, want_tier, want_text) in cases {
+            let chrome = Arc::new(MockFetcher {
+                name: "chrome",
+                behavior: MockBehavior::Panic("renderJs: false must not run a browser"),
+            }) as Arc<dyn PageFetcher>;
+            let mut r = make_renderer_with_mocks(vec![chrome]);
+            r.http = Arc::new(MockFetcher {
+                name: "http",
+                behavior: plain,
+            }) as Arc<dyn PageFetcher>;
+            inject_impersonated(
+                &mut r,
+                Arc::new(MockFetcher {
+                    name: "impersonated-http",
+                    behavior: hop,
+                }),
+            );
+            let out = r
+                .fetch(
+                    "https://example.com/collections/tvs",
+                    &HashMap::new(),
+                    Some(false),
+                    None,
+                    pin,
+                    tdl(),
+                )
+                .await
+                .expect(want_text);
+            assert_eq!(out.rendered_with.as_deref(), Some(want_tier), "{want_text}");
+            assert!(out.html.contains(want_text), "{want_text}: {}", out.html);
+            if want_tier == "impersonated-http" {
+                assert!(
+                    matches!(
+                        &out.render_decision,
+                        Some(RenderDecision::Failover { chain, .. })
+                            if *chain == vec![RendererKind::Http, RendererKind::ImpersonatedHttp]
+                    ),
+                    "{want_text}: {:?}",
+                    out.render_decision
+                );
+            } else {
+                let want = match pin {
+                    Some("http") => RenderDecision::UserPinned {
+                        renderer: RendererKind::Http,
+                    },
+                    _ => RenderDecision::AutoDefault {
+                        chosen: RendererKind::Http,
+                    },
+                };
+                assert_eq!(out.render_decision, Some(want), "{want_text}");
+            }
+        }
     }
 
     /// An HTTP tier whose origin refused a body over the size cap.
