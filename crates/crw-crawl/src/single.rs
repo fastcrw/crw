@@ -3889,7 +3889,8 @@ mod tests {
 
     #[test]
     fn classify_block_perimeterx_marker() {
-        let html = "<html><body><script>window._pxAppId = 'PXabc123';</script></body></html>";
+        let html = "<html><head><title>Access to this page has been denied</title></head>\
+                    <body><script>window._pxAppId = 'PXabc123';</script><div id=\"px-captcha\"></div></body></html>";
         let b = classify_block(
             403,
             Some("text/html"),
