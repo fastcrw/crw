@@ -641,6 +641,16 @@ impl CdpRenderer {
         self
     }
 
+    /// Whether to wait for a skeleton region to fill (4b' in render): never
+    /// over a caller's waitFor, and not with fast_ready, which reads the page
+    /// as soon as its text is there. That wait held 9s on a product page
+    /// whose placeholders are images and prices that never gain text, 1.5s on
+    /// one that sat still, and under load tipped the render into the page
+    /// timeout and a plain-HTTP fallback.
+    fn skeleton_wait_applies(&self, wait_for_ms: Option<u64>) -> bool {
+        wait_for_ms.is_none() && !self.fast_ready
+    }
+
     /// Set the User-Agent the CDP renderer presents (via
     /// `Network.setUserAgentOverride`). Pass the same `effective_ua` the HTTP
     /// fetcher uses so a JS-rendered page sees a modern UA, not the browser's
@@ -3988,7 +3998,7 @@ impl CdpRenderer {
         // a grid can fill between a snapshot and the probe, and the probe then
         // sees nothing to wait for while the snapshot still holds the
         // placeholders (jbhifi, after the poll hands over).
-        if wait_for_ms.is_none() {
+        if self.skeleton_wait_applies(wait_for_ms) {
             let _sk_t = Instant::now();
             Self::wait_for_skeleton_fill(conn, session_id, url, self.page_timeout).await;
             t_stability_ms += _sk_t.elapsed().as_millis() as u64;
@@ -5687,6 +5697,16 @@ mod tests {
         assert!(r.fast_ready);
         let r = r.with_fast_ready(false);
         assert!(!r.fast_ready);
+    }
+
+    #[test]
+    fn skeleton_wait_skipped_with_fast_ready_or_a_wait_for() {
+        let r = CdpRenderer::new("chrome", "ws://x/", 1000, 1);
+        assert!(r.skeleton_wait_applies(None));
+        assert!(!r.skeleton_wait_applies(Some(500)));
+        let r = r.with_fast_ready(true);
+        assert!(!r.skeleton_wait_applies(None));
+        assert!(!r.skeleton_wait_applies(Some(500)));
     }
 
     #[test]
