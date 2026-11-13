@@ -1114,7 +1114,7 @@ fn extract_xhr_text(captured: &[CapturedNetworkResponse]) -> Option<String> {
             Err(_) => continue,
         };
         walk_json_strings(&value, &mut |s| {
-            if s.len() >= MIN_FIELD_LEN && seen.insert(s.to_string()) {
+            if s.len() >= MIN_FIELD_LEN && looks_like_prose(s) && seen.insert(s.to_string()) {
                 paragraphs.push(s.to_string());
             }
         });
@@ -1155,6 +1155,137 @@ fn is_machine_token(s: &str) -> bool {
         token_bytes += run;
     }
     token_bytes * 2 > s.len()
+}
+
+/// Whether a captured JSON string reads as text for a person. Pages also fetch
+/// JSON whose long strings are anti-bot sensor payloads (PerimeterX's base64
+/// `ob` field), bundled JavaScript or CSS; taken for prose, they became the
+/// whole markdown of chegg.com and homedepot.com. Judged on the text a reader
+/// would see (article JSON often carries `<p>`, `<strong>` or `&nbsp;`):
+/// prose has little code punctuation, and either spaces between short words
+/// or, in scripts written without spaces (Chinese, Japanese, Thai...), mostly
+/// that script's letters.
+fn looks_like_prose(s: &str) -> bool {
+    let text = visible_text(s);
+    let chars = text.chars().count();
+    let code = text
+        .chars()
+        .filter(|c| matches!(c, '{' | '}' | ';' | '=' | '(' | ')' | '<' | '>'))
+        .count();
+    if chars == 0 || code * 50 > chars {
+        return false;
+    }
+    let unspaced = text.chars().filter(|&c| is_unspaced_script(c)).count();
+    if unspaced * 10 >= chars * 3 {
+        return true;
+    }
+    let words: Vec<&str> = text.split_whitespace().collect();
+    words.len() >= 8 && words.iter().all(|w| w.chars().count() <= 60)
+}
+
+/// `s` as a reader sees it, for [`looks_like_prose`]: HTML tags (`<p>`,
+/// `</strong>`, `<a href="...">`) become a space and entities are decoded. A
+/// numeric reference (`&#32;`, `&#x4E2D;`) becomes its character, a named
+/// space (`&nbsp;`, `&ensp;`, `&thinsp;`...) a space and any other named
+/// entity (`&amp;`, `&rsquo;`) one letter, so its `;` doesn't count as code
+/// punctuation. A `<` that doesn't open a tag (`a < b`) is kept. One pass: a
+/// scan for a tag's `>` stops at the next `<` and resumes there.
+fn visible_text(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let (mut i, mut copied) = (0, 0);
+    while i < b.len() {
+        match b[i] {
+            b'<' => {
+                let name = if b.get(i + 1) == Some(&b'/') {
+                    i + 2
+                } else {
+                    i + 1
+                };
+                if !b.get(name).is_some_and(u8::is_ascii_alphabetic) {
+                    i += 1;
+                    continue;
+                }
+                let mut j = name;
+                while j < b.len() && b[j] != b'>' && b[j] != b'<' {
+                    j += 1;
+                }
+                if b.get(j) == Some(&b'>') {
+                    out.push_str(&s[copied..i]);
+                    out.push(' ');
+                    copied = j + 1;
+                    i = j + 1;
+                } else {
+                    i = j;
+                }
+            }
+            b'&' => {
+                let end = b[i + 1..]
+                    .iter()
+                    .take(10)
+                    .position(|&c| c == b';')
+                    .map(|p| i + 1 + p);
+                match end.and_then(|e| Some((decode_entity(&s[i + 1..e])?, e))) {
+                    Some((c, e)) => {
+                        out.push_str(&s[copied..i]);
+                        out.push(c);
+                        copied = e + 1;
+                        i = e + 1;
+                    }
+                    _ => i += 1,
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    out.push_str(&s[copied..]);
+    out
+}
+
+/// The character an entity body (between `&` and `;`) stands for in
+/// [`visible_text`], or `None` if it isn't one.
+fn decode_entity(name: &str) -> Option<char> {
+    if let Some(num) = name.strip_prefix('#') {
+        let code = match num.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+            None => num.parse().ok()?,
+        };
+        let c = char::from_u32(code)?;
+        return Some(if c.is_whitespace() { ' ' } else { c });
+    }
+    if name.is_empty() || !name.bytes().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let space = matches!(
+        name,
+        "nbsp"
+            | "ensp"
+            | "emsp"
+            | "emsp13"
+            | "emsp14"
+            | "thinsp"
+            | "hairsp"
+            | "numsp"
+            | "puncsp"
+            | "MediumSpace"
+            | "NewLine"
+            | "Tab"
+    );
+    Some(if space { ' ' } else { 'x' })
+}
+
+/// Letters of scripts that don't put spaces between words.
+fn is_unspaced_script(c: char) -> bool {
+    matches!(c,
+        '\u{3040}'..='\u{30FF}'   // Hiragana, Katakana
+        | '\u{3400}'..='\u{4DBF}' // CJK Extension A
+        | '\u{4E00}'..='\u{9FFF}' // CJK Unified Ideographs
+        | '\u{F900}'..='\u{FAFF}' // CJK Compatibility Ideographs
+        | '\u{0E00}'..='\u{0EFF}' // Thai, Lao
+        | '\u{1000}'..='\u{109F}' // Myanmar
+        | '\u{1780}'..='\u{17FF}' // Khmer
+        | '\u{0F00}'..='\u{0FFF}' // Tibetan
+    )
 }
 
 fn walk_json_strings(value: &serde_json::Value, on_string: &mut dyn FnMut(&str)) {
@@ -1361,6 +1492,134 @@ mod private_tests {
         let md = data.markdown.unwrap_or_default();
         assert!(!md.contains("ItineraryOneWay:"), "{} chars", md.len());
         assert!(md.len() < 1_000, "{} chars", md.len());
+    }
+
+    #[test]
+    fn xhr_extract_skips_payloads_code_and_css() {
+        // A PerimeterX collector reply, a script bundle and a stylesheet, as
+        // captured from chegg.com and homedepot.com, then one real paragraph.
+        let px = "Dw8PDykpHFIFVgFXVlRWTQRTBQJNUVEGUU0BBQICTQIDBFFRWVFVWFAGVh4eHh4pDw8PKQ8cAxUeHh4eDw8pKSkpHFFYWVFZV1BUV1FVVVJWVFdZWVFRHh4eHg8pKSkp";
+        let js = r#"function e(...e){"undefined"!=typeof window&&window.amigoConfig?.forceConsoleLogging&&console.log("[GG Debug]:",...e)}function t(e,t,n){if(!t)return e;const o=t.split(".");let i=e;return i}"#;
+        let css = ".ot-go-modal-error-msg:empty{margin:0;line-height:0}#onetrust-banner-sdk div.ot-go-modal-overlay:not(.ot-hide){background:rgba(0,0,0,.5);z-index:2147483648;width:100%;height:100%}";
+        let prose = "Study smarter with homework help from experts in more than fifty subjects. Paste a question, upload a photo or browse step by step solutions. ".repeat(3);
+        let captured = |body: serde_json::Value| {
+            vec![CapturedNetworkResponse {
+                url: "https://collector.px-cloud.net/api/v2/collector".into(),
+                request_id: "1".into(),
+                status: 200,
+                mime_type: Some("application/json".into()),
+                body: Some(body.to_string()),
+                body_size_bytes: 1200,
+            }]
+        };
+        let noise = captured(serde_json::json!({ "ob": px.repeat(4), "script": js, "style": css }));
+        assert!(
+            extract_xhr_text(&noise).is_none(),
+            "payloads, code and CSS are not text"
+        );
+
+        let mixed =
+            captured(serde_json::json!({ "ob": px.repeat(4), "script": js, "copy": prose }));
+        let got = extract_xhr_text(&mixed).expect("the prose field survives");
+        assert!(got.contains("Study smarter"));
+        assert!(!got.contains("Dw8PDykp"));
+        assert!(!got.contains("amigoConfig"));
+    }
+
+    #[test]
+    fn xhr_extract_keeps_text_written_without_spaces() {
+        let ja = "東京都は火曜日、図書館の開館時間を延長する方針を明らかにした。学生や夜間に働く人の利用を見込んでおり、春まで試験的に実施する。";
+        let zh = "市议会周二投票决定延长图书馆的开放时间。居民表示，延长晚间开放时间将有助于学生和轮班工人，试点计划将持续到春季。";
+        let th = "สภาเมืองลงมติเมื่อวันอังคารให้ขยายเวลาเปิดห้องสมุดเพื่อช่วยนักเรียนและผู้ที่ทำงานกะกลางคืน";
+        let body = serde_json::json!({ "ja": ja, "zh": zh, "th": th }).to_string();
+        let resp = vec![CapturedNetworkResponse {
+            url: "https://api.example.jp/article/1".into(),
+            request_id: "1".into(),
+            status: 200,
+            mime_type: Some("application/json".into()),
+            body_size_bytes: body.len(),
+            body: Some(body),
+        }];
+        let got = extract_xhr_text(&resp).expect("unspaced prose is text");
+        for text in [ja, zh, th] {
+            assert!(got.contains(text), "kept: {text}");
+        }
+    }
+
+    #[test]
+    fn xhr_extract_keeps_text_with_html_formatting() {
+        // Article JSON often carries inline markup. Strings that start with a
+        // tag are skipped by walk_json_strings, so this one starts with text.
+        let html = "Updated: <p>The council voted on <strong>Tuesday</strong> to extend the library's opening hours.</p><p>Residents said the change would help <em>students</em> and shift workers.</p><p>A pilot will run through the spring, and the council will <a href=\"/minutes\">publish the results</a> before a final vote.</p><p>Staff will add two evening shifts.<br/>Weekend hours stay the same, and the branch reopens after repairs in March.</p>";
+        let body = serde_json::json!({ "body": html }).to_string();
+        let resp = vec![CapturedNetworkResponse {
+            url: "https://api.example.com/article/1".into(),
+            request_id: "1".into(),
+            status: 200,
+            mime_type: Some("application/json".into()),
+            body_size_bytes: body.len(),
+            body: Some(body),
+        }];
+        let got = extract_xhr_text(&resp).expect("HTML-formatted prose is text");
+        assert!(got.contains("opening hours"));
+        assert!(looks_like_prose(html));
+        assert!(!looks_like_prose(
+            "if (a < b && c > d) { x = y; } else { z = (w); } return t; function q() { r = s; }"
+        ));
+    }
+
+    #[test]
+    fn prose_check_decodes_entities() {
+        let plain = "The council voted on Tuesday to extend the library's opening hours, and residents said the change would help students and shift workers.";
+        assert!(looks_like_prose(plain));
+        assert!(looks_like_prose(&plain.replace(' ', "&nbsp;")));
+        assert!(looks_like_prose(
+            &plain.replace(' ', "&#160;").replace('\'', "&#8217;")
+        ));
+        assert!(looks_like_prose(
+            &plain
+                .replace("library's", "library&rsquo;s")
+                .replace(" and ", " &amp; ")
+        ));
+        // A stray ampersand or semicolon is not an entity.
+        assert_eq!(
+            visible_text("Tom & Jerry; a&b c&#;d"),
+            "Tom & Jerry; a&b c&#;d"
+        );
+    }
+
+    #[test]
+    fn prose_check_decodes_numeric_and_space_entities() {
+        let plain = "The council voted on Tuesday to extend the library's opening hours, and residents said the change would help students and shift workers.";
+        for space in ["&#32;", "&#x20;", "&ensp;", "&emsp;", "&thinsp;"] {
+            assert!(
+                looks_like_prose(&plain.replace(' ', space)),
+                "spaces as {space}"
+            );
+        }
+        let zh = "市议会周二投票决定延长图书馆的开放时间。居民表示，延长晚间开放时间将有助于学生和轮班工人，试点计划将持续到春季。";
+        let encoded: String = zh.chars().map(|c| format!("&#{};", c as u32)).collect();
+        assert!(looks_like_prose(&encoded), "decimal references");
+        let hex: String = zh.chars().map(|c| format!("&#x{:X};", c as u32)).collect();
+        assert!(looks_like_prose(&hex), "hex references");
+        assert_eq!(
+            visible_text("a&#60;b &#xZZ; &#1114112; &bogus-name;"),
+            "a<b &#xZZ; &#1114112; &bogus-name;"
+        );
+    }
+
+    #[test]
+    fn visible_text_is_one_pass() {
+        // Unclosed `<` runs used to be rescanned to the end each time.
+        let field = format!("Updated: {}", "<".repeat(400_000));
+        let started = std::time::Instant::now();
+        assert!(!looks_like_prose(&field));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(visible_text("a <b <i>x</i> c<d"), "a <b  x  c<d");
+        assert_eq!(
+            visible_text("x < y and <a href=\"/m\">link</a>"),
+            "x < y and  link "
+        );
     }
 
     #[test]
