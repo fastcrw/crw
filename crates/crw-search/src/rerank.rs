@@ -361,13 +361,9 @@ fn is_junk(r: &SearxngResult) -> bool {
     }
     // Asset-leak / non-content paths.
     let url_l = url.to_lowercase();
-    if url_l.contains("/mapfiles/")
+    url_l.contains("/mapfiles/")
         || url_l.contains("/apple-app-site-association/")
         || url_l.contains("/.well-known/")
-    {
-        return true;
-    }
-    false
 }
 
 /// Important-term coverage guard. Mirrors `score.py::covers`.
