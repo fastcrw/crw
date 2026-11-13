@@ -785,6 +785,30 @@ fn is_hard_block_status(status_code: u16) -> bool {
     matches!(status_code, 401 | 403 | 429 | 503) || (520..=530).contains(&status_code)
 }
 
+/// A 404 or 410 whose body is not a block page: the page is not there, and
+/// that is the answer. Escalating it only renders the same page in the next
+/// tier, and Camoufox, which reported every page as a 200, turned a dead link
+/// into a successful scrape. A block served with a 404 still escalates. (The
+/// antibot classifier's structural verdict is about a thin page, which a
+/// missing page often is, not a wall.)
+fn is_missing_page(
+    status_code: u16,
+    is_bot_wall: bool,
+    vendor_block: Option<&str>,
+    cf_challenge: bool,
+    antibot_signal: crw_extract::antibot::AntibotSignal,
+) -> bool {
+    use crw_extract::antibot::AntibotSignal;
+    matches!(status_code, 404 | 410)
+        && !is_bot_wall
+        && vendor_block.is_none()
+        && !cf_challenge
+        && matches!(
+            antibot_signal,
+            AntibotSignal::None | AntibotSignal::StructuralFailure
+        )
+}
+
 /// Does this URL's path name a PDF? Only the lower-cased path is read, so a
 /// query string or fragment (`?download=1`, `#page=3`) neither hides nor fakes
 /// the extension. A URL that does not parse is not treated as one.
@@ -3109,14 +3133,20 @@ impl FallbackRenderer {
             || vendor_block.is_some()
             || cf_challenge
             || antibot.signal.is_blocked();
-        let acceptable = text_len >= Self::MIN_RENDERED_TEXT_LEN
+        let acceptable = is_missing_page(
+            result.status_code,
+            is_bot_wall,
+            vendor_block,
+            cf_challenge,
+            antibot.signal,
+        ) || (text_len >= Self::MIN_RENDERED_TEXT_LEN
             && !is_placeholder
             && failed_render.is_none()
             && !is_bot_wall
             && vendor_block.is_none()
             && !cf_challenge
             && !is_status_blocked
-            && !antibot_blocked;
+            && !antibot_blocked);
         let unrecoverable_wall =
             is_fingerprint_vendor_wall(cf_challenge, vendor_block, antibot.signal);
         JsAttemptClass {
@@ -3843,14 +3873,22 @@ impl FallbackRenderer {
                     {
                         saw_hard_block = true;
                     }
-                    if text_len >= Self::MIN_RENDERED_TEXT_LEN
-                        && !is_placeholder
-                        && failed_render.is_none()
-                        && !is_bot_wall
-                        && vendor_block.is_none()
-                        && !cf_challenge
-                        && !is_status_blocked
-                        && !antibot_blocked
+                    let missing_page = is_missing_page(
+                        result.status_code,
+                        is_bot_wall,
+                        vendor_block,
+                        cf_challenge,
+                        antibot.signal,
+                    );
+                    if missing_page
+                        || (text_len >= Self::MIN_RENDERED_TEXT_LEN
+                            && !is_placeholder
+                            && failed_render.is_none()
+                            && !is_bot_wall
+                            && vendor_block.is_none()
+                            && !cf_challenge
+                            && !is_status_blocked
+                            && !antibot_blocked)
                     {
                         // Capture the promotion state BEFORE record_success
                         // clears the latch — otherwise AutoPromoted decisions
@@ -6631,6 +6669,69 @@ mod tests {
                 "{label}: the browser's page must win; got {}",
                 res.html
             );
+        }
+    }
+
+    /// A dead link is a 404, not a block: the ladder takes the browser's 404 as
+    /// the answer instead of asking Camoufox, which reported it as a 200. A
+    /// block page served with a 404 still goes to Camoufox.
+    #[cfg(feature = "camoufox")]
+    #[tokio::test]
+    async fn missing_page_is_the_answer_not_a_block() {
+        let missing = "<html><body><h1>Error: 404 Page not found</h1>\
+                       <p>Oops! The page you asked for is not here.</p></body></html>";
+        let wall = "<html><body><script src=\"https://captcha-delivery.com/c.js\"></script>\
+                    </body></html>";
+        let page = format!(
+            "<html><body><article><h1>Real page</h1><p>{}</p></article></body></html>",
+            "Genuine prose that no detector could mistake for an interstitial. ".repeat(20)
+        );
+        for (status, chrome_body, want_status, want_camoufox_calls) in [
+            (404, missing, 404, 0),
+            (410, missing, 410, 0),
+            (404, wall, 200, 1),
+        ] {
+            let chrome = SeqFetcher::new(
+                "chrome",
+                vec![MockBehavior::OkStatus(status, chrome_body.to_string())],
+            );
+            let camoufox = SeqFetcher::new("camoufox", vec![MockBehavior::Ok(page.clone())]);
+            let mut r = make_renderer_with_mocks(vec![
+                chrome.clone() as Arc<dyn PageFetcher>,
+                camoufox.clone() as Arc<dyn PageFetcher>,
+            ]);
+            r.camoufox_in_auto = true;
+            // renderJs: true fetches over HTTP first for the content type.
+            // An HTTP failure goes straight to the browsers, and any later
+            // HTTP fallback would fail too, so the answer is a browser's.
+            r.http = Arc::new(MockFetcher {
+                name: "http",
+                behavior: MockBehavior::Err("tls handshake eof".to_string()),
+            });
+            let out = r
+                .fetch(
+                    "https://example.com/land-notes/the-good",
+                    &HashMap::new(),
+                    Some(true),
+                    None,
+                    None,
+                    tdl(),
+                )
+                .await
+                .expect("a page either way");
+            assert_eq!(out.status_code, want_status, "chrome {status}");
+            assert_eq!(camoufox.calls(), want_camoufox_calls, "chrome {status}");
+            let want_tier = if want_camoufox_calls == 0 {
+                "chrome"
+            } else {
+                "camoufox"
+            };
+            assert_eq!(
+                out.rendered_with.as_deref(),
+                Some(want_tier),
+                "chrome {status}"
+            );
+            assert!(out.block.is_none(), "{:?}", out.block);
         }
     }
 
@@ -11044,13 +11145,21 @@ mod tests {
         // 404 sits in the soft-block/`is_status_blocked` set but NOT in the
         // narrower `hard_block` status subset (401|403|429|503) — the two
         // sets deliberately diverge, and plain content with a 404 doesn't
-        // trip the antibot classifier either.
+        // trip the antibot classifier either. It is a missing page, so the
+        // attempt is the answer.
         let r = make_renderer_with_mocks(vec![]);
         let class = r.classify_js_attempt(&fr(404, &rich_html("PAGE-")));
         assert!(class.is_status_blocked);
         assert!(!class.hard_block);
-        assert!(!class.acceptable);
+        assert!(class.acceptable);
         assert_eq!(class.antibot.signal, AntibotSignal::None);
+
+        // A block page served with a 404 is not one.
+        let wall = r.classify_js_attempt(&fr(
+            404,
+            "<html><body><script src=\"https://captcha-delivery.com/c.js\"></script></body></html>",
+        ));
+        assert!(!wall.acceptable);
     }
 
     #[test]
@@ -11341,13 +11450,18 @@ mod tests {
         // 404/405/406/410/412/451/500 are soft-block (`is_status_blocked`) but
         // NOT in the narrower hard_block subset (401|403|429|503|520-530), and
         // plain content at these codes doesn't trip the antibot classifier
-        // either — the two escalation signals genuinely diverge here.
+        // either — the two escalation signals genuinely diverge here. A 404
+        // or 410 is a missing page, which is the answer (`is_missing_page`).
         let r = make_renderer_with_mocks(vec![]);
         for code in [404u16, 405, 406, 410, 412, 451, 500] {
             let class = r.classify_js_attempt(&fr(code, &rich_html("PAGE-")));
             assert!(class.is_status_blocked, "{code} should be status-blocked");
             assert!(!class.hard_block, "{code} should not be hard_block");
-            assert!(!class.acceptable, "{code} should not be acceptable");
+            assert_eq!(
+                class.acceptable,
+                matches!(code, 404 | 410),
+                "{code}: only a missing page is acceptable"
+            );
             assert_eq!(
                 class.antibot.signal,
                 AntibotSignal::None,

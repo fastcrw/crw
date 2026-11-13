@@ -12,8 +12,8 @@
 //! renderer is a plain [`reqwest::Client`] — it never touches `cdp.rs`.
 //!
 //! ## Sequence (per request, fresh session — no cookie carry-over)
-//! 1. `POST {base}/tabs` `{userId, sessionKey, url}` → `{tabId, url}` (the
-//!    `url` body navigates the new tab as it is created).
+//! 1. `POST {base}/tabs` `{userId, sessionKey, url}` → `{tabId, url, httpStatus}`
+//!    (the `url` body navigates the new tab as it is created).
 //! 2. `POST {base}/tabs/{tabId}/evaluate` `{userId, expression}` with
 //!    `expression = "document.documentElement.outerHTML"` → `{ok, result}`.
 //!    `result` is the fully JS-rendered DOM string — exactly what CRW's
@@ -176,7 +176,8 @@ impl CamoufoxRenderer {
         Ok(value)
     }
 
-    /// Create a fresh tab navigated to `url`. Returns its `tabId`. Some sidecar
+    /// Create a fresh tab navigated to `url`. Returns its `tabId` and the
+    /// navigation's HTTP status, when the sidecar reports one. Some sidecar
     /// builds intermittently omit `tabId` under proxy-IP races on the first
     /// attempt, so we retry exactly once before failing.
     async fn create_tab(
@@ -185,7 +186,7 @@ impl CamoufoxRenderer {
         user_id: &str,
         session_key: &str,
         deadline: &Deadline,
-    ) -> CrwResult<String> {
+    ) -> CrwResult<(String, Option<u16>)> {
         let body = serde_json::json!({
             "userId": user_id,
             "sessionKey": session_key,
@@ -194,7 +195,11 @@ impl CamoufoxRenderer {
         for attempt in 0..2u8 {
             let value = self.post_json("/tabs", &body, deadline).await?;
             if let Some(tab_id) = value.get("tabId").and_then(|t| t.as_str()) {
-                return Ok(tab_id.to_string());
+                let status = value
+                    .get("httpStatus")
+                    .and_then(|s| s.as_u64())
+                    .and_then(|s| u16::try_from(s).ok());
+                return Ok((tab_id.to_string(), status));
             }
             tracing::debug!(
                 renderer = %self.name,
@@ -280,7 +285,7 @@ impl CamoufoxRenderer {
         session_key: &str,
         deadline: &Deadline,
     ) -> CrwResult<(u16, String)> {
-        let tab_id = self.create_tab(url, user_id, session_key, deadline).await?;
+        let (tab_id, nav_status) = self.create_tab(url, user_id, session_key, deadline).await?;
         let mut html = self.evaluate_outer_html(&tab_id, user_id, deadline).await?;
 
         // A Cloudflare-style JS challenge resolves client-side, empirically
@@ -377,9 +382,12 @@ impl CamoufoxRenderer {
                 "camoufox: bot {kind} detected in rendered HTML"
             )));
         }
-        // The /evaluate path does not surface the page's HTTP status; the
-        // navigation in `create_tab` already succeeded server-side, so 200.
-        Ok((200, html))
+        // The sidecar reports the status of the tab's first navigation, not of
+        // the page a challenge reloads into, so only a missing page (404, 410)
+        // is passed on: a challenge's 403 or 503 may have cleared since.
+        // Anything else reads as 200.
+        let status = nav_status.filter(|s| matches!(s, 404 | 410)).unwrap_or(200);
+        Ok((status, html))
     }
 }
 
@@ -606,6 +614,43 @@ mod tests {
         assert_eq!(res.status_code, 200);
         assert!(res.html.contains("real content"));
         // server drop verifies the expect(1) on the DELETE mock
+    }
+
+    /// A missing page's status reaches the ladder, which takes a 404 as the
+    /// answer. Any other navigation status reads as 200, since a challenge
+    /// may have cleared after it.
+    #[tokio::test]
+    async fn missing_page_status_is_passed_on() {
+        for (nav_status, want) in [(404, 404), (410, 410), (403, 200), (200, 200)] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/tabs"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "tabId": "t1", "url": "https://example.com/gone", "httpStatus": nav_status
+                })))
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/tabs/t1/evaluate"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                    "ok": true,
+                    "result": "<html><body><h1>Page not found</h1><p>The page you asked for is not here.</p></body></html>"
+                })))
+                .mount(&server)
+                .await;
+            mount_delete_session(&server).await;
+
+            let res = renderer(&server.uri())
+                .fetch(
+                    "https://example.com/gone",
+                    &HashMap::new(),
+                    None,
+                    deadline(),
+                )
+                .await
+                .expect("a page either way");
+            assert_eq!(res.status_code, want, "navigation status {nav_status}");
+        }
     }
 
     #[tokio::test]
