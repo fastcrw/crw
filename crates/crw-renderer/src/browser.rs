@@ -1,7 +1,7 @@
 //! Auto-detect and spawn a headless browser for JS rendering in embedded mode.
 //!
 //! Priority order:
-//! 1. LightPanda binary (PATH or `~/.crw/lightpanda`, auto-downloaded if missing)
+//! 1. LightPanda binary (PATH or `~/.crw/lightpanda-<version>`, auto-downloaded if missing)
 //! 2. Chrome/Chromium binary (heavier but widely available)
 //! 3. LightPanda Docker container (last resort, requires Docker daemon)
 //!
@@ -372,7 +372,7 @@ pub enum RendererKind {
 ///
 /// Tries in order: LightPanda native → Chrome native → LightPanda Docker.
 pub async fn spawn_headless() -> Option<(ManagedBrowser, String)> {
-    // 1. Try LightPanda native binary (PATH, ~/.crw/lightpanda, or auto-download).
+    // 1. Try LightPanda native binary (PATH, ~/.crw/lightpanda-<version>, or auto-download).
     if let Some(result) = try_lightpanda_native().await {
         return Some(result);
     }
@@ -437,7 +437,7 @@ pub fn detect_local_lightpanda() -> Option<String> {
 
 // --- LightPanda native ---
 
-/// Find LightPanda binary: PATH → ~/.crw/lightpanda → auto-download.
+/// Find LightPanda binary: PATH → ~/.crw/lightpanda-<version> → auto-download.
 async fn find_or_download_lightpanda() -> Option<String> {
     // 1. Check PATH.
     if let Some(bin) = find_in_path("lightpanda") {
@@ -445,7 +445,7 @@ async fn find_or_download_lightpanda() -> Option<String> {
         return Some(bin);
     }
 
-    // 2. Check ~/.crw/lightpanda (our managed install location).
+    // 2. Check ~/.crw/lightpanda-<version> (our managed install location).
     let managed_path = lightpanda_managed_path()?;
     if managed_path.exists() {
         let path_str = managed_path.to_string_lossy().to_string();
@@ -453,8 +453,18 @@ async fn find_or_download_lightpanda() -> Option<String> {
         return Some(path_str);
     }
 
-    // 3. Auto-download from GitHub releases.
-    let download_url = lightpanda_download_url()?;
+    // 3. Auto-download the pinned release. Written to a `.part` file and only
+    // renamed into place after the SHA256 matches, so a killed or tampered
+    // download is never picked up by step 2 on the next run.
+    let (asset, expected_sha) = crate::lightpanda_release::asset().or_else(|| {
+        tracing::debug!(
+            "No LightPanda binary available for {}/{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        );
+        None
+    })?;
+    let download_url = crate::lightpanda_release::url(asset);
     tracing::info!("Downloading LightPanda from {download_url}...");
 
     if let Some(parent) = managed_path.parent()
@@ -463,13 +473,27 @@ async fn find_or_download_lightpanda() -> Option<String> {
         tracing::warn!("Failed to create ~/.crw directory: {e}");
         return None;
     }
+    remove_abandoned_downloads(&managed_path);
+    let mut part_path = managed_path.clone().into_os_string();
+    // Per-process name: two first runs downloading at once must not share bytes.
+    part_path.push(format!(".part-{}", std::process::id()));
+    let part_path = PathBuf::from(part_path);
 
+    let max_secs = LIGHTPANDA_DOWNLOAD_MAX_SECS.to_string();
     let output = Command::new("curl")
-        .args(["-fsSL", "-o"])
-        .arg(managed_path.as_os_str())
+        .args([
+            "-fsSL",
+            "--connect-timeout",
+            "15",
+            "--max-time",
+            max_secs.as_str(),
+            "-o",
+        ])
+        .arg(part_path.as_os_str())
         .arg(&download_url)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .ok()?
         .wait_with_output()
@@ -479,8 +503,20 @@ async fn find_or_download_lightpanda() -> Option<String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         tracing::warn!("Failed to download LightPanda: {stderr}");
-        // Clean up partial download.
-        let _ = std::fs::remove_file(&managed_path);
+        let _ = std::fs::remove_file(&part_path);
+        return None;
+    }
+
+    let actual_sha = std::fs::read(&part_path)
+        .map(|bytes| crate::lightpanda_release::sha256_hex(&bytes))
+        .unwrap_or_default();
+    if actual_sha != expected_sha {
+        tracing::warn!(
+            expected = expected_sha,
+            actual = %actual_sha,
+            "LightPanda download failed its SHA256 check, not installing it"
+        );
+        let _ = std::fs::remove_file(&part_path);
         return None;
     }
 
@@ -488,13 +524,17 @@ async fn find_or_download_lightpanda() -> Option<String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Err(e) =
-            std::fs::set_permissions(&managed_path, std::fs::Permissions::from_mode(0o755))
+        if let Err(e) = std::fs::set_permissions(&part_path, std::fs::Permissions::from_mode(0o755))
         {
             tracing::warn!("Failed to chmod LightPanda binary: {e}");
-            let _ = std::fs::remove_file(&managed_path);
+            let _ = std::fs::remove_file(&part_path);
             return None;
         }
+    }
+    if let Err(e) = std::fs::rename(&part_path, &managed_path) {
+        tracing::warn!("Failed to install LightPanda binary: {e}");
+        let _ = std::fs::remove_file(&part_path);
+        return None;
     }
 
     let path_str = managed_path.to_string_lossy().to_string();
@@ -502,24 +542,36 @@ async fn find_or_download_lightpanda() -> Option<String> {
     Some(path_str)
 }
 
-/// Get the managed install path: ~/.crw/lightpanda
-fn lightpanda_managed_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".crw").join("lightpanda"))
-}
+/// Upper bound on one binary download (75 to 92 MB), passed to curl.
+const LIGHTPANDA_DOWNLOAD_MAX_SECS: u64 = 600;
 
-/// Get the correct download URL for the current platform.
-fn lightpanda_download_url() -> Option<String> {
-    let base = "https://github.com/lightpanda-io/browser/releases/download/nightly";
-
-    match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("macos", "aarch64") => Some(format!("{base}/lightpanda-aarch64-macos")),
-        ("linux", "x86_64") => Some(format!("{base}/lightpanda-x86_64-linux")),
-        ("linux", "aarch64") => Some(format!("{base}/lightpanda-aarch64-linux")),
-        (os, arch) => {
-            tracing::debug!("No LightPanda binary available for {os}/{arch}");
-            None
+/// A download whose process died (an MCP client that timed out and killed the
+/// server) leaves its `.part-<pid>` behind. One older than curl's own
+/// `--max-time` cannot still be in flight.
+fn remove_abandoned_downloads(managed_path: &std::path::Path) {
+    let (Some(dir), Some(name)) = (managed_path.parent(), managed_path.file_name()) else {
+        return;
+    };
+    let prefix = format!("{}.part-", name.to_string_lossy());
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let abandoned = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age.as_secs() > LIGHTPANDA_DOWNLOAD_MAX_SECS);
+        if abandoned && entry.file_name().to_string_lossy().starts_with(&prefix) {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
+}
+
+/// Get the managed install path: ~/.crw/lightpanda-<pinned version>
+fn lightpanda_managed_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| {
+        h.join(".crw")
+            .join(crate::lightpanda_release::managed_file_name())
+    })
 }
 
 /// Ranges [`crw_core::url_safety`] rejects that LightPanda's own
@@ -565,6 +617,9 @@ async fn try_lightpanda_native() -> Option<(ManagedBrowser, String)> {
         "--block-cidrs",
         LIGHTPANDA_EXTRA_BLOCK_CIDRS,
     ])
+    // LightPanda sends usage telemetry unless this is set (any value), the
+    // same opt-out both compose files use.
+    .env("LIGHTPANDA_DISABLE_TELEMETRY", "true")
     .stdin(Stdio::null())
     .stdout(Stdio::null())
     .stderr(Stdio::null())
@@ -609,15 +664,19 @@ async fn try_lightpanda_docker() -> Option<(ManagedBrowser, String)> {
 
     tracing::info!("Trying LightPanda via Docker...");
 
-    // `docker run --rm -d -p 0:9222` → random host port mapped to 9222.
+    // `docker run --rm -d -p 127.0.0.1:0:9222` → random loopback port mapped to 9222.
+    let docker_image = format!("lightpanda/browser:{}", crate::lightpanda_release::VERSION);
     let output = Command::new("docker")
         .args([
             "run",
             "--rm",
             "-d",
+            // Loopback only: the CDP port has no auth and drives a browser.
             "-p",
-            "0:9222",
-            "lightpanda/browser:latest",
+            "127.0.0.1:0:9222",
+            "-e",
+            "LIGHTPANDA_DISABLE_TELEMETRY=true",
+            docker_image.as_str(),
             // Overrides the image CMD, so the whole serve line has to be
             // repeated. Same reasoning as the native launch above.
             "/bin/lightpanda",

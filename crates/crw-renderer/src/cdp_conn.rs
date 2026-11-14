@@ -102,7 +102,7 @@ fn classify_ws_error(e: &tokio_tungstenite::tungstenite::Error) -> &'static str 
 ///   and certificate name.
 /// - An IP-literal host is untouched; the header tungstenite generates for it
 ///   already passes the guard.
-fn cdp_ws_request(ws_url: &str) -> CrwResult<WsRequest> {
+pub(crate) fn cdp_ws_request(ws_url: &str) -> CrwResult<WsRequest> {
     // Two tolerances `http::Uri` does not have but the `url::Url` parse this
     // replaced did. Both are reachable: `cdp.rs` hands `/devtools/` and `token=`
     // URLs straight here without going through discovery.

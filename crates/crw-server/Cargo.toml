@@ -41,8 +41,6 @@ uuid = { workspace = true }
 url = { workspace = true }
 reqwest = { workspace = true }
 clap = { workspace = true }
-sha2 = { workspace = true }
-hex = { workspace = true }
 base64 = { workspace = true }
 futures = { workspace = true }
 

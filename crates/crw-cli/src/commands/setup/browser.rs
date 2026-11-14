@@ -2,8 +2,8 @@
 
 use crate::commands::setup::shell::home_dir;
 use crate::commands::setup::ui;
+use crw_renderer::lightpanda_release;
 use indicatif::{ProgressBar, ProgressStyle};
-use sha2::{Digest, Sha256};
 use std::env::consts::{ARCH, OS};
 use std::path::PathBuf;
 
@@ -42,9 +42,6 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     }
 }
 
-const LIGHTPANDA_BASE_URL: &str =
-    "https://github.com/lightpanda-io/browser/releases/download/nightly";
-
 /// Browser engine choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserEngine {
@@ -69,7 +66,6 @@ impl BrowserEngine {
 pub struct PlatformInfo {
     pub os_label: &'static str,
     pub arch_label: &'static str,
-    pub binary_name: &'static str,
 }
 
 /// Get platform info for LightPanda download.
@@ -78,17 +74,14 @@ pub fn get_platform_info() -> Option<PlatformInfo> {
         ("linux", "x86_64") => Some(PlatformInfo {
             os_label: "Linux",
             arch_label: "x86_64",
-            binary_name: "lightpanda-x86_64-linux",
         }),
         ("linux", "aarch64") => Some(PlatformInfo {
             os_label: "Linux",
             arch_label: "aarch64",
-            binary_name: "lightpanda-aarch64-linux",
         }),
         ("macos", "aarch64") => Some(PlatformInfo {
             os_label: "macOS",
             arch_label: "aarch64 (Apple Silicon)",
-            binary_name: "lightpanda-aarch64-macos",
         }),
         _ => None,
     }
@@ -138,7 +131,7 @@ pub fn detect_chrome() -> Option<PathBuf> {
 /// Check if LightPanda is already installed.
 pub fn detect_lightpanda() -> Option<PathBuf> {
     // Keep setup and the runtime on the same managed location. The runtime
-    // checks ~/.crw/lightpanda directly, so no PATH or shell-rc mutation is
+    // checks ~/.crw/lightpanda-<version> directly, so no PATH or shell-rc mutation is
     // required after setup.
     if let Some(managed_path) = lightpanda_managed_path()
         && managed_path.exists()
@@ -153,12 +146,14 @@ pub fn detect_lightpanda() -> Option<PathBuf> {
 
 /// Download LightPanda with progress bar.
 pub async fn download_lightpanda() -> Result<PathBuf, String> {
-    let platform = get_platform_info().ok_or_else(|| {
+    let unsupported = || {
         format!(
-            "Unsupported platform: {} {}. LightPanda provides binaries for Linux x86_64 and macOS aarch64.",
+            "Unsupported platform: {} {}. LightPanda provides binaries for Linux x86_64, Linux aarch64 and macOS aarch64.",
             OS, ARCH
         )
-    })?;
+    };
+    let platform = get_platform_info().ok_or_else(unsupported)?;
+    let (asset, expected_hash) = lightpanda_release::asset().ok_or_else(unsupported)?;
 
     ui::print_info(&format!(
         "Detected: {} {}",
@@ -175,43 +170,41 @@ pub async fn download_lightpanda() -> Result<PathBuf, String> {
     std::fs::create_dir_all(install_dir)
         .map_err(|e| format!("Failed to create {}: {}", install_dir.display(), e))?;
 
-    // Download binary
-    let url = format!("{}/{}", LIGHTPANDA_BASE_URL, platform.binary_name);
+    // Download the pinned release and check it against the hash shipped in crw.
+    let url = lightpanda_release::url(asset);
     let bytes = download_with_progress(&url, "LightPanda").await?;
-
-    // Verify checksum
-    let actual_hash = sha256_hex(&bytes);
-    let checksum_url = format!("{}.sha256", url);
-
-    match download_checksum(&checksum_url).await {
-        Ok(expected_hash) => {
-            if actual_hash != expected_hash {
-                return Err(format!(
-                    "SHA256 checksum mismatch!\nExpected: {}\nActual: {}\nThe downloaded binary may be corrupted or tampered with.",
-                    expected_hash, actual_hash
-                ));
-            }
-            ui::print_success(&format!("SHA256 verified: {}...", &actual_hash[..12]));
-        }
-        Err(_) => {
-            ui::print_warning(&format!(
-                "No checksum file available, SHA256: {}...",
-                &actual_hash[..12]
-            ));
-        }
+    let actual_hash = lightpanda_release::sha256_hex(&bytes);
+    if actual_hash != expected_hash {
+        return Err(format!(
+            "SHA256 checksum mismatch, LightPanda {} was not installed.\nExpected: {}\nActual: {}\nThe download may be corrupted or tampered with. Run setup again.",
+            lightpanda_release::VERSION,
+            expected_hash,
+            actual_hash
+        ));
     }
+    ui::print_success(&format!("SHA256 verified: {}...", &actual_hash[..12]));
 
-    // Write binary
-    std::fs::write(&install_path, &bytes)
-        .map_err(|e| format!("Failed to write {}: {}", install_path.display(), e))?;
-
-    // Make executable on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(&install_path, perms)
-            .map_err(|e| format!("Failed to chmod +x: {}", e))?;
+    // Write beside the target and rename, so an interrupted setup never leaves
+    // a partial file at the path the runtime trusts without re-hashing.
+    let mut part_path = install_path.clone().into_os_string();
+    part_path.push(format!(".part-{}", std::process::id()));
+    let part_path = PathBuf::from(part_path);
+    let install = || -> Result<(), String> {
+        std::fs::write(&part_path, &bytes)
+            .map_err(|e| format!("Failed to write {}: {}", part_path.display(), e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o755);
+            std::fs::set_permissions(&part_path, perms)
+                .map_err(|e| format!("Failed to chmod +x: {}", e))?;
+        }
+        std::fs::rename(&part_path, &install_path)
+            .map_err(|e| format!("Failed to install {}: {}", install_path.display(), e))
+    };
+    if let Err(e) = install() {
+        let _ = std::fs::remove_file(&part_path);
+        return Err(e);
     }
 
     ui::print_success(&format!("Installed to {}", install_path.display()));
@@ -219,8 +212,13 @@ pub async fn download_lightpanda() -> Result<PathBuf, String> {
     Ok(install_path)
 }
 
+/// Same versioned file the runtime launcher looks for, so an install of any
+/// other build is never mistaken for the pinned release.
 fn lightpanda_managed_path() -> Option<PathBuf> {
-    home_dir().map(|home| home.join(".crw").join("lightpanda"))
+    home_dir().map(|home| {
+        home.join(".crw")
+            .join(lightpanda_release::managed_file_name())
+    })
 }
 
 /// Download a file with progress bar.
@@ -273,50 +271,6 @@ async fn download_with_progress(url: &str, name: &str) -> Result<Vec<u8>, String
     Ok(bytes)
 }
 
-/// Download and parse a checksum file.
-async fn download_checksum(url: &str) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| format!("Client build error: {}", e))?;
-
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Fetch error: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| format!("Read error: {}", e))?;
-
-    // Parse checksum file: first token is the hex hash
-    let hash = text
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| "Empty checksum file".to_string())?
-        .to_lowercase();
-
-    // Sanity check: should be 64 hex chars (SHA256)
-    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(format!("Invalid checksum format: {}", hash));
-    }
-
-    Ok(hash)
-}
-
-/// Compute SHA256 hex digest.
-fn sha256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,12 +282,5 @@ mod tests {
         // On supported platforms, should return Some
         // On unsupported platforms, returns None
         let _ = info;
-    }
-
-    #[test]
-    fn test_sha256_hex() {
-        let hash = sha256_hex(b"hello world");
-        assert_eq!(hash.len(), 64);
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

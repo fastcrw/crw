@@ -334,6 +334,19 @@ services:
     environment:
       - CRW_RENDERER__LIGHTPANDA__WS_URL=ws://lightpanda:9222
   lightpanda:
-    image: lightpanda/lightpanda:latest
-    command: ["serve", "--host", "0.0.0.0", "--port", "9222"]
+    image: lightpanda/browser:1.0.4
+    environment:
+      - LIGHTPANDA_DISABLE_TELEMETRY=true
+    command:
+      - "/bin/lightpanda"
+      - "serve"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "9222"
+      - "--block-private-networks"
+      - "--advertise-host"
+      - "lightpanda"
 ```
+
+LightPanda 1.x only accepts CDP connections whose `Host` is an IP address, `localhost:<port>`, or the `--advertise-host` name, so keep `--advertise-host` in sync with the service name. The repository's `docker-compose.yml` also pins the image digest and adds `--block-cidrs` for the private ranges LightPanda's own group does not cover.
