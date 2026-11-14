@@ -785,24 +785,16 @@ fn is_hard_block_status(status_code: u16) -> bool {
     matches!(status_code, 401 | 403 | 429 | 503) || (520..=530).contains(&status_code)
 }
 
-/// A 404 or 410 whose body is not a block page: the page is not there, and
-/// that is the answer. Escalating it only renders the same page in the next
-/// tier, and Camoufox, which reported every page as a 200, turned a dead link
-/// into a successful scrape. A block served with a 404 still escalates. (The
-/// antibot classifier's structural verdict is about a thin page, which a
-/// missing page often is, not a wall.)
-fn is_missing_page(
-    status_code: u16,
-    is_bot_wall: bool,
-    vendor_block: Option<&str>,
-    cf_challenge: bool,
-    antibot_signal: crw_extract::antibot::AntibotSignal,
-) -> bool {
+/// A 404 or 410 that the antibot classifier does not call a block: the page
+/// is not there, and that is the answer. Escalating it only renders the same
+/// page in the next tier, and Camoufox, which reported every page as a 200,
+/// turned a dead link into a successful scrape. Only the status gate is
+/// waived: a wall, a placeholder, a failed render or a near-empty body (a JS
+/// app shell some hosts serve as 404) still escalates. (The classifier's
+/// structural verdict is about a thin page, which a missing page often is.)
+fn is_missing_page(status_code: u16, antibot_signal: crw_extract::antibot::AntibotSignal) -> bool {
     use crw_extract::antibot::AntibotSignal;
     matches!(status_code, 404 | 410)
-        && !is_bot_wall
-        && vendor_block.is_none()
-        && !cf_challenge
         && matches!(
             antibot_signal,
             AntibotSignal::None | AntibotSignal::StructuralFailure
@@ -3211,20 +3203,14 @@ impl FallbackRenderer {
             || vendor_block.is_some()
             || cf_challenge
             || antibot.signal.is_blocked();
-        let acceptable = is_missing_page(
-            result.status_code,
-            is_bot_wall,
-            vendor_block,
-            cf_challenge,
-            antibot.signal,
-        ) || (text_len >= Self::MIN_RENDERED_TEXT_LEN
+        let acceptable = text_len >= Self::MIN_RENDERED_TEXT_LEN
             && !is_placeholder
             && failed_render.is_none()
             && !is_bot_wall
             && vendor_block.is_none()
             && !cf_challenge
-            && !is_status_blocked
-            && !antibot_blocked);
+            && (is_missing_page(result.status_code, antibot.signal)
+                || (!is_status_blocked && !antibot_blocked));
         let unrecoverable_wall =
             is_fingerprint_vendor_wall(cf_challenge, vendor_block, antibot.signal);
         JsAttemptClass {
@@ -3951,22 +3937,14 @@ impl FallbackRenderer {
                     {
                         saw_hard_block = true;
                     }
-                    let missing_page = is_missing_page(
-                        result.status_code,
-                        is_bot_wall,
-                        vendor_block,
-                        cf_challenge,
-                        antibot.signal,
-                    );
-                    if missing_page
-                        || (text_len >= Self::MIN_RENDERED_TEXT_LEN
-                            && !is_placeholder
-                            && failed_render.is_none()
-                            && !is_bot_wall
-                            && vendor_block.is_none()
-                            && !cf_challenge
-                            && !is_status_blocked
-                            && !antibot_blocked)
+                    if text_len >= Self::MIN_RENDERED_TEXT_LEN
+                        && !is_placeholder
+                        && failed_render.is_none()
+                        && !is_bot_wall
+                        && vendor_block.is_none()
+                        && !cf_challenge
+                        && (is_missing_page(result.status_code, antibot.signal)
+                            || (!is_status_blocked && !antibot_blocked))
                     {
                         // Capture the promotion state BEFORE record_success
                         // clears the latch — otherwise AutoPromoted decisions
@@ -6899,6 +6877,7 @@ mod tests {
                        <p>Oops! The page you asked for is not here.</p></body></html>";
         let wall = "<html><body><script src=\"https://captcha-delivery.com/c.js\"></script>\
                     </body></html>";
+        let shell = "<html><body><div id=\"__next\"></div></body></html>";
         let page = format!(
             "<html><body><article><h1>Real page</h1><p>{}</p></article></body></html>",
             "Genuine prose that no detector could mistake for an interstitial. ".repeat(20)
@@ -6907,6 +6886,8 @@ mod tests {
             (404, missing, 404, 0),
             (410, missing, 410, 0),
             (404, wall, 200, 1),
+            // An empty JS app shell served as 404 is not an answer.
+            (404, shell, 200, 1),
         ] {
             let chrome = SeqFetcher::new(
                 "chrome",

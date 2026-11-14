@@ -316,6 +316,8 @@ impl CamoufoxRenderer {
             }
         }
         let mut html = self.evaluate_outer_html(&tab_id, user_id, deadline).await?;
+        // A challenge served with a 404 that clears into the page is not missing.
+        let challenged = looks_like_wall(&html) == Some("challenge");
 
         // A Cloudflare-style JS challenge resolves client-side, empirically
         // 5-25s after navigation. A single immediate evaluate() can therefore
@@ -420,9 +422,10 @@ impl CamoufoxRenderer {
         }
         // The sidecar reports the status of the tab's first navigation, not of
         // the page a challenge reloads into, so only a missing page (404, 410)
-        // is passed on: a challenge's 403 or 503 may have cleared since.
-        // Anything else reads as 200.
-        let status = nav_status.filter(|s| matches!(s, 404 | 410)).unwrap_or(200);
+        // with no challenge in between is passed on. Anything else reads as 200.
+        let status = nav_status
+            .filter(|s| matches!(s, 404 | 410) && !challenged)
+            .unwrap_or(200);
         Ok((status, html))
     }
 }
@@ -901,7 +904,8 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/tabs"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({"tabId": "t1"})),
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"tabId": "t1", "httpStatus": 404})),
             )
             .mount(&server)
             .await;
@@ -939,6 +943,7 @@ mod tests {
             .fetch("https://example.com", &HashMap::new(), None, deadline())
             .await
             .expect("challenge cleared, so the page must be returned");
+        // Served with a 404, cleared into the page: not a missing page.
         assert_eq!(res.status_code, 200);
         assert!(res.html.contains("real page"), "got: {}", res.html);
     }
