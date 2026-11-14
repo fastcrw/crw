@@ -55,6 +55,9 @@ moka = { workspace = true }
 publicsuffix = { workspace = true }
 regex = { workspace = true }
 encoding_rs = "0.8"
+# SHA256 of the pinned LightPanda release (lightpanda_release.rs).
+sha2 = { workspace = true }
+hex = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

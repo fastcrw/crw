@@ -63,6 +63,7 @@ pub mod host_limiter;
 pub mod http_only;
 #[cfg(feature = "impersonated")]
 pub mod impersonated;
+pub mod lightpanda_release;
 pub mod locale;
 pub mod preference;
 #[cfg(feature = "test-utils")]

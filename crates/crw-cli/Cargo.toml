@@ -93,10 +93,6 @@ dialoguer = { version = "0.12", features = ["fuzzy-select"] }
 console = "0.16"
 indicatif = "0.18"
 
-# Crypto (for checksum verification)
-sha2 = { workspace = true }
-hex = { workspace = true }
-
 # SearXNG settings file (random secret_key)
 rand = { workspace = true }
 

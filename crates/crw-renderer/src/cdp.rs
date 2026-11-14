@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, OnceCell, Semaphore, broadcast};
 use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::http::header::HOST;
 
 use crate::blocklist::{BlockReason, Blocklist};
 use crate::cdp_conn::{CdpConnection, CdpEvent};
@@ -839,12 +840,18 @@ async fn resolve_ws_url_with_cache(
         return Ok(cached);
     }
 
+    // Probe and discovery send the same Host as the real connect. LightPanda
+    // 0.3.7+ and Chromium 148+ both reject a service-name Host (`lightpanda:9222`)
+    // and LightPanda also rejects a bare `localhost` without the port, so a
+    // hand-written Host here 403s both steps and silently drops the tier.
+    let request = crate::cdp_conn::cdp_ws_request(configured)?;
+    let host = request.headers().get(HOST).cloned();
     let resolved = if configured.contains("/devtools/") || is_browserless_direct_ws(configured) {
         // Already-resolved /devtools/ URL OR browserless v2 / commercial CDP
         // endpoint that serves a WS directly (no /json/version).
         configured.to_string()
     } else if let Ok(Ok((ws, _))) =
-        tokio::time::timeout(Duration::from_secs(3), connect_async(configured)).await
+        tokio::time::timeout(Duration::from_secs(3), connect_async(request)).await
     {
         drop(ws);
         configured.to_string()
@@ -858,9 +865,11 @@ async fn resolve_ws_url_with_cache(
 
         tracing::info!("Discovering browser WS URL from {http_url}");
 
-        let resp = reqwest::Client::new()
-            .get(&http_url)
-            .header("Host", "localhost")
+        let mut discover = reqwest::Client::new().get(&http_url);
+        if let Some(host) = host.as_ref().and_then(|h| h.to_str().ok()) {
+            discover = discover.header("Host", host);
+        }
+        let resp = discover
             .timeout(Duration::from_secs(5))
             .send()
             .await
@@ -6470,5 +6479,63 @@ mod tests {
         assert_ne!(BLOCK_LABEL_RESUME_FAILED, BLOCK_LABEL_WORKER_RESUMED);
         assert_ne!(BLOCK_LABEL_RESUME_FAILED, "child_unguarded");
         assert_ne!(BLOCK_LABEL_RESUME_FAILED, "child_stuck");
+    }
+}
+
+#[cfg(test)]
+mod discovery_host_tests {
+    use super::resolve_ws_url_with_cache;
+    use std::sync::Mutex as StdMutex;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// LightPanda 1.0.4 answers only when `Host` is an IP literal, the
+    /// advertised name, or `localhost:<port>`. This stand-in refuses the
+    /// WebSocket probe outright (forcing discovery) and serves `/json/version`
+    /// only to that exact `localhost:<port>` Host.
+    async fn host_checking_endpoint() -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase();
+                    let host_ok = req.contains(&format!("\r\nhost: localhost:{port}\r\n"));
+                    let resp = if req.starts_with("get /json/version") && host_ok {
+                        let body = format!(
+                            r#"{{"webSocketDebuggerUrl":"ws://127.0.0.1:{port}/devtools/browser/x"}}"#
+                        );
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                    } else {
+                        "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string()
+                    };
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn discovery_host_carries_the_port() {
+        let port = host_checking_endpoint().await;
+        let cache = StdMutex::new(None);
+        let resolved = resolve_ws_url_with_cache(
+            &format!("ws://localhost:{port}/"),
+            &cache,
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("discovery must pass the Host check");
+        assert_eq!(
+            resolved,
+            format!("ws://localhost:{port}/devtools/browser/x")
+        );
     }
 }

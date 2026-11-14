@@ -132,12 +132,13 @@ services:
   # `mem_limit` keeps a runaway tab from dragging Chrome and the host into
   # swap on small VPS instances.
   lightpanda:
-    image: lightpanda/browser:latest
+    # Pinned to the release the engine is tested against (the same version
+    # `crw setup` and the embedded launcher install). Bump it with
+    # crates/crw-renderer/src/lightpanda_release.rs.
+    image: lightpanda/browser:1.0.4@sha256:a9d899882899802bc3a6b82622a7ca394f8e1b828452869a0965d2e5097e6116
     # LightPanda sends usage telemetry to a third-party endpoint by default.
     # Disable it so the default stack makes no unexpected outbound connections —
-    # important for air-gapped / compliance deployments. Air-gapped operators who
-    # need byte-for-byte reproducibility should additionally pin this image to a
-    # digest (`lightpanda/browser@sha256:...`) instead of the `:latest` tag.
+    # important for air-gapped / compliance deployments.
     environment:
       - LIGHTPANDA_DISABLE_TELEMETRY=true
     # Refuse private/internal destinations in the browser itself, on the
@@ -147,10 +148,8 @@ services:
     # image CMD, so the whole serve line is repeated. The extra CIDRs are the
     # ranges the engine rejects that LightPanda's private group omits.
     #
-    # These flags need a recent image. Unlike the embedded launcher, which just
-    # falls through to the next renderer when a binary rejects them, a stale
-    # cached `:latest` here exits and restart-loops, taking the tier down. Run
-    # `docker compose pull lightpanda` when upgrading.
+    # `--advertise-host`: LightPanda answers only when Host is an IP literal,
+    # `localhost:<port>` or this name, and crw dials `ws://lightpanda:9222/`.
     command:
       - "/bin/lightpanda"
       - "serve"
@@ -163,6 +162,8 @@ services:
       - "--block-private-networks"
       - "--block-cidrs"
       - "0.0.0.0/8,10.0.0.0/8,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10,224.0.0.0/4,240.0.0.0/4,192.0.0.0/24,192.0.2.0/24,198.18.0.0/15,198.51.100.0/24,203.0.113.0/24,fc00::/7,fe80::/10,fec0::/10,ff00::/8,::/96,64:ff9b:1::/48,2002::/16"
+      - "--advertise-host"
+      - "lightpanda"
     restart: unless-stopped
     mem_limit: 1g
     memswap_limit: 1g

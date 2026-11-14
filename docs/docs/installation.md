@@ -146,7 +146,7 @@ lightpanda serve --host 127.0.0.1 --port 9222 --block-private-networks &
 crw-server
 ```
 
-The `setup` command detects your platform (Linux x86_64, macOS aarch64) and downloads the appropriate LightPanda binary to `~/.local/bin/lightpanda`.
+The `setup` command detects your platform (Linux x86_64, Linux aarch64, macOS aarch64), downloads the LightPanda release crw is pinned to, verifies its SHA256 against the hash built into crw, and installs it to `~/.local/bin/lightpanda`.
 
 ### Other CDP backends
 

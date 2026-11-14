@@ -226,7 +226,7 @@ async fn setup_browser(non_interactive: bool) -> Result<(BrowserEngine, bool), S
     let choice = Select::with_theme(&ui::select_style())
         .with_prompt("  No browser detected. Install LightPanda?")
         .items([
-            "Install LightPanda (experimental, ~50MB)",
+            "Install LightPanda (experimental, ~90MB)",
             "Not now — keep basic HTTP scraping",
         ])
         .default(1)
