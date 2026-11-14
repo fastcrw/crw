@@ -2,6 +2,25 @@
 
 All notable changes to CRW are documented here.
 
+## [0.44.2](https://github.com/fastcrw/crw/compare/v0.44.1...v0.44.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **antibot:** stop flagging loaded pages as blocked and catch more walls ([7e43a3e](https://github.com/fastcrw/crw/commit/7e43a3eb38d84d4fb3a65faeff6ad93bda1f65d0))
+* **core:** let Camoufox follow Chrome when mode = "chrome" ([7fc7924](https://github.com/fastcrw/crw/commit/7fc792418a85175b516cc7bdd8486361c5d4db82))
+* **extract:** judge captured JSON prose on the text a reader sees ([2261d65](https://github.com/fastcrw/crw/commit/2261d658c896732562f9c90cd325f81cfecaa83d))
+* **extract:** keep only prose when building markdown from captured JSON ([2f3703a](https://github.com/fastcrw/crw/commit/2f3703a92f6632a2cca07d4b96fb0ca090d6bb2e))
+* **mcp:** hide the data tools when the proxied API has no data sources ([efcfec0](https://github.com/fastcrw/crw/commit/efcfec0200792c1ccccb61500ed9f155abaf3320))
+* **renderer:** drop the settle wait and keep the WebGL spoof ([71e72d2](https://github.com/fastcrw/crw/commit/71e72d2016aaeb23269eca775d1d142b11a3e9ed))
+* **renderer:** honor waitFor in Camoufox and reread a page still loading ([e89f9d8](https://github.com/fastcrw/crw/commit/e89f9d8af8a659c0b91e8ea9b842f0b47150e2cb))
+* **renderer:** keep the cloak reserve when camoufox follows chrome ([a4d1f50](https://github.com/fastcrw/crw/commit/a4d1f5063029304db71726a07a87f5958db7c331))
+* **renderer:** keep the content gates on a 404 or 410 answer ([d27b34d](https://github.com/fastcrw/crw/commit/d27b34daef4646d758059070124a3ecbe67525e0))
+* **renderer:** remove CDP and stealth-script automation tells ([177c0b5](https://github.com/fastcrw/crw/commit/177c0b576b8972fd4f431a490743ecb87dd308b3))
+* **renderer:** retry a walled renderJs:false fetch through impersonated HTTP ([4fb0838](https://github.com/fastcrw/crw/commit/4fb0838f4faf99cf5f1b936a65e1a43c2c067682))
+* **renderer:** skip the skeleton-fill wait with fast_ready ([a7ba382](https://github.com/fastcrw/crw/commit/a7ba382fd219662b7aa014721aea2c97897def69))
+* **renderer:** take a 404 or 410 as the answer instead of escalating ([87e233c](https://github.com/fastcrw/crw/commit/87e233cddb4fea079eaf2846a51c6538547337eb))
+
 ## [0.44.1](https://github.com/fastcrw/crw/compare/v0.44.0...v0.44.1) (2026-11-12)
 
 
