@@ -8,6 +8,13 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.44.3](https://github.com/fastcrw/crw/compare/v0.44.2...v0.44.3) (2026-11-15)
+
+
+### Bug Fixes
+
+* **extract:** name the field behind an anyOf schema error ([9b83a75](https://github.com/fastcrw/crw/commit/9b83a75ec12255f6bb4cd78bd836f413a0d6fc58))
+
 ## [0.44.2](https://github.com/fastcrw/crw/compare/v0.44.1...v0.44.2) (2026-11-14)
 
 
