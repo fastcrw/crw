@@ -402,10 +402,17 @@ async fn extract_inner(
     // downgrades the EVIDENCE to unsupported but leaves the value in place, and
     // basis is opt-in anyway. So the instruction itself has to carry the licence
     // to say nothing.
+    // The required-property sentence exists because a type-valid placeholder
+    // (`unitWeight: 0` for a weight the page never shows) passes validation, so
+    // the retry and its own no-invention rule never run. A null fails validation
+    // and the caller gets a 422 that names the field instead of a made-up number.
     const GROUNDING: &str = "\nOnly use information present in the Content below. \
          If the content does not contain a value for a property, use null (or an \
          empty array for a list) rather than guessing. Never invent a value, and \
-         never infer one from the URL alone.";
+         never infer one from the URL alone. This holds for required properties \
+         too: if the Content states no value, answer null rather than a placeholder \
+         (a 0, an empty string or a guess the Content does not state). A 0 or empty \
+         string the Content actually shows is a real value, so keep it.";
     let instruction = match user_prompt {
         Some(p) => format!(
             "Extract structured data from the following content. \
@@ -578,7 +585,8 @@ async fn extract_inner(
              every required property present. Correct only what the Content supports. \
              Never invent a value or fill a placeholder (0, an empty string, a guess) to \
              satisfy the schema: if the Content does not carry a required value, answer \
-             null for it (or an empty array for a list)."
+             null for it (or an empty array for a list). A 0 or empty string the Content \
+             actually shows is a real value, so keep it."
         ));
         // NOTE: usage from this failed attempt is deliberately DROPPED, not
         // merged. `LlmUsage::merge` would be the obvious move and its doc comment
@@ -3036,6 +3044,62 @@ mod tests {
         let sent = body["messages"][0]["content"].as_str().unwrap();
         assert!(sent.contains("Never invent a value"), "{sent}");
         assert!(sent.contains("never infer one from the URL alone"));
+        assert!(
+            sent.contains("This holds for required properties too")
+                && sent.contains("answer null rather than a placeholder")
+                && sent.contains("the Content actually shows is a real value, so keep it"),
+            "{sent}"
+        );
+    }
+
+    /// The production case: a product page with a price and no weight, against a
+    /// schema that requires `unitWeight`. The first attempt is told not to fill a
+    /// placeholder, the model keeps the weight null on both attempts, and the
+    /// caller gets the field-naming error, never a value the page does not carry.
+    #[tokio::test]
+    async fn a_page_without_the_weight_fails_naming_the_field_not_with_a_placeholder() {
+        let server = MockServer::start().await;
+        let reply = json!({ "prices": [{ "price": 26.0, "unitWeight": null, "unit": null }] });
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(openai_tool_call_response(&reply)),
+            )
+            .mount(&server)
+            .await;
+
+        let llm = mock_llm("openai-compatible", format!("{}/v1", server.uri()));
+        let page = "# House Blend\n\nRegular price $26.00\n\nSize\n\nQuantity\n\nAdd to cart";
+        let err = extract_structured_with_usage(
+            page,
+            Some(&nullable_price_list_schema()),
+            None,
+            &llm,
+            None,
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(
+            err.contains("/prices/0/unitWeight: null is not of type \"number\""),
+            "{err}"
+        );
+        assert!(
+            err.contains("/prices/0/unit: null is not of type \"string\""),
+            "{err}"
+        );
+
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2, "first attempt plus one retry");
+        for (i, r) in requests.iter().enumerate() {
+            let body: serde_json::Value = serde_json::from_slice(&r.body).unwrap();
+            let sent = body["messages"][0]["content"].as_str().unwrap();
+            assert!(
+                sent.contains("answer null rather than a placeholder"),
+                "attempt {i} lacks the rule"
+            );
+            assert_eq!(sent.contains("## Correction"), i == 1, "attempt {i}");
+        }
     }
 
     /// A prompt-only extraction has no schema to violate, so it must never retry.
