@@ -659,8 +659,20 @@ is skipped rather than failing every request.</p>
     environment:
       - CRW_RENDERER__LIGHTPANDA__WS_URL=ws://lightpanda:9222
   lightpanda:
-    image: lightpanda/lightpanda:latest
-    command: [&quot;serve&quot;, &quot;--host&quot;, &quot;0.0.0.0&quot;, &quot;--port&quot;, &quot;9222&quot;]</code></pre>
+    image: lightpanda/browser:1.0.4
+    environment:
+      - LIGHTPANDA_DISABLE_TELEMETRY=true
+    command:
+      - &quot;/bin/lightpanda&quot;
+      - &quot;serve&quot;
+      - &quot;--host&quot;
+      - &quot;0.0.0.0&quot;
+      - &quot;--port&quot;
+      - &quot;9222&quot;
+      - &quot;--block-private-networks&quot;
+      - &quot;--advertise-host&quot;
+      - &quot;lightpanda&quot;</code></pre>
+<p>LightPanda 1.x only accepts CDP connections whose <code>Host</code> is an IP address, <code>localhost:&lt;port&gt;</code>, or the <code>--advertise-host</code> name, so keep <code>--advertise-host</code> in sync with the service name. The repository&#39;s <code>docker-compose.yml</code> also pins the image digest and adds <code>--block-cidrs</code> for the private ranges LightPanda&#39;s own group does not cover.</p>
 </article>
     </main>
 
