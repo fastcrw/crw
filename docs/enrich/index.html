@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enrich — CRW Docs</title>
+  <meta name="description" content="Fill the empty cells of a table from the web. Send rows and the columns you want filled; every cell comes back with a value, a status and the page it was read from.">
+  <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
+  <link rel="canonical" href="https://docs.fastcrw.com/enrich">
+  <link rel="icon" href="/favicon.png?v=2" type="image/png">
+  <link rel="alternate" type="application/json" href="/openapi.json" title="OpenAPI 3.1 spec">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt index">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://docs.fastcrw.com/enrich">
+  <meta property="og:title" content="Enrich — CRW | Web Scraper in Rust">
+  <meta property="og:description" content="Fill the empty cells of a table from the web. Send rows and the columns you want filled; every cell comes back with a value, a status and the page it was read from.">
+  <meta property="og:site_name" content="CRW">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Enrich — CRW Docs">
+  <meta name="twitter:description" content="Fill the empty cells of a table from the web. Send rows and the columns you want filled; every cell comes back with a value, a status and the page it was read from.">
+
+  <!-- Structured Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CRW",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows (WSL)",
+    "description": "Open-source, self-hosted web scraper and crawler written in Rust. A fast, lightweight Firecrawl alternative with MCP server support for AI agents, LLM structured extraction, and Firecrawl-compatible workflows.",
+    "url": "https://docs.fastcrw.com/",
+    "downloadUrl": "https://crates.io/crates/crw-server",
+    "softwareVersion": "0.3.5",
+    "license": "https://opensource.org/licenses/AGPL-3.0",
+    "programmingLanguage": "Rust",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Firecrawl-compatible REST API",
+      "MCP server for Claude Code, Cursor, Windsurf",
+      "LLM structured extraction (Anthropic, OpenAI)",
+      "JavaScript rendering via LightPanda CDP",
+      "BFS web crawler with robots.txt and sitemap support",
+      "6 output formats: Markdown, HTML, JSON, plain text, links",
+      "CSS selector and XPath extraction",
+      "Chunking with BM25 and cosine ranking for RAG pipelines",
+      "Single static binary, low idle footprint"
+    ]
+  }
+  </script>
+
+  <!-- API Reference (JSON-LD) — surfaces endpoints to LLM crawlers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "APIReference",
+    "name": "CRW REST API",
+    "url": "https://docs.fastcrw.com/",
+    "documentation": "https://docs.fastcrw.com/openapi.json",
+    "programmingModel": "REST",
+    "targetPlatform": ["Hosted: https://api.fastcrw.com", "Self-hosted: http://localhost:3000"],
+    "potentialAction": [
+      {"@type": "ConsumeAction", "name": "/v1/search", "target": "https://api.fastcrw.com/v1/search"},
+      {"@type": "ConsumeAction", "name": "/v1/scrape", "target": "https://api.fastcrw.com/v1/scrape"},
+      {"@type": "ConsumeAction", "name": "/v1/crawl",  "target": "https://api.fastcrw.com/v1/crawl"},
+      {"@type": "ConsumeAction", "name": "/v1/map",    "target": "https://api.fastcrw.com/v1/map"},
+      {"@type": "ConsumeAction", "name": "/v1/extract","target": "https://api.fastcrw.com/v1/extract"}
+    ]
+  }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"></noscript>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" integrity="sha512-EBLzUL8XLl+va/zAsmXwS7Z2B1F9HUHkZwyS/VKwh3S7T/U0nF4BaU29EP/ZSf6zgiIxYAnKLu6bJ8dqpmX5uw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/css/style.css">  <link rel="modulepreload" href="/js/app.js">
+  <link rel="modulepreload" href="/js/search.js">
+  <link rel="modulepreload" href="/site.config.js">
+</head>
+<body>
+  <!--
+    Agent shell: a static, single-fetch quickstart for LLM crawlers and
+    `WebFetch`-style HTML→markdown pipelines. Off-screen for human users
+    (the SPA still drives #article). Do not remove without updating
+    docs/openapi.json and docs/llms.txt in lockstep.
+  -->
+  <section id="agent-shell" data-agent-shell aria-hidden="true">
+    <h1>CRW — open-source web scraper &amp; crawler (Firecrawl-compatible)</h1>
+    <blockquote>
+      Docs at <code>docs.fastcrw.com</code>. Hosted API at
+      <code>https://api.fastcrw.com</code>. Self-hosted at
+      <code>http://localhost:3000</code>.
+      Five endpoints: <code>/v1/search</code>, <code>/v1/scrape</code>,
+      <code>/v1/crawl</code>, <code>/v1/map</code>, <code>/v1/extract</code>.
+    </blockquote>
+
+    <h2 id="sdk">Official SDKs: Python <code>crw</code>, TypeScript <code>crw-sdk</code></h2>
+    <p>Typed clients for every endpoint. Use them instead of raw HTTP when a
+      task asks for the SDK. Full reference: <a href="/sdk-reference">/sdk-reference</a>.</p>
+<pre><code class="language-python"># pip install crw
+from crw import CrwClient
+
+client = CrwClient()  # reads CRW_API_KEY; defaults to https://api.fastcrw.com
+page = client.scrape("https://example.com", formats=["markdown", "links"])
+
+# page is a plain dict (no .data wrapper)
+print(page["markdown"])           # str: clean page markdown, links kept inline as [text](url)
+print(page["links"])              # list[str]: every absolute URL on the page, no anchor text
+print(page["metadata"]["title"])  # str
+# Run with: python3 scrape.py
+</code></pre>
+    <p>Signature: <code>scrape(url, formats=None, only_main_content=None, include_tags=None,
+      exclude_tags=None, *, render_js=None, renderer=None, wait_for=None, json_schema=None,
+      **kwargs) -&gt; dict</code>. Extra keyword arguments such as <code>css_selector</code>
+      are passed to the API as they are.</p>
+    <h3 id="sdk-list">Titles and URLs from a list page, in one call</h3>
+    <p><code>css_selector</code> keeps only the matching elements, so the markdown is just
+      their links as <code>[title](url)</code>, in page order. No exploratory scrape needed.</p>
+<pre><code class="language-python">import json, re
+from crw import CrwClient
+
+page = CrwClient().scrape("https://news.ycombinator.com", formats=["markdown"], css_selector=".titleline > a")
+pairs = re.findall(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", page["markdown"])  # [(title, url), ...]
+print(json.dumps([{"rank": i, "title": t, "url": u} for i, (t, u) in enumerate(pairs[:5], 1)], indent=2))
+</code></pre>
+<pre><code class="language-ts">// npm install crw-sdk
+import { CrwClient } from "crw-sdk";
+const crw = new CrwClient(); // reads CRW_API_KEY
+const page = await crw.scrape("https://example.com", { formats: ["markdown"] });
+console.log(page.markdown);
+</code></pre>
+    <p>Other methods: <code>crawl(url)</code>, <code>map(url)</code>,
+      <code>search(query, limit=5)</code>, <code>extract(urls, schema={...})</code>.
+      <code>scrape(url, json_schema={...})</code> runs managed LLM extraction:
+      on the hosted FREE plan it returns an error, so parse
+      <code>markdown</code> or <code>links</code> there instead.</p>
+
+    <h2 id="copy-paste-run">Quick: copy this and run</h2>
+    <p><strong>Auth (hosted only):</strong>
+      <code>Authorization: Bearer $CRW_API_KEY</code>.
+      Self-hosted (<code>http://localhost:3000</code>) needs no header.</p>
+    <p><strong>Body:</strong>
+      <code>{ "query": string, "limit": number (default 5, max 20), "lang"?: "en", "tbs"?: "qdr:d|w|m|y", "sources"?: ["web"|"news"|"images"] }</code></p>
+
+    <h3>Python (stdlib only — defaults to hosted, fails loudly if key is missing)</h3>
+<pre><code class="language-python">#!/usr/bin/env python3
+"""Search CRW and print top results as JSON."""
+import json, os, sys, urllib.request
+
+API_KEY = os.environ.get("CRW_API_KEY")
+# Default to the hosted API. Self-hosting? Set CRW_API_URL=http://localhost:3000
+BASE = os.environ.get("CRW_API_URL", "https://api.fastcrw.com")
+URL = f"{BASE}/v1/search"
+
+headers = {"Content-Type": "application/json"}
+if API_KEY:
+    headers["Authorization"] = f"Bearer {API_KEY}"
+elif BASE.startswith("https://api.fastcrw.com"):
+    sys.exit("error: CRW_API_KEY is required for the hosted API. "
+             "Get one at https://fastcrw.com (1000 free credits) "
+             "or set CRW_API_URL=http://localhost:3000 to self-host.")
+
+req = urllib.request.Request(
+    URL,
+    data=json.dumps({"query": "renewable energy trends 2024", "limit": 3}).encode(),
+    headers=headers,
+    method="POST",
+)
+with urllib.request.urlopen(req) as r:
+    body = json.loads(r.read())  # body == {"success": true, "data": [...]}
+
+# Results live under body["data"]. Each row has `title`, `url`, `snippet`,
+# `description`, `position`, `score`, `category` — print the LLM-ready subset.
+print(json.dumps(
+    [{"title": x["title"], "url": x["url"], "snippet": x["snippet"]}
+     for x in body["data"]],
+    indent=2,
+))
+# Run with: python3 search.py  (file is python3-only — no `python` alias needed)
+</code></pre>
+
+    <h3>cURL</h3>
+<pre><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/search \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"renewable energy trends 2024","limit":3}'
+</code></pre>
+
+    <h3>CLI (one-shot LLM-ready output)</h3>
+    <p>The <code>crw</code> CLI projects directly to the title/url/snippet
+      schema with <code>--json --fields</code> — no <code>jq</code> reshape
+      needed:</p>
+<pre><code class="language-bash"># Install: brew install fastcrw/crw/crw  (or: cargo install crw-cli)
+crw search "renewable energy trends 2024" --json --fields title,url,snippet --limit 3
+
+# Available fields: title, url, description, snippet, position, score, category
+# --json is shorthand for --format json (also accepts --format text|markdown)
+# Self-hosted: no auth. Hosted: export CRW_API_KEY=crw_live_...
+</code></pre>
+
+    <h3>Response shape</h3>
+<pre><code class="language-json">{
+  "success": true,
+  "data": [
+    {"url": "https://...", "title": "...",
+     "description": "...", "snippet": "...",
+     "position": 1, "score": 9.5}
+  ]
+}
+</code></pre>
+
+    <h2>Other endpoints</h2>
+    <ul>
+      <li><code>POST /v1/scrape</code> <code>{"url":"...","formats":["markdown"]}</code> — one URL → markdown</li>
+      <li><code>POST /v1/map</code> <code>{"url":"...","limit":50}</code> — discover URLs</li>
+      <li><code>POST /v1/crawl</code> <code>{"url":"...","maxPages":5}</code> — async multi-page; poll <code>GET /v1/crawl/{id}</code></li>
+      <li><code>POST /v1/scrape</code> with <code>formats:["json"]</code> + <code>jsonSchema</code>: structured extract</li>
+    </ul>
+
+    <h2>Install (local setup only)</h2>
+    <p>
+      <code>pip install crw</code> ·
+      <code>npx crw-mcp</code> ·
+      <code>brew install fastcrw/crw/crw</code> ·
+      <code>curl -fsSL https://fastcrw.com/install | sh</code> ·
+      <code>docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest</code>
+    </p>
+
+    <h2>Resources</h2>
+    <ul>
+      <li><a href="/openapi.json">OpenAPI spec</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+      <li><a href="https://context7.com/us/crw">Context7</a></li>
+      <li><a href="https://www.npmjs.com/package/crw-mcp">MCP Server (npm)</a></li>
+      <li><a href="https://pypi.org/project/crw/">Typed Python SDK</a></li>
+      <li><a href="/agent-onboarding/SKILL.md">Agent Skills (SKILL.md)</a></li>
+      <li><a href="https://github.com/fastcrw/homebrew-crw">CLI (Homebrew tap)</a></li>
+      <li><a href="https://github.com/fastcrw/crw">GitHub</a></li>
+    </ul>
+  </section>
+  <style>
+    [data-agent-shell] {
+      position: absolute;
+      left: -9999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  </style>
+
+  <div class="reading-progress" id="reading-progress"></div>
+
+  <header class="navbar">
+    <div class="navbar-top">
+      <div class="navbar-left">
+        <button class="hamburger" id="hamburger" aria-label="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <a href="https://fastcrw.com" class="logo">
+          <img src="/logo-icon.svg" alt="CRW" height="24" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="24" class="logo-img logo-dark" />
+          <span class="logo-text">fast<span class="logo-accent">crw</span></span>
+        </a>
+      </div>
+      <div class="navbar-center">
+        <button class="search-trigger" id="search-trigger" aria-label="Search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span class="search-placeholder">Search...</span>
+          <span class="search-shortcut">⌘K</span>
+        </button>
+      </div>
+      <div class="navbar-right">
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="navbar-github" id="navbar-github" aria-label="CRW on GitHub">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>fastcrw/crw</span>
+        </a>
+        <!-- Status: will be implemented and enabled again.
+        <a href="https://status.fastcrw.com" target="_blank" rel="noopener" class="navbar-link">Status</a>
+        -->
+        <a href="https://fastcrw.com/register?ref=docs-enrich-nav" target="_blank" rel="noopener" class="navbar-signup">Sign Up</a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="navbar-tabs" id="navbar-tabs"></div>
+  </header>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav id="sidebar-nav"></nav>
+    </aside>
+
+    <main class="content" id="content">
+      <article id="article" role="main"><div class="page-intro">
+  <div class="page-kicker">More API</div>
+  <h1 id="enrich">Enrich</h1>
+  <p class="page-subtitle">Fill the empty cells of a table from the web. Send rows and the columns you want filled; every cell comes back with a value, a status and the page it was read from.</p>
+  <div class="page-capabilities">
+    <div class="page-capability"><strong>Best for:</strong> lead lists, company tables, catalog gaps</div>
+    <div class="page-capability"><strong>Route:</strong> <code>/v1/enrich</code> (job on the hosted API)</div>
+    <div class="page-capability"><strong>Start with:</strong> a website column</div>
+  </div>
+</div><h2 id="how-it-works">How it works</h2>
+<p>For each row, fastCRW:</p>
+<ol>
+<li>Reads the row&#39;s own website first, when the row has a URL or a domain in any value.</li>
+<li>Searches for the row&#39;s entity, using its other values and your <code>context</code>, then reads the top results together with their search summaries.</li>
+<li>If a column is still missing, searches once more for that column and reads the top new results. A row uses at most two searches.</li>
+<li>Merges per cell: a value a page states wins over one seen only in a search summary.</li>
+</ol>
+<p>A cell is <code>supported</code> only when a page states the value word for word; the cell names that page and quotes the sentence. A value seen only in a search result&#39;s summary comes back <code>unverified</code>, citing that result. Only sources that name the row&#39;s entity are read, and the model is told to set aside a namesake; that is a guard, not a guarantee.</p>
+<h2 id="hosted-api">Hosted API</h2>
+<p>On <code>api.fastcrw.com</code>, enrich runs as a job, so a table can be as large as your plan&#39;s job limit:</p>
+<pre data-lang="http"><code class="language-http">POST https://api.fastcrw.com/v1/enrich
+Authorization: Bearer YOUR_API_KEY</code></pre>
+<p>The body is the request described below, plus an optional <code>budget</code> (<code>maxCredits</code>, <code>maxDurationMs</code>). The answer is <code>202</code>:</p>
+<pre data-lang="json"><code class="language-json">{ &quot;success&quot;: true, &quot;id&quot;: &quot;cm3...&quot;, &quot;status&quot;: &quot;accepted&quot;, &quot;expiresAt&quot;: &quot;2026-11-08T10:00:00.000Z&quot;,
+  &quot;budget&quot;: { &quot;maxCredits&quot;: 222, &quot;maxDurationMs&quot;: 600000, &quot;maxSubrequests&quot;: 120 } }</code></pre>
+<p>Poll <code>GET /v1/enrich/{id}</code>. It returns every row in request order: rows waiting their turn are <code>&quot;status&quot;: &quot;pending&quot;</code> and rows being filled right now are <code>&quot;running&quot;</code>, both with empty <code>cells</code>; finished rows are the row objects described below plus <code>creditsUsed</code>.</p>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;id&quot;: &quot;cm3...&quot;,
+  &quot;status&quot;: &quot;running&quot;,
+  &quot;budget&quot;: { &quot;maxCredits&quot;: 222, &quot;creditsUsed&quot;: 18, &quot;maxDurationMs&quot;: 600000, &quot;maxSubrequests&quot;: 120 },
+  &quot;data&quot;: { &quot;rows&quot;: [ { &quot;index&quot;: 0, &quot;rowId&quot;: &quot;acme-1&quot;, &quot;status&quot;: &quot;completed&quot;, &quot;cells&quot;: { }, &quot;creditsUsed&quot;: 18 },
+                      { &quot;index&quot;: 1, &quot;rowId&quot;: &quot;acme-2&quot;, &quot;status&quot;: &quot;pending&quot;, &quot;cells&quot;: {} } ] }
+}</code></pre>
+<table>
+<thead>
+<tr>
+<th>Job <code>status</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>accepted</code>, <code>running</code></td>
+<td>Rows are being filled.</td>
+</tr>
+<tr>
+<td><code>completed</code></td>
+<td>Every row has a result.</td>
+</tr>
+<tr>
+<td><code>partial</code></td>
+<td>The job stopped early (<code>stopReason</code>: <code>budget_exhausted</code>, <code>deadline_exceeded</code> or <code>subrequest_limit</code>). Rows still <code>pending</code> were not run: send them as a new job, matched back by <code>rowId</code>.</td>
+</tr>
+<tr>
+<td><code>cancelled</code></td>
+<td>Stopped by <code>DELETE /v1/enrich/{id}</code>. Rows that finished keep their results.</td>
+</tr>
+</tbody></table>
+<p>Billing follows the usual rules: each page read costs what a scrape of it costs, each search what a search costs, plus the model usage for that row. A row that fails is not billed. The default budget covers the most the rows could cost; pass a smaller <code>maxCredits</code> to cap a job, and expect <code>partial</code> when it runs out. Enrich is available on paid plans; the hosted API runs it on its managed model, so <code>llmApiKey</code> and related fields are not accepted there.</p>
+<p>The hosted MCP server exposes it as <code>crw_enrich</code> for up to 10 rows: it returns the table when it is done, or the rows so far plus the job <code>id</code> to call again with.</p>
+<h2 id="request">Request</h2>
+<pre data-lang="http"><code class="language-http">POST /v1/enrich</code></pre>
+<pre data-lang="json"><code class="language-json">{
+  &quot;rows&quot;: [
+    { &quot;id&quot;: &quot;acme-1&quot;, &quot;company&quot;: &quot;Stripe&quot;, &quot;website&quot;: &quot;stripe.com&quot;, &quot;ceo&quot;: null },
+    { &quot;id&quot;: &quot;acme-2&quot;, &quot;company&quot;: &quot;Linear&quot;, &quot;website&quot;: &quot;linear.app&quot;, &quot;ceo&quot;: &quot;&quot; }
+  ],
+  &quot;columns&quot;: [
+    { &quot;name&quot;: &quot;ceo&quot;, &quot;description&quot;: &quot;Current CEO, full name&quot;, &quot;type&quot;: &quot;text&quot; },
+    { &quot;name&quot;: &quot;employees&quot;, &quot;description&quot;: &quot;Approximate employee count&quot;, &quot;type&quot;: &quot;number&quot; },
+    { &quot;name&quot;: &quot;stage&quot;, &quot;description&quot;: &quot;Latest funding stage&quot;, &quot;type&quot;: &quot;options&quot;,
+      &quot;options&quot;: [&quot;Seed&quot;, &quot;Series A&quot;, &quot;Series B&quot;, &quot;Later&quot;, &quot;Public&quot;] }
+  ],
+  &quot;context&quot;: &quot;B2B software companies&quot;
+}</code></pre>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>rows</code></td>
+<td>Flat objects: at most 3 per call on a self-hosted server, up to your plan&#39;s job limit on the hosted API. Values that are not target columns describe the row&#39;s entity. An <code>id</code> (string or number) is echoed back as <code>rowId</code>.</td>
+</tr>
+<tr>
+<td><code>columns</code></td>
+<td>At most 10. <code>name</code> is the row key to fill, <code>description</code> says what belongs in it.</td>
+</tr>
+<tr>
+<td><code>columns[].type</code></td>
+<td><code>text</code> (default), <code>number</code>, <code>url</code> or <code>options</code>. For <code>options</code>, a value that matches none of the labels comes back <code>notFound</code>. Dates are <code>text</code>, as written on the page.</td>
+</tr>
+<tr>
+<td><code>context</code></td>
+<td>Optional. One line about the table, used to tell apart entities with the same name.</td>
+</tr>
+<tr>
+<td><code>overwrite</code></td>
+<td>Optional, default <code>false</code>. A cell is filled only when its value is missing, <code>null</code> or <code>&quot;&quot;</code>; <code>true</code> refills every listed column.</td>
+</tr>
+</tbody></table>
+<h2 id="response">Response</h2>
+<pre data-lang="json"><code class="language-json">{
+  &quot;success&quot;: true,
+  &quot;status&quot;: &quot;completed&quot;,
+  &quot;data&quot;: {
+    &quot;rows&quot;: [
+      {
+        &quot;index&quot;: 0,
+        &quot;rowId&quot;: &quot;acme-1&quot;,
+        &quot;status&quot;: &quot;completed&quot;,
+        &quot;cells&quot;: {
+          &quot;ceo&quot;: {
+            &quot;value&quot;: &quot;Patrick Collison&quot;,
+            &quot;status&quot;: &quot;supported&quot;,
+            &quot;confidence&quot;: &quot;high&quot;,
+            &quot;citations&quot;: [
+              { &quot;url&quot;: &quot;https://stripe.com/about&quot;, &quot;excerpt&quot;: &quot;Patrick Collison, CEO&quot; }
+            ]
+          },
+          &quot;employees&quot;: { &quot;value&quot;: null, &quot;status&quot;: &quot;notFound&quot;, &quot;citations&quot;: [] }
+        },
+        &quot;usage&quot;: { &quot;pages&quot;: [&quot;https://stripe.com/about&quot;], &quot;searches&quot;: 1 }
+      }
+    ]
+  }
+}</code></pre>
+<p>Rows come back in request order. Keep only what you trust:</p>
+<pre data-lang="js"><code class="language-js">const filled = row =&gt; Object.fromEntries(
+  Object.entries(row.cells)
+    .filter(([, cell]) =&gt; cell.status === &quot;supported&quot;)
+    .map(([name, cell]) =&gt; [name, cell.value])
+);</code></pre>
+<h3 id="cell-status">Cell status</h3>
+<table>
+<thead>
+<tr>
+<th><code>status</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>supported</code></td>
+<td>The value appears word for word in the quoted <code>excerpt</code> on the cited page.</td>
+</tr>
+<tr>
+<td><code>unverified</code></td>
+<td>The cited page was read and gave this value, but no exact sentence could be matched. Check it before you rely on it.</td>
+</tr>
+<tr>
+<td><code>notFound</code></td>
+<td>No page that was read stated this value. <code>value</code> is <code>null</code>.</td>
+</tr>
+</tbody></table>
+<p>A target column that is missing from <code>cells</code> was never reached, usually because the row ran out of time. That is different from <code>notFound</code>. A row with no blank target cells comes back <code>completed</code> with empty <code>cells</code>.</p>
+<p>Cells may carry extra evidence fields (<code>basisVersion</code>, <code>field</code>, <code>sourceHash</code>, <code>sourceTextKind</code>). <code>usage.llmUsage</code> reports the extraction token usage. Both are informational and may change.</p>
+<h3 id="row-status">Row status</h3>
+<table>
+<thead>
+<tr>
+<th><code>status</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>completed</code></td>
+<td>Every target column was looked for.</td>
+</tr>
+<tr>
+<td><code>incomplete</code></td>
+<td>The row ran out of time (<code>stopReason: &quot;timeout&quot;</code>). Cells it did not reach are absent. Send the row again.</td>
+</tr>
+<tr>
+<td><code>failed</code></td>
+<td>No page could be read for the row (<code>error</code> says why; <code>stopReason: &quot;timeout&quot;</code> when time ran out first). Send it again, or add a website value.</td>
+</tr>
+</tbody></table>
+<h2 id="larger-tables-on-a-self-hosted-server">Larger tables on a self-hosted server</h2>
+<p>On the hosted API, send the whole table as one job. A self-hosted server answers synchronously and takes 3 rows per call, so chunk bigger tables and join the results back by <code>rowId</code>:</p>
+<pre data-lang="js"><code class="language-js">const results = [];
+for (let i = 0; i &lt; rows.length; i += 3) {
+  const res = await fetch(`${BASE}/v1/enrich`, {
+    method: &quot;POST&quot;,
+    headers: { &quot;Content-Type&quot;: &quot;application/json&quot;, Authorization: `Bearer ${KEY}` },
+    body: JSON.stringify({ rows: rows.slice(i, i + 3), columns, context }),
+  }).then(r =&gt; r.json());
+  results.push(...res.data.rows);
+}</code></pre>
+<h2 id="tips">Tips</h2>
+<ul>
+<li>Include a website column. The row&#39;s own site is read first, and it is the strongest way to keep a common name from matching the wrong company.</li>
+<li>Describe each column the way the fact is written on a page (&quot;Current CEO, full name&quot;), not as a database field.</li>
+<li>Ask for facts pages state. Inferred values (&quot;is this company a good fit?&quot;) come back <code>notFound</code>.</li>
+</ul>
+<h2 id="self-hosting">Self-hosting</h2>
+<p><code>/v1/enrich</code> needs an LLM (<code>[extraction.llm]</code>, or <code>llmApiKey</code> per request) and works best with a search backend configured. Without search, only rows that carry their own URL get cells. <code>GET /v1/capabilities</code> reports both under <code>enrich</code>.</p>
+<p>The MCP server exposes the same call as the <code>crw_enrich</code> tool.</p>
+</article>
+    </main>
+
+    <aside class="toc" id="toc">
+      <div class="toc-header">On this page</div>
+      <nav id="toc-nav"></nav>
+      <div id="toc-helper"></div>
+      <div class="toc-cta">
+        <div class="toc-cta-brand">
+          <img src="/logo-icon.svg" alt="CRW" height="18" class="logo-img logo-light" />
+          <img src="/logo-dark.svg" alt="CRW" height="18" class="logo-img logo-dark" />
+          <span>CRW</span>
+        </div>
+        <div class="toc-cta-title">Ready to scrape?</div>
+        <div class="toc-cta-desc">Sign up and get 1000 free credits instantly. No credit card required.</div>
+        <a href="https://fastcrw.com/register?ref=docs-enrich-cta" target="_blank" rel="noopener" class="toc-cta-btn primary">Get started, 1000 free credits</a>
+        <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="toc-cta-btn outline">View on GitHub</a>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="footer-brand-logo">
+            <img src="/logo-icon.svg" alt="CRW" class="logo-img logo-light" />
+            <img src="/logo-dark.svg" alt="CRW" class="logo-img logo-dark" />
+            <span>CRW</span>
+          </div>
+          <div class="footer-tagline">The base layer for agentic web intelligence.</div>
+          <div class="footer-socials"><a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener" class="footer-social" aria-label="GitHub"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg></a></div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Product</div>
+          <div class="footer-col-links">
+            <a href="#introduction">Documentation</a>
+            <a href="#rest-api">API Reference</a>
+            <a href="#mcp">MCP Server</a>
+            <a href="#changelog">Changelog</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Community</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/fastcrw/crw/issues" target="_blank" rel="noopener">Issues</a>
+            <a href="https://discord.gg/KNQBfFVc9J" target="_blank" rel="noopener">Discord</a>
+          </div>
+        </div>
+        <div class="footer-col">
+          <div class="footer-col-title">Legal</div>
+          <div class="footer-col-links">
+            <a href="https://github.com/fastcrw/crw/blob/main/LICENSE" target="_blank" rel="noopener">License (AGPL-3.0)</a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="footer-copyright">&copy; 2026 CRW. All rights reserved.</div>
+        <div class="footer-status"><span class="footer-status-dot"></span> All systems operational</div>
+      </div>
+    </div>
+  </footer>
+
+  <div class="search-modal" id="search-modal">
+    <div class="search-modal-content">
+      <div class="search-input-wrapper">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input type="text" id="search-input" placeholder="Search documentation..." autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/theme.js"></script>
+  <script type="module" src="/js/search.js"></script>
+  <script type="module" src="/js/app.js"></script>
+  <script>window.__INITIAL_SLUG__ = "enrich";</script>
+</body>
+</html>

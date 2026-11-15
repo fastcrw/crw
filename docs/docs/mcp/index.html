@@ -6,7 +6,7 @@
   <title>MCP Server — CRW Docs</title>
   <meta name="robots" content="noindex, follow">
   <meta http-equiv="refresh" content="0; url=https://docs.fastcrw.com/mcp">
-  <meta name="description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scra">
+  <meta name="description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 10 web scr">
   <meta name="keywords" content="web scraper, web crawler, firecrawl alternative, crawl4ai alternative, self-hosted scraper, rust web scraper, mcp server, ai web scraping, rag pipeline, llm extraction, open source crawler, headless browser scraper">
   <link rel="canonical" href="https://docs.fastcrw.com/mcp">
   <link rel="icon" href="/favicon.png?v=2" type="image/png">
@@ -17,13 +17,13 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://docs.fastcrw.com/mcp">
   <meta property="og:title" content="MCP Server — CRW | Web Scraper in Rust">
-  <meta property="og:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scra">
+  <meta property="og:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 10 web scr">
   <meta property="og:site_name" content="CRW">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="MCP Server — CRW Docs">
-  <meta name="twitter:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scra">
+  <meta name="twitter:description" content="CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 10 web scr">
 
   <!-- Structured Data (JSON-LD) -->
   <script type="application/ld+json">
@@ -328,7 +328,7 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 
     <main class="content" id="content">
       <article id="article" role="main"><p>This page moved to <a href="https://docs.fastcrw.com/mcp">https://docs.fastcrw.com/mcp</a>.</p><h1 id="mcp-server-for-ai-agents">MCP Server for AI Agents</h1>
-<p>CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 9 web scraping tools (8 on a self-host with no search backend configured, since <code>crw_search</code> is hidden in that case). In proxy mode, including fastcrw.com cloud, it adds <code>crw_find_data</code> and <code>crw_get_data</code> (structured <a href="/data-sources">data sources</a>) for 11 tools. Turn any AI coding agent into a web scraper with a single command.</p>
+<p>CRW includes a built-in MCP (Model Context Protocol) server that gives any MCP-compatible AI assistant (Claude Code, Claude Desktop, Cursor, Windsurf, Cline, Continue.dev, OpenAI Codex CLI) 10 web scraping tools in embedded mode (9 on a self-host with no search backend configured, since <code>crw_search</code> is hidden in that case). In proxy mode, including fastcrw.com cloud, it exposes 11: the same tools minus the embedded-only <code>crw_enrich</code>, plus <code>crw_find_data</code> and <code>crw_get_data</code> (structured <a href="/data-sources">data sources</a>). Turn any AI coding agent into a web scraper with a single command.</p>
 <blockquote>
 <p>Also available on the <a href="https://registry.modelcontextprotocol.io/?q=crw">MCP Registry</a></p>
 </blockquote>
@@ -573,6 +573,12 @@ yourself are never touched, only the engine&#39;s own bookkeeping, and
 <td>Idempotently cancel extract and return canonical status</td>
 <td><code>DELETE /v1/extract/:id</code></td>
 <td>All modes</td>
+</tr>
+<tr>
+<td><code>crw_enrich</code></td>
+<td>Fill blank table cells (up to 3 rows) with sourced values</td>
+<td><code>POST /v1/enrich</code></td>
+<td>Embedded mode</td>
 </tr>
 <tr>
 <td><code>crw_search</code></td>
