@@ -14,10 +14,11 @@
 For each row, fastCRW:
 
 1. Reads the row's own website first, when the row has a URL or a domain in any value.
-2. Searches once for whatever is still missing, using the row's other values and your `context`.
-3. Extracts the missing columns from the top results and merges them in rank order.
+2. Searches for the row's entity, using its other values and your `context`, then reads the top results together with their search summaries.
+3. If a column is still missing, searches once more for that column and reads the top new results. A row uses at most two searches.
+4. Merges per cell: a value a page states wins over one seen only in a search summary.
 
-A cell is only filled from a page that states it. Each filled cell names that page and, when the value appears in it word for word, quotes the sentence it came from.
+A cell is `supported` only when a page states the value word for word; the cell names that page and quotes the sentence. A value seen only in a search result's summary comes back `unverified`, citing that result. Only sources that name the row's entity are read, and the model is told to set aside a namesake; that is a guard, not a guarantee.
 
 ## Hosted API
 

@@ -70,6 +70,15 @@ document: `ScrapeData.sourceHash` (full markdown, for change-tracking and
 re-scrape correlation) and `llmInputHash` (the truncated `llmInput` text,
 matching every citation's `sourceHash`).
 
+Multi-source extraction (`/v1/enrich`, 2026-11): one model call reads several
+documents, each fenced and headed by its URL. Each document has its own
+canonical text and hash (`sha256` of that document's text alone, never the
+framed prompt), and the model names the document per field. Alignment runs on
+that document's own text only, so headers and fence lines can never be
+evidence. A search result's summary used as a source carries
+`sourceTextKind = "searchSnippet"`; `llmInputHash` is absent on such a call,
+since there is one hash per document, on each citation.
+
 ### 4. Alignment: null, unsupported and hallucinated fields (server-side)
 
 Schema validation runs first, unchanged; `data` that survives it is

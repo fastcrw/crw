@@ -1261,7 +1261,7 @@
           },
           "sourceTextKind": {
             "type": "string",
-            "description": "Which text sourceHash covers. 'llmInput' for extraction basis (the truncated markdown sent to the model)."
+            "description": "Which text sourceHash covers. 'llmInput' for extraction basis (the truncated markdown sent to the model); 'searchSnippet' for a search result's summary (enrich)."
           }
         }
       },

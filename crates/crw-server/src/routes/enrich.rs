@@ -24,11 +24,17 @@ use crw_core::Deadline;
 use crw_core::config::LlmConfig;
 use crw_core::error::CrwError;
 use crw_core::evidence::{Basis, FieldStatus};
-use crw_core::types::{LlmUsage, OutputFormat, ScrapeRequest, SearchData, SearchRequest};
+use crw_core::types::{LlmUsage, OutputFormat, ScrapeRequest, SearchRequest, SearchResult};
 use crw_crawl::single::{build_byok_llm_config, scrape_url};
+use crw_extract::structured::{
+    BasisDoc, SNIPPET_TEXT_KIND, SOURCE_TEXT_KIND, extract_structured_with_basis_sources,
+};
+use crw_search::{
+    StructuredFact, map_to_searxng_params, structured_facts, transform_flat_reranked,
+};
 
 use crate::error::AppError;
-use crate::routes::search::search_inner;
+use crate::routes::search::map_search_error;
 use crate::state::AppState;
 
 /// Rows per call. Three rows run as one concurrent wave, which keeps the whole
@@ -39,12 +45,30 @@ pub const MAX_COLUMNS: usize = 10;
 // them `[enrich]` keys only if a self-hoster needs different ones.
 const ROW_TIMEOUT: Duration = Duration::from_secs(80);
 const PAGE_DEADLINE_MS: u64 = 15_000;
-/// LLM input cap per page. Bounds cost; the golden set decides if it costs recall.
+/// LLM input cap per extraction, all sources together. Keeps every leg inside
+/// the hosted reserve (crw-saas `ENRICH_LLM_INPUT_BYTES`).
 const LLM_INPUT_CAP: usize = 20_000;
+/// Share of `LLM_INPUT_CAP` kept for snippets and facts when a step has any;
+/// the page bodies split the rest (one page alone gets nearly all of it).
+const SNIPPET_SHARE: usize = 4_000;
 /// Basis needs about 800 + 90 tokens per column; 10 columns fit in 2048.
 const LLM_MAX_TOKENS: u32 = 2048;
-const SEARCH_LIMIT: u32 = 5;
-const FIRST_WAVE: usize = 3;
+/// One search credit returns up to 10 results whatever the limit.
+const SEARCH_LIMIT: u32 = 10;
+/// Snippets sent with each extraction.
+const SNIPPET_SOURCES: usize = 5;
+/// Per row: one search for the entity, one focused search for a column still
+/// missing. Pages: the anchor, 3 from the first search, 2 from the second; one
+/// extraction per step. crw-saas sizes its reserve from these
+/// (`ENRICH_ROW_MAX_*` in `lib/enrich.ts`): 2 searches, 6 pages, 3 LLM legs.
+const BROAD_PAGES: usize = 3;
+const FOCUS_PAGES: usize = 2;
+/// The focused search starts only with time left for its pages and their
+/// extraction; otherwise the row ends `completed` with what it has.
+const FOCUS_MIN_LEFT: Duration = Duration::from_secs(30);
+/// Video and social pages: in the golden run 68 of 270 pages read, 1 supported
+/// cell. Their snippets still count; their pages are not fetched.
+const SKIP_HOSTS: [&str; 4] = ["youtube.com", "facebook.com", "instagram.com", "tiktok.com"];
 const MAX_IDENTITY_CHARS: usize = 200;
 /// Prompt-size bounds, so the per-page LLM input stays near the reserve.
 const MAX_IDENTITY_TOTAL_CHARS: usize = 1_000;
@@ -343,7 +367,8 @@ struct RowCtx<'a> {
 struct RowWork {
     /// Best cell per column: a `supported` or `unverified` Basis.
     found: HashMap<String, Basis>,
-    /// Columns that at least one completed extraction looked for.
+    /// Columns that at least one completed extraction looked for. Empty means
+    /// no extraction ran: the row failed.
     looked: HashSet<String>,
     usage: RowUsage,
     timed_out: bool,
@@ -364,23 +389,27 @@ impl RowWork {
             .collect()
     }
 
-    /// Fold one page's evidence in. Pages arrive in rank order, so the first
-    /// `supported` value wins and an `unverified` one only holds a cell until a
-    /// `supported` one shows up.
-    fn merge(&mut self, page: PageOutcome, columns: &[&Column]) {
-        // Two candidates can land on one document (a redirect, `www.`): bill it once.
-        let key = url_key(&page.url);
-        if !self.usage.pages.iter().any(|p| url_key(p) == key) {
-            self.usage.pages.push(page.url);
+    /// Fold one extraction in. Steps arrive in order, so the first `supported`
+    /// value wins; an `unverified` one only holds a cell until a `supported`
+    /// one shows up, and a page-backed `unverified` replaces a snippet-backed one.
+    fn merge(&mut self, step: StepOutcome, columns: &[&Column]) {
+        for url in step.pages {
+            // Two candidates can land on one document (a redirect, `www.`): bill it once.
+            let key = url_key(&url);
+            if !self.usage.pages.iter().any(|p| url_key(p) == key) {
+                self.usage.pages.push(url);
+            }
         }
-        LlmUsage::accumulate(&mut self.usage.llm_usage, page.usage);
+        LlmUsage::accumulate(&mut self.usage.llm_usage, step.usage);
         self.looked.extend(columns.iter().map(|c| c.name.clone()));
-        for b in page.basis {
-            let replace = match (self.found.get(&b.field).map(|c| c.status), b.status) {
+        for b in step.basis {
+            let replace = match (self.found.get(&b.field), b.status) {
                 (_, FieldStatus::Unsupported | FieldStatus::NotFound) => false,
                 (None, _) => true,
-                (Some(FieldStatus::Unverified), FieldStatus::Supported) => true,
-                _ => false,
+                (Some(old), FieldStatus::Supported) => old.status == FieldStatus::Unverified,
+                (Some(old), FieldStatus::Unverified) => {
+                    old.status == FieldStatus::Unverified && from_snippet(old) && !from_snippet(&b)
+                }
             };
             if replace {
                 self.found.insert(b.field.clone(), b);
@@ -389,8 +418,15 @@ impl RowWork {
     }
 }
 
-struct PageOutcome {
-    url: String,
+fn from_snippet(b: &Basis) -> bool {
+    b.citations
+        .first()
+        .is_some_and(|c| c.source_text_kind == SNIPPET_TEXT_KIND)
+}
+
+/// One extraction's result: the pages it read (billable) and its cells.
+struct StepOutcome {
+    pages: Vec<String>,
     basis: Vec<Basis>,
     usage: Option<LlmUsage>,
 }
@@ -414,10 +450,25 @@ impl PageError {
             PageError::Unreachable => "no page for this row could be fetched",
             PageError::Blocked => "the pages for this row could not be read",
             PageError::Empty => "the pages for this row had no readable content",
-            PageError::Extraction => "extraction failed for every page read",
+            PageError::Extraction => "extraction failed for every source read",
             PageError::Search => "search failed for this row",
         }
     }
+}
+
+/// What one search returned: reranked results and the knowledge-panel facts.
+#[derive(Default)]
+struct Hits {
+    results: Vec<SearchResult>,
+    facts: Vec<StructuredFact>,
+}
+
+/// What a row is about, worked out once.
+struct RowKey<'c> {
+    targets: Vec<&'c Column>,
+    identity: Vec<String>,
+    /// Sources must mention it to be read; `None` reads every source.
+    entity: Option<String>,
 }
 
 async fn enrich_row(ctx: &RowCtx<'_>, index: usize, row: &Map<String, Value>) -> RowResult {
@@ -427,87 +478,230 @@ async fn enrich_row(ctx: &RowCtx<'_>, index: usize, row: &Map<String, Value>) ->
     let mut work = RowWork::default();
 
     if !targets.is_empty() {
-        let identity = identity_values(row, &targets);
-        let mut seen_urls = HashSet::new();
+        let key = RowKey {
+            identity: identity_values(row, &targets),
+            entity: entity_name(row, &targets).map(str::to_string),
+            targets: targets.clone(),
+        };
+        let mut seen = HashSet::new();
 
-        // 1. The row's own website.
+        // 0. The row's own website: it is the row's entity, so no filter.
         if let Some(anchor) = anchor_url(row, ctx.columns) {
-            seen_urls.insert(url_key(&anchor));
-            run_wave(ctx, &mut work, &[anchor], &targets, &identity, deadline).await;
+            seen.insert(url_key(&anchor));
+            let own = RowKey {
+                entity: None,
+                identity: key.identity.clone(),
+                targets: targets.clone(),
+            };
+            let hits = Hits::default();
+            read_step(ctx, &mut work, &own, &hits, &[anchor], &mut seen, deadline).await;
         }
 
-        // 2. One search for whatever is still missing, then the top results.
-        let missing = work.missing(&targets);
-        if !missing.is_empty() && !work.timed_out && ctx.state.searxng.is_some() {
-            let query = search_query(&identity, ctx.context, &missing);
-            match timeout(remaining(deadline), search_urls(ctx.state, query)).await {
-                Err(_) => work.timed_out = true,
+        // 1-2. Search for the entity, then read its snippets, facts and top pages
+        //      in ONE extraction. 3. One focused search for a column still
+        //      missing, only if the first search found the entity at all.
+        let mut found_entity = false;
+        for focus in [false, true] {
+            let missing = work.missing(&targets);
+            if missing.is_empty() || work.timed_out || ctx.state.searxng.is_none() {
+                break;
+            }
+            if focus && (!found_entity || remaining(deadline) < FOCUS_MIN_LEFT) {
+                break;
+            }
+            // The first missing column in the caller's order. A column that only
+            // a snippet backs counts as missing: confirming it on a page (a
+            // company's own about or leadership page) is what the search is for.
+            let query = search_query(&key.identity, ctx.context, focus.then_some(missing[0]));
+            let hits = match timeout(remaining(deadline), search_hits(ctx.state, &query)).await {
+                Err(_) => {
+                    work.timed_out = true;
+                    break;
+                }
                 Ok(Err(e)) => {
                     tracing::debug!(row = index, "enrich search failed: {e}");
                     work.last_error = Some(PageError::Search);
+                    break;
                 }
-                Ok(Ok(urls)) => {
-                    work.usage.searches += 1;
-                    let candidates: Vec<String> = urls
-                        .into_iter()
-                        .filter(|u| seen_urls.insert(url_key(u)))
-                        .collect();
-                    let (first, rest) = candidates.split_at(candidates.len().min(FIRST_WAVE));
-                    run_wave(ctx, &mut work, first, &targets, &identity, deadline).await;
-                    if !work.missing(&targets).is_empty() && !work.timed_out {
-                        run_wave(ctx, &mut work, rest, &targets, &identity, deadline).await;
-                    }
-                }
+                Ok(Ok(hits)) => hits,
+            };
+            work.usage.searches += 1;
+            let budget = if focus { FOCUS_PAGES } else { BROAD_PAGES };
+            let pages: Vec<String> = hits
+                .results
+                .iter()
+                .filter(|r| !skip_host(&r.url))
+                .filter(|r| on_entity(&key, &format!("{} {} {}", r.title, r.description, r.url)))
+                .filter(|r| seen.insert(url_key(&r.url)))
+                .take(budget)
+                .map(|r| r.url.clone())
+                .collect();
+            let read = read_step(ctx, &mut work, &key, &hits, &pages, &mut seen, deadline).await;
+            if !read && !focus && !work.timed_out && work.last_error.is_none() {
+                // The search ran and nothing names this entity: every column is
+                // honestly not found, which is an answer, not a failure.
+                work.looked.extend(missing.iter().map(|c| c.name.clone()));
             }
+            found_entity |= read;
         }
     }
 
     finish_row(index, row, &targets, work)
 }
 
-/// Fetch + extract a set of pages in parallel, then merge them in rank order.
-async fn run_wave(
+fn on_entity(key: &RowKey<'_>, text: &str) -> bool {
+    key.entity.as_deref().is_none_or(|e| mentions(text, e))
+}
+
+/// Prompt bytes a source costs beyond its text: the `Source #i` / `URL:` header,
+/// the two fence lines and its line in the URL list.
+fn framing(url: &str) -> usize {
+    2 * url.len() + 128
+}
+
+/// Fetch `pages`, then run ONE extraction over their bodies plus the search's
+/// facts and snippets, keeping only sources about the row's entity. Returns
+/// whether any source was sent to the model.
+async fn read_step(
     ctx: &RowCtx<'_>,
     work: &mut RowWork,
-    urls: &[String],
-    targets: &[&Column],
-    identity: &[String],
+    key: &RowKey<'_>,
+    hits: &Hits,
+    pages: &[String],
+    seen: &mut HashSet<String>,
     deadline: Instant,
-) {
-    let missing = work.missing(targets);
-    if urls.is_empty() || missing.is_empty() {
-        return;
+) -> bool {
+    let missing = work.missing(&key.targets);
+    if missing.is_empty() {
+        return false;
     }
-    let schema = build_schema(&missing);
-    let prompt = extraction_prompt(identity, ctx.context);
-    let outcomes =
-        futures::future::join_all(
-            urls.iter().map(|url| {
-                let (schema, prompt) = (&schema, &prompt);
-                async move {
-                    timeout(remaining(deadline), fetch_extract(ctx, url, schema, prompt)).await
-                }
-            }),
-        )
-        .await;
-    for outcome in outcomes {
+    let fetched = futures::future::join_all(
+        pages
+            .iter()
+            .map(|url| async move { timeout(remaining(deadline), fetch_page(ctx, url)).await }),
+    )
+    .await;
+    let mut bodies = Vec::new();
+    for outcome in fetched {
         match outcome {
             Err(_) => work.timed_out = true,
             Ok(Err(e)) => work.last_error = Some(e),
-            Ok(Ok(mut page)) => {
-                map_options(&mut page.basis, &missing);
-                work.merge(page, &missing);
+            Ok(Ok((url, md))) => {
+                // A redirect target is the same document for the next step.
+                seen.insert(url_key(&url));
+                if on_entity(key, &md) {
+                    bodies.push((url, md));
+                }
             }
+        }
+    }
+    let snippets: Vec<(String, String)> = hits
+        .facts
+        .iter()
+        .filter(|f| !f.url.is_empty())
+        .map(|f| (f.url.clone(), format!("{}\n{}", f.title, f.to_markdown())))
+        .chain(
+            hits.results
+                .iter()
+                .filter(|r| !r.description.trim().is_empty() && !skip_host(&r.url))
+                .take(SNIPPET_SOURCES)
+                .map(|r| {
+                    (
+                        r.url.clone(),
+                        format!("{}\n{}", r.title, r.description.trim()),
+                    )
+                }),
+        )
+        .filter(|(_, text)| on_entity(key, text))
+        .collect();
+
+    // The whole prompt stays within LLM_INPUT_CAP: snippets get a fixed share
+    // when there are any, the pages split the rest.
+    let snippet_share = if snippets.is_empty() {
+        0
+    } else {
+        SNIPPET_SHARE
+    };
+    let per_page = (LLM_INPUT_CAP - snippet_share) / bodies.len().max(1);
+    let focus = passage_query(key, &missing);
+    let mut docs = Vec::new();
+    let mut read = Vec::new();
+    let mut room = LLM_INPUT_CAP;
+    for (url, md) in bodies {
+        let cap = per_page.saturating_sub(framing(&url));
+        let body = crw_extract::answer::select_relevant_passages(&md, &focus, cap);
+        room = room.saturating_sub(body.len() + framing(&url));
+        read.push(url.clone());
+        docs.push(BasisDoc::new(url, body, SOURCE_TEXT_KIND));
+    }
+    for (url, text) in snippets {
+        let cost = text.len() + framing(&url);
+        if cost > room {
+            continue;
+        }
+        room -= cost;
+        docs.push(BasisDoc::new(url, text, SNIPPET_TEXT_KIND));
+    }
+    if docs.is_empty() {
+        return false;
+    }
+    let schema = build_schema(&missing);
+    let prompt = extraction_prompt(&key.identity, ctx.context);
+    let result = match timeout(
+        remaining(deadline),
+        extract_structured_with_basis_sources(&docs, &schema, Some(&prompt), ctx.llm),
+    )
+    .await
+    {
+        Err(_) => {
+            work.timed_out = true;
+            return true;
+        }
+        Ok(Err(e)) => {
+            tracing::warn!(sources = docs.len(), "enrich extraction failed: {e}");
+            work.last_error = Some(PageError::Extraction);
+            return true;
+        }
+        Ok(Ok(r)) => r,
+    };
+    let mut basis = result.basis;
+    map_options(&mut basis, &missing);
+    for b in &mut basis {
+        settle_cell(b);
+    }
+    work.merge(
+        StepOutcome {
+            pages: read,
+            basis,
+            usage: result.usage,
+        },
+        &missing,
+    );
+    true
+}
+
+/// Snippets go stale and a knowledge panel can describe a namesake, so a cell
+/// only a snippet backs is never `supported`: it stays `unverified` (without
+/// its excerpt, which ADR 0001 reserves for `supported`) and its column stays
+/// missing, so a page can confirm it. An empty string is no value.
+fn settle_cell(b: &mut Basis) {
+    if b.value
+        .as_ref()
+        .and_then(Value::as_str)
+        .is_some_and(|v| v.trim().is_empty())
+    {
+        *b = not_found(&b.field);
+        return;
+    }
+    if b.status == FieldStatus::Supported && from_snippet(b) {
+        b.status = FieldStatus::Unverified;
+        for c in &mut b.citations {
+            c.excerpt = None;
         }
     }
 }
 
-async fn fetch_extract(
-    ctx: &RowCtx<'_>,
-    url: &str,
-    schema: &Value,
-    prompt: &str,
-) -> Result<PageOutcome, PageError> {
+async fn fetch_page(ctx: &RowCtx<'_>, url: &str) -> Result<(String, String), PageError> {
     let parsed = url::Url::parse(url).map_err(|_| PageError::Unsafe)?;
     crw_core::url_safety::validate_safe_url_resolved(&parsed)
         .await
@@ -552,51 +746,39 @@ async fn fetch_extract(
     if doc.block.is_some() || doc.http_error().is_some() {
         return Err(PageError::Blocked);
     }
-    let md = doc.markdown.as_deref().unwrap_or("").trim();
-    if md.is_empty() {
+    let md = doc.markdown.unwrap_or_default();
+    if md.trim().is_empty() {
         return Err(PageError::Empty);
     }
-    let doc_url = doc
-        .metadata
-        .final_url
-        .clone()
-        .unwrap_or_else(|| url.to_string());
-    let result = crw_extract::structured::extract_structured_with_basis(
-        md,
-        schema,
-        Some(prompt),
-        ctx.llm,
-        Some(LLM_INPUT_CAP),
-        &doc_url,
-    )
-    .await
-    .map_err(|e| {
-        tracing::warn!(url, "enrich extraction failed: {e}");
-        PageError::Extraction
-    })?;
-    Ok(PageOutcome {
-        url: doc_url,
-        basis: result.basis,
-        usage: result.usage,
-    })
+    let final_url = doc.metadata.final_url.unwrap_or_else(|| url.to_string());
+    Ok((final_url, md))
 }
 
-async fn search_urls(state: &AppState, query: String) -> Result<Vec<String>, CrwError> {
-    // URLs only (no scrapeOptions): pages are fetched afterwards on the batch
-    // lanes. `paid_rescue` stays false (it is `serde(skip)`): enrich never
-    // spends the paid search tier.
-    let req: SearchRequest = serde_json::from_value(json!({
-        "query": query,
-        "limit": SEARCH_LIMIT.min(state.config.search.max_limit)
-    }))
-    .map_err(|e| CrwError::Internal(format!("search request: {e}")))?;
-    let resp = search_inner(state, req).await?;
-    let results = match resp.data.map(|d| d.results) {
-        Some(SearchData::Flat(r)) => r,
-        Some(SearchData::Grouped(g)) => g.web.unwrap_or_default(),
-        None => Vec::new(),
-    };
-    Ok(results.into_iter().map(|r| r.url).collect())
+/// The search stack's own retrieval, without the answer path: one backend
+/// call, the relevance rerank `/v1/search` uses for answers, and the
+/// knowledge-panel facts that `/v1/search` itself only reads for answers.
+async fn search_hits(state: &AppState, query: &str) -> Result<Hits, CrwError> {
+    let client = state
+        .searxng
+        .as_ref()
+        .ok_or_else(|| CrwError::SearchDisabled("search is not configured".into()))?;
+    let limit = SEARCH_LIMIT.min(state.config.search.max_limit);
+    let req: SearchRequest = serde_json::from_value(json!({ "query": query, "limit": limit }))
+        .map_err(|e| CrwError::Internal(format!("search request: {e}")))?;
+    let params = map_to_searxng_params(&req, &state.config.search);
+    let resp = client
+        .fetch(&params)
+        .await
+        .map_err(|e| map_search_error(e, state.config.search.timeout_ms, client.base_url()))?;
+    if resp.is_degraded() {
+        return Err(CrwError::SearchDegraded(
+            "search backend could not answer".into(),
+        ));
+    }
+    Ok(Hits {
+        results: transform_flat_reranked(&resp, query, limit, state.config.search.rerank_relevance),
+        facts: structured_facts(&resp),
+    })
 }
 
 fn finish_row(
@@ -617,9 +799,9 @@ fn finish_row(
             cells.insert(c.name.clone(), v);
         }
     }
-    let (status, stop_reason, error) = if !targets.is_empty() && work.usage.pages.is_empty() {
+    let (status, stop_reason, error) = if !targets.is_empty() && work.looked.is_empty() {
         let err = if work.timed_out {
-            "timed out before any page was read"
+            "timed out before any source was read"
         } else {
             work.last_error
                 .map_or("no page could be found for this row", PageError::message)
@@ -752,35 +934,186 @@ fn as_website(s: &str) -> Option<String> {
         .then(|| parsed.to_string())
 }
 
-fn search_query(identity: &[String], context: Option<&str>, missing: &[&Column]) -> String {
-    let who: Vec<&str> = identity
+/// The entity's values and the table context, plus, for a focused search, the
+/// one column it looks for in words a search engine reads: its description,
+/// or its name split apart (`hqCity` reads as noise, `hq city` does not).
+fn search_query(identity: &[String], context: Option<&str>, focus: Option<&Column>) -> String {
+    let mut parts: Vec<String> = identity
         .iter()
-        .map(|kv| kv.split_once(": ").map_or(kv.as_str(), |(_, v)| v))
+        .map(|kv| {
+            kv.split_once(": ")
+                .map_or(kv.as_str(), |(_, v)| v)
+                .to_string()
+        })
         .collect();
-    let what: Vec<&str> = missing.iter().map(|c| c.name.trim()).collect();
-    let mut q = who.join(" ");
     if let Some(c) = context {
-        q.push(' ');
-        q.push_str(truncate(c, 80));
+        parts.push(truncate(c, 80).to_string());
     }
-    q.push(' ');
-    q.push_str(&what.join(" "));
-    truncate(q.trim(), 300).to_string()
+    if let Some(col) = focus {
+        parts.push(match col.description.as_deref().map(str::trim) {
+            Some(d) if !d.is_empty() => truncate(d, 80).to_string(),
+            _ => column_words(&col.name),
+        });
+    }
+    truncate(parts.join(" ").trim(), 300).to_string()
+}
+
+/// Row keys that name the entity, in the order they are tried.
+const NAME_KEYS: [&str; 10] = [
+    "name",
+    "company",
+    "organization",
+    "organisation",
+    "university",
+    "school",
+    "project",
+    "product",
+    "repo",
+    "brand",
+];
+
+/// The row's name for its entity: a non-target text value under a name-like
+/// key, else the row's only non-URL text value. Rows are maps in key order, not
+/// in the caller's column order, so position cannot tell the name apart from,
+/// say, an `industry` column. `None` (no filter) when it cannot be told.
+fn entity_name<'r>(row: &'r Map<String, Value>, targets: &[&Column]) -> Option<&'r str> {
+    let texts: Vec<(&str, &str)> = row
+        .iter()
+        .filter(|(k, _)| k.as_str() != "id" && !targets.iter().any(|c| c.name == **k))
+        .filter_map(|(k, v)| v.as_str().map(|v| (k.as_str(), v.trim())))
+        .filter(|(_, v)| !v.is_empty() && as_website(v).is_none() && !fold(v).is_empty())
+        .collect();
+    let by_key = NAME_KEYS.iter().find_map(|n| {
+        texts
+            .iter()
+            .find(|(k, _)| k.to_lowercase().contains(n))
+            .map(|(_, v)| *v)
+    });
+    by_key.or(match texts.as_slice() {
+        [(_, only)] => Some(*only),
+        _ => None,
+    })
+}
+
+/// Trailing legal forms a page usually leaves out ("Stripe, Inc." -> "stripe").
+const LEGAL_SUFFIXES: [&str; 12] = [
+    "inc",
+    "llc",
+    "ltd",
+    "limited",
+    "gmbh",
+    "ag",
+    "sa",
+    "plc",
+    "corp",
+    "corporation",
+    "co",
+    "incorporated",
+];
+
+/// Whether `text` names `entity`: as whole words, accent, case and punctuation
+/// insensitive, without a trailing legal form. A multi-word or non-Latin name
+/// also counts when written without spaces ("MercadoLibre", "メルカリは"). For an
+/// `owner/name` slug the name alone also counts.
+fn mentions(text: &str, entity: &str) -> bool {
+    let hay = fold(text);
+    let spaced = format!(" {hay} ");
+    let compact: String = hay.split(' ').collect();
+    let names = [Some(entity), entity.rsplit_once('/').map(|(_, n)| n)];
+    names.into_iter().flatten().any(|n| {
+        let mut w: Vec<String> = fold(n).split(' ').map(str::to_string).collect();
+        while w.len() > 1
+            && w.last()
+                .is_some_and(|l| LEGAL_SUFFIXES.contains(&l.as_str()))
+        {
+            w.pop();
+        }
+        let name = w.join(" ");
+        if name.is_empty() {
+            return false;
+        }
+        spaced.contains(&format!(" {name} "))
+            || ((w.len() > 1 || !name.is_ascii()) && compact.contains(&w.concat()))
+    })
+}
+
+/// Lowercase alphanumeric words joined by single spaces, accents removed.
+fn fold(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    s.nfkd()
+        .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .flat_map(char::to_lowercase)
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn skip_host(url: &str) -> bool {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .is_some_and(|h| {
+            SKIP_HOSTS
+                .iter()
+                .any(|s| h == *s || h.ends_with(&format!(".{s}")))
+        })
+}
+
+/// What passage selection keeps a page's text for: the entity and the
+/// columns still missing.
+fn passage_query(key: &RowKey<'_>, missing: &[&Column]) -> String {
+    let mut q = match &key.entity {
+        Some(e) => e.clone(),
+        None => key.identity.join(" "),
+    };
+    for c in missing {
+        q.push(' ');
+        q.push_str(c.description.as_deref().unwrap_or(""));
+        q.push(' ');
+        q.push_str(&column_words(&c.name));
+    }
+    q
+}
+
+/// `hqCity`, `first_release_year`, `pricing-page` -> lowercase words.
+fn column_words(name: &str) -> String {
+    let mut out = String::new();
+    let mut prev_lower = false;
+    for ch in name.trim().chars() {
+        if ch == '_' || ch == '-' || ch.is_whitespace() {
+            out.push(' ');
+            prev_lower = false;
+            continue;
+        }
+        if ch.is_uppercase() && prev_lower {
+            out.push(' ');
+        }
+        prev_lower = ch.is_lowercase() || ch.is_ascii_digit();
+        out.extend(ch.to_lowercase());
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn extraction_prompt(identity: &[String], context: Option<&str>) -> String {
     let mut p = format!(
-        "This page is being read to fill one row of a table. The row is about: {}.",
+        "The sources below are read to fill one row of a table. The row is about: {}.",
         identity.join("; ")
     );
     if let Some(c) = context {
         p.push_str(&format!(" Table context: {c}."));
     }
     p.push_str(
-        " If the page is about a different entity than this row, return null for every field. \
-         Copy text values exactly as they are written on the page; do not reformat or \
-         translate them. Give numbers as plain digits. Return null for anything the page \
-         does not state.",
+        " A source counts only if it is clearly about this exact entity, consistent with the \
+         row's other values; a namesake does not count. If none counts, return null for every \
+         field. If sources disagree, use the most recent source that states the value as \
+         current, and ignore anyone described as former, interim or past. Copy text values \
+         exactly as they are written in the source; do not reformat or translate them. Give \
+         numbers as plain digits exactly as one source states them; never add, average or \
+         convert them. A count of profiles, members or followers on a third-party site (for \
+         example \"View all 16,691 employees\" on a social network) is not the \
+         organization's own figure. Return null for anything no source states.",
     );
     p
 }
@@ -894,9 +1227,9 @@ mod tests {
         }
     }
 
-    fn page(url: &str, basis: Vec<Basis>) -> PageOutcome {
-        PageOutcome {
-            url: url.into(),
+    fn page(url: &str, basis: Vec<Basis>) -> StepOutcome {
+        StepOutcome {
+            pages: vec![url.into()],
             basis,
             usage: None,
         }
@@ -963,6 +1296,122 @@ mod tests {
         assert_eq!(r.stop_reason, Some("timeout"));
         assert!(r.cells.contains_key("ceo"));
         assert!(!r.cells.contains_key("hq"));
+    }
+
+    fn snippet_basis(field: &str, value: &str, status: FieldStatus, url: &str) -> Basis {
+        let mut b = basis(field, value, status, url);
+        b.citations[0].source_text_kind = SNIPPET_TEXT_KIND.into();
+        b.citations[0].excerpt = Some(value.into());
+        b
+    }
+
+    #[test]
+    fn a_snippet_alone_never_makes_a_cell_supported() {
+        let ceo = col("ceo", ColumnType::Text);
+        let mut b = snippet_basis(
+            "ceo",
+            "Jane Doe",
+            FieldStatus::Supported,
+            "https://news.example",
+        );
+        settle_cell(&mut b);
+        assert_eq!(b.status, FieldStatus::Unverified);
+        assert!(
+            b.citations[0].excerpt.is_none(),
+            "excerpt only on supported"
+        );
+        let mut w = RowWork::default();
+        w.merge(
+            StepOutcome {
+                pages: vec![],
+                basis: vec![b],
+                usage: None,
+            },
+            &[&ceo],
+        );
+        // Still missing, so a later step looks for a page that states it.
+        assert_eq!(w.missing(&[&ceo]).len(), 1);
+        // No page read, yet an extraction ran: the row completed, nothing billed as a page.
+        let r = finish_row(0, &Map::new(), &[&ceo], w);
+        assert_eq!(r.status, RowStatus::Completed);
+        assert!(r.usage.pages.is_empty());
+        assert_eq!(r.cells["ceo"]["status"], "unverified");
+    }
+
+    #[test]
+    fn a_page_backed_guess_replaces_a_snippet_backed_one() {
+        let ceo = col("ceo", ColumnType::Text);
+        let mut w = RowWork::default();
+        let mut s = snippet_basis(
+            "ceo",
+            "Old",
+            FieldStatus::Unverified,
+            "https://news.example",
+        );
+        s.citations[0].excerpt = None;
+        w.merge(page("a", vec![s]), &[&ceo]);
+        w.merge(
+            page("b", vec![basis("ceo", "New", FieldStatus::Unverified, "b")]),
+            &[&ceo],
+        );
+        assert_eq!(w.found["ceo"].value, Some(json!("New")));
+        // ...but one page guess never displaces another.
+        w.merge(
+            page(
+                "c",
+                vec![basis("ceo", "Later", FieldStatus::Unverified, "c")],
+            ),
+            &[&ceo],
+        );
+        assert_eq!(w.found["ceo"].value, Some(json!("New")));
+    }
+
+    #[test]
+    fn an_empty_string_is_no_value_but_zero_is() {
+        let mut e = basis("ceo", " ", FieldStatus::Unverified, "a");
+        settle_cell(&mut e);
+        assert_eq!(e.status, FieldStatus::NotFound);
+        let mut z = basis("n", "x", FieldStatus::Unverified, "a");
+        z.value = Some(json!(0));
+        settle_cell(&mut z);
+        assert_eq!(z.status, FieldStatus::Unverified);
+    }
+
+    #[test]
+    fn sources_must_name_the_row_entity() {
+        let cols = vec![col("ceo", ColumnType::Text)];
+        let row = |v: Value| -> Map<String, Value> { serde_json::from_value(v).unwrap() };
+        let t = |r: &Map<String, Value>| {
+            entity_name(r, &target_columns(&cols, r, false)).map(str::to_string)
+        };
+        // A name-like key wins over a column that sorts first.
+        let r = row(json!({ "id": 1, "industry": "fintech", "name": "Stripe", "ceo": null }));
+        assert_eq!(t(&r).as_deref(), Some("Stripe"));
+        let r = row(json!({ "city": "Berlin", "company": "Acme", "site": "acme.com" }));
+        assert_eq!(t(&r).as_deref(), Some("Acme"));
+        // One plain text value is the name; two unknown ones mean no filter.
+        assert_eq!(
+            t(&row(json!({ "firm": "Klarna" }))).as_deref(),
+            Some("Klarna")
+        );
+        assert_eq!(t(&row(json!({ "a": "x y", "b": "z" }))), None);
+        assert_eq!(t(&row(json!({ "name": "!!!" }))), None);
+
+        assert!(mentions("Patrick Collison, CEO of Stripe, Inc.", "Stripe"));
+        assert!(mentions("Stripe raised again", "Stripe, Inc."));
+        assert!(!mentions("Stripes and stars", "Stripe"));
+        assert!(mentions(
+            "Investor relations | MercadoLibre",
+            "Mercado Libre"
+        ));
+        assert!(mentions("Campus of ETH Zurich", "ETH Zürich"));
+        assert!(mentions("メルカリは日本の会社です", "メルカリ"));
+        assert!(mentions("Tokio is an async runtime", "tokio-rs/tokio"));
+        assert!(!mentions("A page about something else", "tokio-rs/tokio"));
+        assert!(skip_host("https://www.youtube.com/watch?v=1"));
+        assert!(skip_host("https://m.facebook.com/stripe"));
+        assert!(!skip_host("https://www.linkedin.com/company/stripe"));
+        assert!(!skip_host("https://notyoutube.com/"));
     }
 
     #[test]
@@ -1141,6 +1590,34 @@ mod tests {
         let mut long = col("ceo", ColumnType::Text);
         long.description = Some("x".repeat(501));
         assert!(validate(&mk(vec![long], None)).is_err());
+    }
+
+    #[test]
+    fn queries_name_the_entity_then_one_column_in_plain_words() {
+        let id = vec!["company: Stripe".to_string()];
+        let ctx = Some("Technology companies");
+        assert_eq!(search_query(&id, ctx, None), "Stripe Technology companies");
+
+        // No raw camelCase key ever reaches the search engine.
+        let hq = col("hqCity", ColumnType::Text);
+        assert_eq!(
+            search_query(&id, ctx, Some(&hq)),
+            "Stripe Technology companies hq city"
+        );
+        let mut stage = col("stage", ColumnType::Options);
+        stage.description = Some("Latest funding stage or status".into());
+        assert_eq!(
+            search_query(&id, None, Some(&stage)),
+            "Stripe Latest funding stage or status"
+        );
+
+        assert_eq!(column_words("firstReleaseYear"), "first release year");
+        assert_eq!(column_words("pricing_page"), "pricing page");
+        assert_eq!(column_words(" CEO "), "ceo");
+        assert_eq!(
+            column_words("cheapestPaidUsdMonthly"),
+            "cheapest paid usd monthly"
+        );
     }
 
     #[test]
