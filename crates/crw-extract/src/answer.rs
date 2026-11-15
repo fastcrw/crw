@@ -213,7 +213,7 @@ fn truncate_on_char_boundary(s: &str, max_bytes: usize) -> &str {
 /// Worst-case separator between two kept chunks ("\n[...]\n"). Accounted
 /// conservatively so the assembled output never exceeds `cap` before the final
 /// truncate; the leftover slack is reclaimed by the partial-fill step.
-const GAP_MARKER: &str = "\n[...]\n";
+pub(crate) const GAP_MARKER: &str = "\n[...]\n";
 
 /// Add whole chunk `i` to `keep` if it fits the remaining byte budget (charging
 /// the worst-case separator). Whole-chunk only; the partial tail is handled by
@@ -250,7 +250,7 @@ fn try_keep_chunk(
 /// kept chunks are joined with a `[...]` gap marker so the model does not read two
 /// distant passages as one continuous span. Falls back to head-truncation if the
 /// text won't chunk.
-fn select_relevant_passages(md: &str, query: &str, cap: usize) -> String {
+pub fn select_relevant_passages(md: &str, query: &str, cap: usize) -> String {
     if md.len() <= cap || query.trim().is_empty() {
         return truncate_on_char_boundary(md, cap).to_string();
     }

@@ -1,4 +1,5 @@
 use crate::basis;
+pub use crate::basis::{BasisDoc, SNIPPET_TEXT_KIND, SOURCE_TEXT_KIND};
 use crate::pricing;
 use crw_core::config::LlmConfig;
 use crw_core::error::{CrwError, CrwResult};
@@ -284,9 +285,59 @@ pub async fn extract_structured_with_basis(
         user_prompt,
         llm,
         max_input_bytes,
-        Some(source_url),
+        Some(BasisFor::Page(source_url)),
     )
     .await
+}
+
+/// [`extract_structured_with_basis`] over several documents in ONE model call.
+/// Each document is fenced as untrusted data under its URL; every field's
+/// evidence is checked against the one document it names (see
+/// [`BasisDoc`]). The caller sizes the documents: nothing is truncated here,
+/// so each citation's hash covers exactly the text the model saw.
+/// `llm_input_hash` is `None`: there is one hash per document, on each citation.
+pub async fn extract_structured_with_basis_sources(
+    docs: &[BasisDoc],
+    schema: &serde_json::Value,
+    user_prompt: Option<&str>,
+    llm: &LlmConfig,
+) -> CrwResult<StructuredExtractResult> {
+    if docs.is_empty() {
+        return Err(CrwError::InvalidRequest(
+            "extraction needs at least one source".into(),
+        ));
+    }
+    if let Some(reason) = basis::reject_reason(schema, llm.max_tokens) {
+        return Err(CrwError::InvalidRequest(reason));
+    }
+    let nonce = crate::untrusted::random_nonce();
+    let content = docs
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let block = format!("Source #{i}\nURL: {}\n\n{}", d.url, d.text);
+            crate::untrusted::wrap(&block, "SOURCE", &nonce, Some(i))
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    extract_inner(
+        &content,
+        Some(schema),
+        user_prompt,
+        llm,
+        Some(content.len()),
+        Some(BasisFor::Sources(docs)),
+    )
+    .await
+}
+
+/// What a basis-mode extraction is verified against.
+#[derive(Clone, Copy)]
+enum BasisFor<'a> {
+    /// One fetched page; its text is the (truncated) markdown itself.
+    Page(&'a str),
+    /// Several documents, already sized and rendered by the caller.
+    Sources(&'a [BasisDoc]),
 }
 
 /// The one extraction path. `basis_for` carries the document url in basis mode
@@ -301,7 +352,7 @@ async fn extract_inner(
     user_prompt: Option<&str>,
     llm: &LlmConfig,
     max_input_bytes: Option<usize>,
-    basis_for: Option<&str>,
+    basis_for: Option<BasisFor<'_>>,
 ) -> CrwResult<StructuredExtractResult> {
     if llm.api_key.is_empty() {
         return Err(CrwError::ExtractionError(
@@ -318,8 +369,13 @@ async fn extract_inner(
     // never be anything the model had a hand in. (Deliberately not the same
     // hash as `ScrapeData.source_hash`, which covers the full markdown; the
     // citation's `sourceTextKind` is what disambiguates the two.)
-    let llm_input_hash =
-        basis_for.map(|_| format!("sha256:{}", hex::encode(Sha256::digest(clipped.as_bytes()))));
+    let llm_input_hash = match basis_for {
+        Some(BasisFor::Page(_)) => Some(format!(
+            "sha256:{}",
+            hex::encode(Sha256::digest(clipped.as_bytes()))
+        )),
+        _ => None,
+    };
 
     // When the caller gave only a prompt (no schema), let the LLM shape the
     // object itself; the tool still needs an input schema, so use a permissive
@@ -361,7 +417,14 @@ async fn extract_inner(
              Call the extract_data tool with the extracted data.{GROUNDING}"
         ),
     };
-    let evidence = basis_for.map(basis::prompt_section).unwrap_or_default();
+    let evidence = match basis_for {
+        Some(BasisFor::Page(url)) => basis::prompt_section(url),
+        Some(BasisFor::Sources(docs)) => {
+            let urls: Vec<&str> = docs.iter().map(|d| d.url.as_str()).collect();
+            basis::prompt_section_sources(&urls)
+        }
+        None => String::new(),
+    };
     let prompt = format!("{instruction}{evidence}\n\n## Content\n{clipped}");
 
     let configured = Duration::from_millis(llm.timeout_ms);
@@ -522,14 +585,21 @@ async fn extract_inner(
     // checked against it and against the bytes we actually sent; they never
     // rewrite it.
     let (basis, basis_warnings) = match (basis_for, &llm_input_hash) {
-        (Some(url), Some(hash)) => basis::align_basis(
+        (Some(BasisFor::Page(url)), Some(hash)) => basis::align_basis(
             base_schema,
             &value,
             model_basis.as_ref(),
-            url,
-            hash,
-            clipped,
+            &[BasisDoc {
+                url: url.to_string(),
+                hash: hash.clone(),
+                text: clipped.to_string(),
+                kind: basis::SOURCE_TEXT_KIND,
+            }],
+            false,
         ),
+        (Some(BasisFor::Sources(docs)), _) => {
+            basis::align_basis(base_schema, &value, model_basis.as_ref(), docs, true)
+        }
         _ => (vec![], vec![]),
     };
 
