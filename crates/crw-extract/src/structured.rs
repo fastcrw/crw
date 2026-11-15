@@ -100,9 +100,9 @@ pub(crate) fn validate_against_schema(
 ) -> CrwResult<()> {
     let validator = jsonschema::validator_for(schema)
         .map_err(|e| CrwError::ExtractionError(format!("Invalid JSON schema: {e}")))?;
-    let errors: Vec<String> = validator
-        .iter_errors(value)
-        .map(|e| e.to_string())
+    let errors: Vec<String> = violations(&validator, value)
+        .into_iter()
+        .map(|v| v.line())
         .collect();
     if !errors.is_empty() {
         return Err(CrwError::ExtractionError(format!(
@@ -111,6 +111,76 @@ pub(crate) fn validate_against_schema(
         )));
     }
     Ok(())
+}
+
+/// One schema violation: the JSON pointer it sits at and the validator's text.
+struct Violation {
+    path: String,
+    message: String,
+    null: bool,
+}
+
+impl Violation {
+    fn line(&self) -> String {
+        if self.path.is_empty() {
+            self.message.clone()
+        } else {
+            format!("{}: {}", self.path, self.message)
+        }
+    }
+}
+
+/// Every violation in `value`, each tied to the field it is about.
+///
+/// An `anyOf` / `oneOf` miss is reported by the validator as "is not valid under
+/// any of the schemas" at the container, naming no field. On the usual nullable
+/// shape (`anyOf: [<array or object>, {"type": "null"}]`) that line hid the real
+/// cause from the caller and from the retry prompt alike, so the retry could not
+/// correct it (one customer batch: 484 x 422, each a `/prices/N/unitWeight: null`
+/// behind that line). A branch whose type or `enum` does not match the value
+/// itself, or whose `const` does not match it or a direct child (where a
+/// discriminator sits), is not the shape the value was written against. When exactly one branch is left, its
+/// errors replace the generic line; otherwise the generic line stays, because
+/// picking one of several plausible branches could steer the retry the wrong way.
+fn violations(validator: &jsonschema::Validator, value: &serde_json::Value) -> Vec<Violation> {
+    let mut out = Vec::new();
+    for e in validator.iter_errors(value) {
+        push_violation(&e, &mut out);
+    }
+    out
+}
+
+fn push_violation(e: &jsonschema::ValidationError<'_>, out: &mut Vec<Violation>) {
+    use jsonschema::error::ValidationErrorKind as K;
+    let depth =
+        |e: &jsonschema::ValidationError<'_>| e.instance_path().as_str().matches('/').count();
+    let own = depth(e);
+    // A null is the model's "not on the page", never evidence of the shape.
+    let shape_mismatch = |inner: &jsonschema::ValidationError<'_>| match inner.kind() {
+        K::Type { .. } => depth(inner) == own,
+        _ if inner.instance().is_null() => false,
+        K::Enum { .. } => depth(inner) == own,
+        K::Constant { .. } => depth(inner) <= own + 1,
+        _ => false,
+    };
+    let only_match = match e.kind() {
+        K::AnyOf { context } | K::OneOfNotValid { context } => {
+            let mut fitting = context.iter().filter(|b| !b.iter().any(shape_mismatch));
+            match (fitting.next(), fitting.next()) {
+                (Some(branch), None) => Some(branch),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    match only_match {
+        Some(branch) => branch.iter().for_each(|inner| push_violation(inner, out)),
+        None => out.push(Violation {
+            path: e.instance_path().as_str().to_string(),
+            message: e.to_string(),
+            null: e.instance().is_null(),
+        }),
+    }
 }
 
 /// Drop the object properties the validator rejected only for being `null`.
@@ -127,10 +197,10 @@ fn drop_rejected_nulls(
     schema: &serde_json::Value,
 ) -> Option<serde_json::Value> {
     let validator = jsonschema::validator_for(schema).ok()?;
-    let paths: Vec<String> = validator
-        .iter_errors(value)
-        .filter(|e| e.instance().is_null())
-        .map(|e| e.instance_path().as_str().to_string())
+    let paths: Vec<String> = violations(&validator, value)
+        .into_iter()
+        .filter(|v| v.null)
+        .map(|v| v.path)
         .collect();
     let mut pruned = value.clone();
     let mut removed = false;
@@ -1582,6 +1652,146 @@ mod tests {
         let value =
             json!({ "items": [{ "name": "a", "price": "10", "wasPrice": null, "note": null }] });
         assert!(drop_rejected_nulls(&value, &product_list_schema()).is_none());
+    }
+
+    /// The customer shape behind the opaque anyOf 422s: a nullable list whose
+    /// items require fields the page may not carry.
+    fn nullable_price_list_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": { "prices": { "anyOf": [
+                { "type": "array", "items": {
+                    "type": "object",
+                    "properties": {
+                        "price": { "type": "number" },
+                        "unitWeight": { "type": "number" },
+                        "unit": { "type": "string" },
+                        "wasPrice": { "type": "number" }
+                    },
+                    "required": ["price", "unitWeight", "unit"],
+                    "additionalProperties": false
+                }},
+                { "type": "null" }
+            ]}},
+            "required": ["prices"]
+        })
+    }
+
+    #[test]
+    fn schema_error_names_the_field_behind_an_any_of() {
+        let value = json!({ "prices": [{ "price": 26.0, "unitWeight": null, "unit": null }] });
+        let msg = validate_against_schema(&value, &nullable_price_list_schema())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("/prices/0/unitWeight: null is not of type \"number\""),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("/prices/0/unit: null is not of type \"string\""),
+            "{msg}"
+        );
+        assert!(!msg.contains("anyOf"), "{msg}");
+    }
+
+    #[test]
+    fn schema_error_keeps_the_any_of_line_when_no_branch_fits() {
+        let schema = json!({ "properties": { "id": { "anyOf": [
+            { "type": "string" }, { "type": "number" }
+        ]}}});
+        let msg = validate_against_schema(&json!({ "id": true }), &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("/id: true is not valid under any of the schemas"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn schema_error_names_a_missing_field_of_a_nullable_object() {
+        let schema = json!({ "properties": { "address": { "anyOf": [
+            { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] },
+            { "type": "null" }
+        ]}}});
+        let msg = validate_against_schema(&json!({ "address": { "street": "x" } }), &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("/address: \"city\" is a required property"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn schema_error_follows_the_branch_the_discriminator_picked() {
+        let schema = json!({ "oneOf": [
+            { "properties": { "kind": { "const": "a" }, "a": { "type": "string" } },
+              "required": ["kind", "a"] },
+            { "properties": { "kind": { "const": "b" }, "b": { "type": "string" } },
+              "required": ["kind", "b"] }
+        ]});
+        let msg = validate_against_schema(&json!({ "kind": "a" }), &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("\"a\" is a required property"), "{msg}");
+        assert!(!msg.contains("\"b\""), "{msg}");
+    }
+
+    #[test]
+    fn a_data_enum_typo_does_not_send_the_retry_to_another_branch() {
+        let schema = json!({ "anyOf": [
+            { "type": "object", "properties": { "status": { "enum": ["active", "inactive"] } },
+              "required": ["name"] },
+            { "type": "object", "required": ["type"] }
+        ]});
+        let msg = validate_against_schema(&json!({ "status": "actve", "name": "n" }), &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(!msg.contains("\"type\" is a required property"), "{msg}");
+    }
+
+    #[test]
+    fn a_null_enum_field_is_pruned_inside_a_nullable_object() {
+        let schema = json!({ "properties": { "address": { "anyOf": [
+            { "type": "object", "properties": { "currency": { "enum": ["USD", "EUR"] } } },
+            { "type": "null" }
+        ]}}});
+        let value = json!({ "address": { "currency": null } });
+        assert_eq!(
+            drop_rejected_nulls(&value, &schema).unwrap(),
+            json!({ "address": {} })
+        );
+    }
+
+    #[test]
+    fn schema_error_keeps_the_generic_line_when_two_branches_fit() {
+        let schema = json!({ "anyOf": [
+            { "type": "object", "properties": { "id": { "type": "string" } } },
+            { "type": "object", "properties": { "id": { "type": "number" } } }
+        ]});
+        let msg = validate_against_schema(&json!({ "id": true }), &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("is not valid under any of the schemas"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn drop_rejected_nulls_reaches_inside_an_any_of() {
+        let schema = nullable_price_list_schema();
+        let value = json!({ "prices": [{ "price": 26.0, "unitWeight": 250, "unit": "g", "wasPrice": null }] });
+        assert_eq!(
+            drop_rejected_nulls(&value, &schema).unwrap(),
+            json!({ "prices": [{ "price": 26.0, "unitWeight": 250, "unit": "g" }] })
+        );
+        // A required null still goes to the retry, now with its field named.
+        let value = json!({ "prices": [{ "price": 26.0, "unitWeight": null, "unit": "g" }] });
+        assert!(drop_rejected_nulls(&value, &schema).is_none());
+        // The null branch itself still validates untouched.
+        assert!(validate_against_schema(&json!({ "prices": null }), &schema).is_ok());
     }
 
     #[test]
