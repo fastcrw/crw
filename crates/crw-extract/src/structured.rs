@@ -505,10 +505,17 @@ async fn extract_inner(
             error = %err,
             "structured extraction failed schema validation; retrying once with the errors fed back"
         );
+        // Naming the failing field made the retry effective, and with it the model
+        // started filling a required value the page does not carry with `0` or `""`
+        // to pass. A placeholder is an invented value: the caller is better served
+        // by a 422 that names the field than by a number that is not on the page.
         retry_note = Some(format!(
             "\n\n## Correction\nYour previous tool call did not satisfy the schema:\n{err}\n\
              Call the extract_data tool again and return the COMPLETE object, with \
-             every required property present."
+             every required property present. Correct only what the Content supports. \
+             Never invent a value or fill a placeholder (0, an empty string, a guess) to \
+             satisfy the schema: if the Content does not carry a required value, answer \
+             null for it (or an empty array for a list)."
         ));
         // NOTE: usage from this failed attempt is deliberately DROPPED, not
         // merged. `LlmUsage::merge` would be the obvious move and its doc comment
@@ -2735,6 +2742,11 @@ mod tests {
             sent.contains("\"name\" is a required property"),
             "the concrete validation error must be fed back, not a generic nudge"
         );
+        assert!(
+            sent.contains("Never invent a value or fill a placeholder")
+                && sent.contains("answer null for it"),
+            "the retry must not push the model to fill a value the page lacks"
+        );
 
         // Money path: the customer is billed off these tokens with a markup, so
         // the failed attempt's tokens must NOT be added in. One leg's tokens,
@@ -2830,6 +2842,33 @@ mod tests {
 
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 2, "one retry only");
+    }
+
+    /// When the retry keeps a required value null (what the note asks for when the
+    /// page lacks it), the caller gets the validation error naming the field.
+    #[tokio::test]
+    async fn a_required_null_kept_on_the_retry_fails_naming_the_field() {
+        let server = MockServer::start().await;
+        let reply = json!({ "prices": [{ "price": 26.0, "unitWeight": null, "unit": "g" }] });
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(openai_tool_call_response(&reply)),
+            )
+            .mount(&server)
+            .await;
+
+        let llm = mock_llm("openai-compatible", format!("{}/v1", server.uri()));
+        let schema = nullable_price_list_schema();
+        let err = extract_structured_with_usage("content", Some(&schema), None, &llm, None)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("/prices/0/unitWeight: null is not of type \"number\""),
+            "{err}"
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
     }
 
     /// Regression guard for a real near-miss: an early draft of the plan wrote the
