@@ -144,6 +144,11 @@ impl EgressMemory {
         self.cache.get(&normalize_host(host)).await.is_some()
     }
 
+    /// Drop `host` before its TTL runs out (the memory proved wrong).
+    pub async fn forget(&self, host: &str) {
+        self.cache.invalidate(&normalize_host(host)).await;
+    }
+
     /// Number of currently latched hosts (approximate; for the metrics gauge).
     pub fn latched_hosts(&self) -> u64 {
         self.cache.entry_count()
