@@ -1105,6 +1105,11 @@ pub struct FallbackRenderer {
     /// usable content. Holds the probe off for the TTL, so a CF host chrome_proxy
     /// cannot clear pays the slow residential attempt once per TTL, not per URL.
     cf_walled_hosts: crate::egress::EgressMemory,
+    /// Hosts that showed a Cloudflare challenge in the last TTL. The probe only
+    /// fires on a host's SECOND challenge: on traffic where hosts rarely repeat,
+    /// a probe per first sighting cost +45 % p90 on the bench (2026-11-16) and
+    /// never paid back, while a batch on one host pays it once from URL 2 on.
+    cf_seen_hosts: crate::egress::EgressMemory,
     /// Per-host + global circuit breakers per renderer.
     breakers: Arc<BreakerRegistry>,
     /// Per-tier configured timeouts (Duration). Used by the breaker layer
@@ -1377,6 +1382,7 @@ impl FallbackRenderer {
                 preferences: Arc::new(HostPreferences::with_defaults()),
                 residential_hosts: crate::egress::EgressMemory::with_defaults(),
                 cf_walled_hosts: crate::egress::EgressMemory::with_defaults(),
+                cf_seen_hosts: crate::egress::EgressMemory::with_defaults(),
                 breakers: Arc::new(BreakerRegistry::with_defaults()),
                 tier_timeouts: tier_timeouts_from(config),
                 requests_per_second: 0.0,
@@ -1697,6 +1703,7 @@ impl FallbackRenderer {
             preferences: Arc::new(HostPreferences::with_defaults()),
             residential_hosts: crate::egress::EgressMemory::with_defaults(),
             cf_walled_hosts: crate::egress::EgressMemory::with_defaults(),
+            cf_seen_hosts: crate::egress::EgressMemory::with_defaults(),
             breakers: Arc::new(BreakerRegistry::with_defaults()),
             tier_timeouts: tier_timeouts_from(config),
             requests_per_second: 0.0,
@@ -3375,26 +3382,26 @@ impl FallbackRenderer {
     }
 
     /// Whether the ladder's keeper is a wall in the BODY (bot wall, vendor
-    /// block, CF challenge, an antibot verdict), the shape that makes a host
-    /// worth sending to chrome_proxy first. A rate limit, or the generic verdict
-    /// `classify` gives any 429/503, is often transient: pinning a whole domain
-    /// to the slow metered tier for the TTL on one would cost every later URL
-    /// its fast path.
+    /// block, CF challenge, a challenge page stuck on its loading placeholder
+    /// like rcgroups.com's proof-of-work, an antibot verdict), the shape that
+    /// makes a host worth sending to chrome_proxy first. A rate limit, or the
+    /// generic verdict `classify` gives any 429/503, is often transient: pinning
+    /// a whole domain to the slow metered tier for the TTL on one would cost
+    /// every later URL its fast path.
     fn ladder_hit_body_wall(&self, keeper: Option<&FetchResult>) -> bool {
         use crw_extract::antibot::AntibotSignal;
         keeper.is_some_and(|t| {
             let c = self.classify_js_attempt(t);
-            let transient_status = matches!(t.status_code, 429 | 503);
-            c.is_bot_wall
-                || c.vendor_block.is_some()
-                || c.unrecoverable_wall
-                || match c.antibot.signal {
-                    AntibotSignal::None
-                    | AntibotSignal::RateLimited
-                    | AntibotSignal::StructuralFailure => false,
-                    AntibotSignal::GenericBlock => !transient_status,
-                    _ => true,
-                }
+            let named_wall = c.is_bot_wall || c.vendor_block.is_some() || c.unrecoverable_wall;
+            if matches!(t.status_code, 429 | 503) {
+                return named_wall;
+            }
+            named_wall
+                || c.is_placeholder
+                || !matches!(
+                    c.antibot.signal,
+                    AntibotSignal::None | AntibotSignal::RateLimited
+                )
         })
     }
 
@@ -4824,7 +4831,8 @@ impl FallbackRenderer {
                 && self.cloak_arm.is_some();
             #[cfg(not(feature = "cloak"))]
             let opted_after_egress = false;
-            // A Cloudflare challenge with no other vendor wall is probed: the arm
+            // A Cloudflare challenge with no other vendor wall is probed on the
+            // host's second challenge within the TTL (`cf_seen_hosts`): the arm
             // fires once per host per TTL, and a host it cannot clear lands in
             // `cf_walled_hosts` below so later URLs skip it. Measured from the
             // prod IP (2026-11-16): chrome_proxy cleared diyfpv.com, manuals.plus
@@ -4833,9 +4841,13 @@ impl FallbackRenderer {
             // deadline it would run ~20 s past the caller for a wall it often
             // cannot clear.
             let cf_probe = saw_unrecoverable_wall && !saw_non_cf_wall;
+            let cf_seen_before =
+                cf_probe && !host.is_empty() && self.cf_seen_hosts.should_proxy(&host).await;
+            if cf_probe && !host.is_empty() && !cf_seen_before {
+                self.cf_seen_hosts.note_block(&host).await;
+            }
             let wall_allows_arm = !saw_unrecoverable_wall
-                || (cf_probe
-                    && !host.is_empty()
+                || (cf_seen_before
                     && deadline.remaining() >= Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS)
                     && !self.cf_walled_hosts.should_proxy(&host).await);
             let arm_wanted = saw_hard_block
@@ -9538,10 +9550,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chrome_proxy_probes_a_cloudflare_challenge() {
+    async fn chrome_proxy_probes_a_cloudflare_challenge_on_the_second_sighting() {
         // A CF managed challenge used to suppress the arm outright. From the prod
-        // IP chrome_proxy clears it on some hosts (diyfpv.com, manuals.plus), so
-        // the arm now probes it and a host it clears is remembered.
+        // IP chrome_proxy clears it on some hosts (diyfpv.com, getfpv.com). The
+        // first challenge on a host only marks it seen (one-off hosts must not
+        // pay a probe); the second one probes, and a host it clears is
+        // remembered.
         let lp = Arc::new(MockFetcher {
             name: "lightpanda",
             behavior: MockBehavior::Ok(cf_interstitial_html()),
@@ -9550,16 +9564,29 @@ mod tests {
             name: "chrome",
             behavior: MockBehavior::Ok(cf_interstitial_html()),
         }) as Arc<dyn PageFetcher>;
-        let chrome_proxy = Arc::new(MockFetcher {
-            name: "chrome_proxy",
-            behavior: MockBehavior::Ok(rich_html("PROXY-")),
-        }) as Arc<dyn PageFetcher>;
-        let mut r = make_renderer_with_mocks(vec![lp, chrome, chrome_proxy]);
+        let proxy = SeqFetcher::new("chrome_proxy", vec![MockBehavior::Ok(recovered_html())]);
+        let mut r =
+            make_renderer_with_mocks(vec![lp, chrome, proxy.clone() as Arc<dyn PageFetcher>]);
         r.auto_egress_escalation = true;
 
-        let result = r
+        let first = r
             .fetch(
-                "https://example.com",
+                "https://example.com/1",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert!(!first.html.contains("PROXY-"));
+        assert_eq!(proxy.calls(), 0, "no probe on a host's first challenge");
+        assert!(r.cf_seen_hosts.should_proxy("example.com").await);
+
+        let second = r
+            .fetch(
+                "https://example.com/2",
                 &HashMap::new(),
                 Some(true),
                 None,
@@ -9569,19 +9596,19 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            result.html.contains("PROXY-"),
-            "the arm must probe a CF challenge, got: {}",
-            result.html
+            second.html.contains("PROXY-"),
+            "the arm must probe the second CF challenge, got: {}",
+            second.html
         );
-        assert!(chain_of(&result).contains(&RendererKind::ChromeProxy));
+        assert!(chain_of(&second).contains(&RendererKind::ChromeProxy));
         assert!(r.residential_hosts.should_proxy("example.com").await);
         assert!(!r.cf_walled_hosts.should_proxy("example.com").await);
     }
 
     #[tokio::test]
     async fn failed_cf_probe_is_not_repeated_for_the_host() {
-        // robotshop.com class: chrome_proxy gets the same challenge. The first
-        // request pays the probe, the next one on the host must not.
+        // robotshop.com class: chrome_proxy gets the same challenge. The second
+        // request pays the probe, the third on the host must not.
         let lp = Arc::new(MockFetcher {
             name: "lightpanda",
             behavior: MockBehavior::Ok(cf_interstitial_html()),
@@ -9601,7 +9628,7 @@ mod tests {
         ]);
         r.auto_egress_escalation = true;
 
-        for _ in 0..2 {
+        for _ in 0..3 {
             r.fetch(
                 "https://example.com/a",
                 &HashMap::new(),
@@ -9634,6 +9661,8 @@ mod tests {
         let mut r =
             make_renderer_with_mocks(vec![lp, chrome, proxy.clone() as Arc<dyn PageFetcher>]);
         r.auto_egress_escalation = true;
+        // Seen before, so only the deadline holds the probe back.
+        r.cf_seen_hosts.note_block("example.com").await;
         r.fetch(
             "https://example.com",
             &HashMap::new(),
@@ -9649,6 +9678,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn placeholder_wall_recovered_by_the_arm_is_remembered() {
+        // rcgroups.com shape: from our IP the page never leaves its challenge
+        // placeholder, the residential tier serves it. That host must go
+        // residential-first, or every URL re-climbs the ~33 s ladder.
+        // A proof-of-work page stuck before its redirect: short visible text
+        // with a loading marker.
+        let pow_placeholder_html = || {
+            "<html><body><script>window.POW_CHALLENGE_DATA={d:1};</script>\
+             <p>Please wait...</p></body></html>"
+                .to_string()
+        };
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(pow_placeholder_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(pow_placeholder_html()),
+        }) as Arc<dyn PageFetcher>;
+        let proxy = SeqFetcher::new("chrome_proxy", vec![MockBehavior::Ok(recovered_html())]);
+        let mut r =
+            make_renderer_with_mocks(vec![lp, chrome, proxy.clone() as Arc<dyn PageFetcher>]);
+        r.auto_egress_escalation = true;
+        let result = r
+            .fetch(
+                "https://example.com",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert!(result.html.contains("PROXY-"));
+        assert!(r.residential_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
     async fn status_only_block_recovered_by_the_arm_is_not_remembered() {
         // A 429 or 503 is often transient: the arm may serve the page, but the
         // domain must not be pinned to the slow metered tier for the TTL.
@@ -9656,7 +9724,8 @@ mod tests {
             "<html><body><h1>Service Unavailable</h1>{}</body></html>",
             "x".repeat(200)
         );
-        for (status, body) in [(429, String::new()), (503, unavailable)] {
+        let wait_page = "<html><body><p>Please wait...</p></body></html>".to_string();
+        for (status, body) in [(429, String::new()), (503, unavailable), (503, wait_page)] {
             let lp = Arc::new(MockFetcher {
                 name: "lightpanda",
                 behavior: MockBehavior::OkStatus(status, body.clone()),
