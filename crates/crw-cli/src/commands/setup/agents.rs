@@ -7,9 +7,10 @@
 //! wizard and npm entry point from drifting.
 //!
 //! Consent has two shapes. The interactive wizard asks which tools to touch.
-//! The scripted `--api-key` path (what `curl … | CRW_API_KEY=… sh` runs) takes
-//! the command the user deliberately pasted as the consent and registers every
-//! detected tool, because a piped installer has no tty to prompt on. Either way
+//! The scripted paths, `--api-key` (what `curl … | CRW_API_KEY=… sh` runs) and
+//! `--local --non-interactive`, take the command the user deliberately ran as
+//! the consent and register every detected tool, because there is no tty to
+//! prompt on. Either way
 //! `--no-agents` opts out, only already-configured tools are touched, and the
 //! installer merges rather than replaces.
 
@@ -156,7 +157,7 @@ pub fn install_detected() {
             .collect::<Vec<_>>()
             .join(", ")
     ));
-    ui::print_detail("Skip this with `crw setup --api-key <KEY> --no-agents`.");
+    ui::print_detail("Skip this by adding `--no-agents` to `crw setup`.");
 
     run_installer(&detected);
 }
