@@ -3830,6 +3830,23 @@ impl FallbackRenderer {
             // with the "" key when URL parsing failed.
             let trackable = kind.filter(|_| !host.is_empty());
 
+            // A promoted host runs `[chrome, lightpanda]`. When Chrome itself just hit
+            // a fingerprint-vendor wall, LightPanda (same egress IP, weaker
+            // fingerprint) cannot clear it: prod traces of 2026-11-15 show 756 such
+            // LightPanda runs and 0 usable pages, each costing its full budget. Chrome
+            // failing for any other reason (timeout, crash, thin) leaves the flag false.
+            if kind == Some(RendererKind::Lightpanda)
+                && saw_unrecoverable_wall
+                && chain.iter().any(|k| *k != RendererKind::Lightpanda)
+            {
+                tracing::info!(host = %host, "earlier tier hit a vendor anti-bot wall, skipping lightpanda");
+                metrics()
+                    .render_route_decision_total
+                    .with_label_values(&["lightpanda", "wallSkipped"])
+                    .inc();
+                continue;
+            }
+
             // A tier-side skip on a *partial* budget stays removed (86dd10f): letting
             // chrome attempt with a partial-DOM budget beats aborting pre-flight on
             // legitimately-slow tail URLs, and classify_outcome ignores DeadlineClamped
@@ -9509,6 +9526,67 @@ mod tests {
             }),
             "chrome must escalate straight to chrome_proxy, skipping lightpanda"
         );
+    }
+
+    /// Promoted host, so the ladder runs `[chrome, lightpanda]`; Chrome plays
+    /// `chrome_behavior`. Returns the LightPanda call count and the result.
+    async fn promoted_chrome_then_lightpanda(
+        chrome_behavior: MockBehavior,
+    ) -> (usize, CrwResult<FetchResult>) {
+        let lp = SeqFetcher::new("lightpanda", vec![MockBehavior::Ok(rich_html("LP-"))]);
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: chrome_behavior,
+        }) as Arc<dyn PageFetcher>;
+        let r = make_renderer_with_mocks(vec![lp.clone() as Arc<dyn PageFetcher>, chrome]);
+        for _ in 0..3 {
+            r.preferences
+                .record_failure("example.com", &FailoverErrorKind::NextJsClientError)
+                .await;
+        }
+        // Straight into the JS ladder: `fetch(.., Some(true), ..)` would run a real
+        // HTTP preflight against example.com first and spend the shared deadline.
+        let result = r
+            .fetch_with_js(
+                "https://example.com",
+                &HashMap::new(),
+                None,
+                None,
+                false,
+                true,
+                crw_core::Deadline::from_request_ms(30_000),
+            )
+            .await;
+        (lp.calls(), result)
+    }
+
+    #[tokio::test]
+    async fn lightpanda_is_not_retried_after_chrome_hits_a_vendor_wall() {
+        let cf_html = format!(
+            "<html><head><script src=\"/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1\"></script></head><body>{}</body></html>",
+            "x".repeat(200)
+        );
+        let (lp_calls, result) = promoted_chrome_then_lightpanda(MockBehavior::Ok(cf_html)).await;
+        assert_eq!(lp_calls, 0, "lightpanda must not run behind a vendor wall");
+        assert!(
+            !matches!(&result, Ok(r) if r.html.contains("LP-")),
+            "the wall must not be replaced by a lightpanda render"
+        );
+    }
+
+    #[tokio::test]
+    async fn lightpanda_still_runs_after_chrome_times_out() {
+        let (lp_calls, result) = promoted_chrome_then_lightpanda(MockBehavior::Timeout).await;
+        assert_eq!(lp_calls, 1);
+        assert!(result.unwrap().html.contains("LP-"));
+    }
+
+    #[tokio::test]
+    async fn lightpanda_still_runs_after_chrome_returns_thin_content() {
+        let thin = "<html><body><p>Loading</p></body></html>".to_string();
+        let (lp_calls, result) = promoted_chrome_then_lightpanda(MockBehavior::Ok(thin)).await;
+        assert_eq!(lp_calls, 1);
+        assert!(result.unwrap().html.contains("LP-"));
     }
 
     // ---- Phase 2a: cloak-first routing hint (`force_cloak`) ----
