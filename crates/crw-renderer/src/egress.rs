@@ -160,6 +160,45 @@ impl EgressMemory {
     }
 }
 
+/// Per-host residential exit that served the host: normalized host -> the
+/// sticky proxy session id it was served through. Same TTL and key as
+/// [`EgressMemory`]. Reusing the exit is what keeps a host served: a
+/// Cloudflare-fronted site scores each residential IP on its own, so a fresh
+/// exit per request turns a host that worked into a coin flip, and the
+/// `cf_clearance` a solved challenge earns is bound to the exit's IP.
+#[derive(Clone)]
+pub struct StickySessions {
+    cache: Cache<String, String>,
+}
+
+impl StickySessions {
+    pub fn with_defaults() -> Self {
+        Self {
+            cache: Cache::builder()
+                .max_capacity(CAPACITY)
+                // time_to_live for the same reason as `EgressMemory`: expiry
+                // re-probes the normal order.
+                .time_to_live(COOLDOWN)
+                .build(),
+        }
+    }
+
+    /// Remember that `sessid` served `host`.
+    pub async fn remember(&self, host: &str, sessid: String) {
+        self.cache.insert(normalize_host(host), sessid).await;
+    }
+
+    /// The session that served `host`, while it is remembered.
+    pub async fn get(&self, host: &str) -> Option<String> {
+        self.cache.get(&normalize_host(host)).await
+    }
+
+    /// Drop `host` (the remembered exit stopped serving it).
+    pub async fn forget(&self, host: &str) {
+        self.cache.invalidate(&normalize_host(host)).await;
+    }
+}
+
 impl Default for EgressMemory {
     fn default() -> Self {
         Self::with_defaults()
