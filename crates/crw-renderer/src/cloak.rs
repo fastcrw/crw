@@ -80,8 +80,23 @@ impl CloakRenderer {
         default_country: Option<String>,
         proxy_host: Option<String>,
     ) -> Self {
+        // Follow a redirect only back onto the sidecar itself (a mirrored relative
+        // `Location` such as `/en/`). Anywhere else is the origin pointing crw at
+        // a destination it never checked, possibly an internal one, with the
+        // `x-proxy` credentials still attached: stop there. The 3xx is then judged
+        // by the content gates like any other answer, never followed.
+        let sidecar = url::Url::parse(base_url).ok().map(|u| u.origin());
         let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                if attempt.previous().len() >= 10 {
+                    attempt.error("too many redirects")
+                } else if sidecar.as_ref() == Some(&attempt.url().origin()) {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
             .build()
             .unwrap_or_default();
         Self {
@@ -126,15 +141,22 @@ impl CloakRenderer {
     /// `<user>__cr.<cc>` composition in `cdp.rs`.
     fn sticky_proxy_url(&self, sessid: &str) -> Option<String> {
         let (user, pass) = self.proxy_base.as_ref()?;
+        let entry = crate::REQUEST_PROXY.try_with(|p| p.clone()).ok().flatten();
+        // The operator's proxy credentials go only to an operator proxy host. A
+        // caller-supplied (BYOP) proxy on any other host gets its own URL and its
+        // own credentials, or the caller would receive the operator's.
+        if let Some(e) = entry.as_ref().filter(|e| {
+            e.is_caller_supplied() && Some(e.chrome_proxy_server()) != self.proxy_host.as_deref()
+        }) {
+            return Some(e.raw().to_string());
+        }
         // Host:port comes from the request's REQUEST_PROXY entry (creds-free).
         // Prefer the per-request managed proxy; fall back to the configured cloak
         // proxy host so the recovery arm still gets a residential exit when no
         // managed proxy was injected (the common case). Unset host => None => the
         // `?` returns None => no x-proxy, exactly like today.
-        let server = crate::REQUEST_PROXY
-            .try_with(|p| p.as_ref().map(|e| e.chrome_proxy_server().to_string()))
-            .ok()
-            .flatten()
+        let server = entry
+            .map(|e| e.chrome_proxy_server().to_string())
             .or_else(|| self.proxy_host.clone())?;
         let req_country = crate::REQUEST_COUNTRY
             .try_with(|c| c.clone())

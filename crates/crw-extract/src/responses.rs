@@ -6,7 +6,7 @@
 //! usage uses `input_tokens` / `output_tokens`. Keep that translation isolated
 //! here so OpenAI-compatible Chat Completions providers remain unchanged.
 
-use crate::llm::{LlmCallResult, shared_client};
+use crate::llm::LlmCallResult;
 use crate::pricing;
 use crw_core::config::LlmConfig;
 use crw_core::error::{CrwError, CrwResult};
@@ -56,7 +56,7 @@ async fn post(
     let reason = |e| crate::structured::request_error_text(e, configured.then_some(timeout));
     let url = responses_url(llm.base_url.as_deref());
     let resp = crate::llm::send_provider_post(
-        shared_client()
+        crate::llm::client_for(llm.endpoint_from_request)
             .post(&url)
             .timeout(timeout)
             .bearer_auth(&llm.api_key)

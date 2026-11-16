@@ -238,12 +238,20 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         None,
         req.proxy_rotation.unwrap_or_default(),
     ) {
-        Ok(r) => r.map(std::sync::Arc::new),
+        Ok(r) => r.map(|r| std::sync::Arc::new(r.caller_supplied())),
         Err(e) => {
             send_failed(id, &state_tx, format!("invalid proxy_list: {e}"));
             return;
         }
     };
+    // Every caller proxy is checked once, up front: a pool entry on a private
+    // address would otherwise be dialed by whichever page it rotates onto.
+    for entry in byop_rotator.iter().flat_map(|r| r.entries()) {
+        if let Err(e) = crate::single::check_caller_proxy(entry).await {
+            send_failed(id, &state_tx, format!("invalid proxy_list: {e}"));
+            return;
+        }
+    }
 
     // Apply "pinned implies JS" once per crawl, mirroring single.rs. The rule
     // lives in `RequestedRenderer::implies_js` (the single source both entry
@@ -280,6 +288,7 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
     // Robots/sitemap egress must match the page egress: prefer the per-crawl
     // BYOP pool, then the config rotator, then the legacy single `proxy`. Never
     // a silent direct connection when a proxy is configured (real-IP leak).
+    let robots_proxy_trusted = byop_rotator.is_none();
     let robots_proxy: Option<String> = match &byop_rotator {
         Some(b) => Some(b.pick(base_url.host_str()).raw().to_string()),
         None => renderer
@@ -300,7 +309,12 @@ async fn run_crawl_inner(opts: CrawlOptions<'_>) {
         .user_agent(user_agent)
         .timeout(ROBOTS_FETCH_TIMEOUT)
         .connect_timeout(ROBOTS_CONNECT_TIMEOUT)
-        .redirect(crw_core::url_safety::safe_redirect_policy());
+        .redirect(crw_core::url_safety::safe_redirect_policy())
+        .dns_resolver(std::sync::Arc::new(
+            crw_core::url_safety::SsrfResolver::new(
+                robots_proxy.as_deref().filter(|_| robots_proxy_trusted),
+            ),
+        ));
     if let Some(ref proxy_url) = robots_proxy {
         match reqwest::Proxy::all(proxy_url) {
             Ok(p) => client_builder = client_builder.proxy(p),
@@ -960,7 +974,11 @@ pub async fn discover_urls(opts: DiscoverOptions<'_>) -> CrwResult<DiscoverResul
         .user_agent(user_agent)
         .timeout(DISCOVERY_FETCH_TIMEOUT)
         .connect_timeout(DISCOVERY_CONNECT_TIMEOUT)
-        .redirect(crw_core::url_safety::safe_redirect_policy());
+        .redirect(crw_core::url_safety::safe_redirect_policy())
+        // `discover_proxy` is operator-configured only, so its host is exempt.
+        .dns_resolver(std::sync::Arc::new(
+            crw_core::url_safety::SsrfResolver::new(discover_proxy.as_deref()),
+        ));
     if let Some(ref proxy_url) = discover_proxy {
         let p = reqwest::Proxy::all(proxy_url).map_err(|e| {
             // NEVER interpolate `proxy_url` itself: it carries `user:pass@`.

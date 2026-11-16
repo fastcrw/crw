@@ -23,9 +23,24 @@ fastCRW validates every outbound URL before fetching it (`crw-core/src/url_safet
 - **Scheme**: only `http` and `https` are permitted; `file://`, `ftp://`, and all other schemes are rejected.
 - **Hostname blocklist**: `localhost`, `metadata.google.internal`, and wildcard aliases (`*.localhost`, `*.localtest.me`, `*.lvh.me`, `*.nip.io`, `*.xip.io`, `*.sslip.io`) are all blocked before DNS resolution.
 - **IP blocklist (pre-DNS)**: literal IPs in loopback (127.x, ::1), private (10.x, 172.16-31.x, 192.168.x), link-local (169.254.x — AWS/GCP metadata), unspecified (0.0.0.0, ::), broadcast, carrier-grade NAT (100.64-127.x), multicast/reserved (≥224.x), and IPv4-mapped IPv6 equivalents (e.g. `::ffff:169.254.169.254`) are all rejected.
-- **Post-DNS resolution**: the resolved IP of every hostname is checked against the same blocklist, preventing DNS-rebinding. DNS failure is fail-closed — if the hostname cannot be resolved, the request is rejected.
+- **Post-DNS resolution**: the resolved IP of every hostname is checked against the same blocklist. DNS failure is fail-closed: if the hostname cannot be resolved, the request is rejected.
+- **Connect-time pinning (HTTP tiers)**: the plain HTTP and impersonated-HTTP tiers, and crawl's robots.txt and sitemap fetches, resolve through the same check when they open the connection, so the address they connect to is the address that passed. A name that answers a public address to the check and a private one a moment later (DNS rebinding) is refused.
 - **Redirect chains**: every hop in an HTTP redirect is re-validated through the same checks (`safe_redirect_policy`). A redirect chain is capped at 10 hops.
+- **A refusal is final**: when any check refuses a destination mid-fetch (a redirect hop, a connect-time answer, a browser's main document, the page a browser landed on), the request fails with `400` and no other renderer tier retries it.
+- **Browser tiers**: Chrome checks every request it makes through CDP request interception. LightPanda runs with `--block-private-networks` and `--block-cidrs`. For every browser tier, including Camoufox, the URL the page finally landed on is checked before the page is returned.
+- **Request-supplied egress**: a per-request `proxy` / `proxy_list` and a per-request LLM `baseUrl` must point at public addresses; a private, loopback or metadata destination is rejected with `400`. Proxies and LLM endpoints set in the server configuration are trusted and may be private.
 - **URL length**: URLs longer than 2 048 characters and URLs containing null bytes are rejected.
+
+### What the guard cannot see: isolate browser sidecars
+
+A browser resolves names and follows redirects itself, and JavaScript on a public page can make requests the server never sees. The checks above cover where a browser page ends up and, for Chrome, each request it makes, but not every connection a browser process opens:
+
+- **Camoufox** has no request interception. A page it loads can send requests to internal hosts while its own URL stays public.
+- A browser re-resolves names on its own, so a name that changes its answer between crw's check and the browser's lookup can still reach an internal address.
+- The **Cloak** sidecar fetches the origin from its own network position.
+- An **operator-configured proxy** resolves the target itself. If your proxy can reach internal services, so can a request routed through it; give it the same isolation.
+
+If you run any browser sidecar, give it a network from which internal services, the crw API and cloud metadata endpoints are unreachable (a separate Docker network with only public egress, or an egress firewall that drops RFC 1918, `127.0.0.0/8`, `169.254.0.0/16`, `100.64.0.0/10`, `::1` and `fc00::/7`). Bind sidecars to loopback or a private network and never publish their ports.
 
 ### `CRW_ALLOW_LOOPBACK_FOR_TESTS` — never enable in production
 

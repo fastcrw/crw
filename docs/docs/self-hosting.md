@@ -62,14 +62,24 @@ stealth tier. It is a REST sidecar — separate from the CDP browsers — and is
 the `auto` chain unless you opt in.
 
 ```bash
-# 1. run the camofox-browser sidecar (default port 9377)
-docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser
+# 1. run the camofox-browser sidecar (default port 9377), bound to loopback
+#    and protected by an access key
+docker run -p 127.0.0.1:9377:9377 -e CAMOFOX_PORT=9377 \
+  -e CAMOFOX_ACCESS_KEY="$CAMOFOX_ACCESS_KEY" jo-inc/camofox-browser
 
 # 2. point CRW at it (config.toml)
 #    [renderer.camoufox]
 #    base_url = "http://127.0.0.1:9377"
+#    api_key = "<the same access key>"
 #    # include_in_auto = true   # optional: add as the last auto-failover tier
 ```
+
+The sidecar is a full browser that follows redirects and runs page scripts
+with no destination checks of its own. Run it on a network that cannot reach
+your internal services or cloud metadata; see
+[Hardening → What the guard cannot see](/docs/self-hosting-hardening#what-the-guard-cannot-see-isolate-browser-sidecars).
+If you point `[renderer.lightpanda] ws_url` at a LightPanda you run yourself,
+start it with `--block-private-networks`, as the bundled one is.
 
 Reach it per request with `"renderer": "camoufox"`, pin every request with
 `mode = "camoufox"`, or set `include_in_auto = true`. It is a heavier

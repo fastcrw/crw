@@ -46,6 +46,10 @@ pub struct ProxyEntry {
     scheme: String,
     chrome_proxy_server: String,
     auth: Option<(String, String)>,
+    host: String,
+    /// Supplied by the API caller (BYOP), not by the operator. See
+    /// [`Self::is_caller_supplied`].
+    caller_supplied: bool,
 }
 
 const ALLOWED_SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
@@ -107,6 +111,29 @@ pub(crate) fn redact_url_userinfo(text: &str) -> String {
     out
 }
 
+/// Refuse a caller-supplied proxy that points at a blocked destination
+/// (loopback, private, link-local, metadata), literally or after DNS.
+///
+/// The page URL guard does not cover the proxy hop: the server dials the
+/// proxy itself, so a BYOP proxy on `127.0.0.1` reaches the server's own
+/// loopback. Never applied to operator proxies, which may be private. The host
+/// is read through an `http://` URL so numeric forms (`2130706433`, `0x7f.1`)
+/// are normalised to the address they dial.
+pub async fn check_request_proxy(
+    entry: &ProxyEntry,
+) -> Result<(), crate::url_safety::HostRejection> {
+    use crate::url_safety::HostRejection;
+    let host = entry.host();
+    let authority = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    let url = url::Url::parse(&format!("http://{authority}/"))
+        .map_err(|_| HostRejection::Policy("proxy host is not a valid host".into()))?;
+    crate::url_safety::classify_safe_host_resolved(&url).await
+}
+
 impl ProxyEntry {
     /// Parse and validate a proxy URL. Returns an error string (no silent
     /// fallback) when the scheme is unsupported or the host is missing.
@@ -155,7 +182,26 @@ impl ProxyEntry {
             scheme,
             chrome_proxy_server,
             auth,
+            host: host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_string(),
+            caller_supplied: false,
         })
+    }
+
+    /// Was this proxy supplied by the API caller (BYOP)? An operator proxy may
+    /// live on a private address and is trusted; a caller's is a destination
+    /// like any other: checked before use ([`check_request_proxy`]), resolved
+    /// through the SSRF resolver at connect time, and never given the
+    /// operator's proxy credentials.
+    pub fn is_caller_supplied(&self) -> bool {
+        self.caller_supplied
+    }
+
+    /// Proxy host, brackets stripped from an IPv6 literal.
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     /// Full proxy URL (with credentials) for `reqwest::Proxy::all`.
@@ -263,6 +309,20 @@ impl ProxyRotator {
             strategy,
             rr_cursor: AtomicUsize::new(0),
         }))
+    }
+
+    /// Mark every entry as caller-supplied (BYOP). See
+    /// [`ProxyEntry::is_caller_supplied`].
+    pub fn caller_supplied(mut self) -> Self {
+        for e in &mut self.entries {
+            e.caller_supplied = true;
+        }
+        self
+    }
+
+    /// Every entry in the pool.
+    pub fn entries(&self) -> &[ProxyEntry] {
+        &self.entries
     }
 
     /// Number of proxies in the pool.
@@ -583,5 +643,36 @@ mod tests {
         assert_eq!(r.pick_index(None), 1);
         assert_eq!(r.pick_index(None), 0);
         assert_eq!(r.pick_index(None), 1);
+    }
+
+    #[tokio::test]
+    async fn request_proxy_on_a_blocked_destination_is_refused() {
+        use crate::url_safety::HostRejection;
+        for raw in [
+            "http://127.0.0.1:18080",
+            "socks5://10.0.0.5:1080",
+            "socks5h://2130706433:1080",
+            "http://u:p@169.254.169.254:80",
+            "https://[::1]:3128",
+            "http://localhost:3128",
+        ] {
+            let e = ProxyEntry::parse(raw).unwrap();
+            assert!(
+                matches!(check_request_proxy(&e).await, Err(HostRejection::Policy(_))),
+                "{raw} must be refused"
+            );
+        }
+        let public = ProxyEntry::parse("http://93.184.215.14:8080").unwrap();
+        assert!(check_request_proxy(&public).await.is_ok());
+    }
+
+    #[test]
+    fn byop_rotator_marks_entries_caller_supplied() {
+        let list = vec!["http://a:1".to_string()];
+        let r = ProxyRotator::build(&list, None, ProxyRotation::RoundRobin)
+            .unwrap()
+            .unwrap();
+        assert!(!r.pick(None).is_caller_supplied());
+        assert!(r.caller_supplied().pick(None).is_caller_supplied());
     }
 }

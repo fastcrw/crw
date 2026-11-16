@@ -224,23 +224,35 @@ impl CamoufoxRenderer {
         user_id: &str,
         deadline: &Deadline,
     ) -> CrwResult<String> {
+        self.evaluate_string(tab_id, user_id, OUTER_HTML_EXPR, deadline)
+            .await
+    }
+
+    /// Evaluate a JavaScript expression whose result is a string.
+    async fn evaluate_string(
+        &self,
+        tab_id: &str,
+        user_id: &str,
+        expression: &str,
+        deadline: &Deadline,
+    ) -> CrwResult<String> {
         let body = serde_json::json!({
             "userId": user_id,
-            "expression": OUTER_HTML_EXPR,
+            "expression": expression,
         });
         let value = self
             .post_json(&format!("/tabs/{tab_id}/evaluate"), &body, deadline)
             .await?;
-        // Shape: { ok: bool, result: <any> }. For outerHTML, result is a string.
+        // Shape: { ok: bool, result: <any> }; every expression here yields a string.
         if value.get("ok").and_then(|o| o.as_bool()) == Some(false) {
             return Err(CrwError::RendererError(
                 "camoufox: evaluate returned ok=false".into(),
             ));
         }
         match value.get("result").and_then(|r| r.as_str()) {
-            Some(html) => Ok(html.to_string()),
+            Some(s) => Ok(s.to_string()),
             None => Err(CrwError::RendererError(
-                "camoufox: evaluate result was not an HTML string".into(),
+                "camoufox: evaluate result was not a string".into(),
             )),
         }
     }
@@ -276,7 +288,7 @@ impl CamoufoxRenderer {
         session_key: &str,
         wait_for: Option<Duration>,
         deadline: &Deadline,
-    ) -> CrwResult<(u16, String)> {
+    ) -> CrwResult<(u16, String, String)> {
         let inner = self
             .run_sequence_inner(url, user_id, session_key, wait_for, deadline)
             .await;
@@ -291,7 +303,7 @@ impl CamoufoxRenderer {
         session_key: &str,
         wait_for: Option<Duration>,
         deadline: &Deadline,
-    ) -> CrwResult<(u16, String)> {
+    ) -> CrwResult<(u16, String, String)> {
         let (tab_id, nav_status) = self.create_tab(url, user_id, session_key, deadline).await?;
         // The tab would otherwise be read as soon as navigation returns,
         // before most page scripts have run. The caller's `waitFor` is
@@ -426,7 +438,17 @@ impl CamoufoxRenderer {
         let status = nav_status
             .filter(|s| matches!(s, 404 | 410) && !challenged)
             .unwrap_or(200);
-        Ok((status, html))
+        // Where the page ended up, after any redirect, meta refresh or script
+        // navigation. Read after the HTML, so a navigation in between shows up
+        // here. Required: the sidecar follows redirects anywhere and this tier
+        // has no other way to see where it landed (`crate::check_landing`).
+        // Floored like the challenge poll: the poll may have spent the deadline,
+        // and the HTML already in hand must not be lost to a zero budget.
+        let href_deadline = Deadline::now_plus(deadline.remaining().max(MIN_POLL_EVALUATE_BUDGET));
+        let landed = self
+            .evaluate_string(&tab_id, user_id, "window.location.href", &href_deadline)
+            .await?;
+        Ok((status, html, landed))
     }
 }
 
@@ -516,7 +538,7 @@ impl PageFetcher for CamoufoxRenderer {
         let start = Instant::now();
         let user_id = Self::rand_id("crw_");
         let session_key = Self::rand_id("task_");
-        let (status, html) = self
+        let (status, html, landed) = self
             .run_sequence(
                 url,
                 &user_id,
@@ -525,10 +547,12 @@ impl PageFetcher for CamoufoxRenderer {
                 &deadline,
             )
             .await?;
+        let final_url = Some(landed).filter(|h| h != url && url::Url::parse(h).is_ok());
+        crate::check_landing(url, final_url.as_deref(), &deadline).await?;
 
         Ok(FetchResult {
             url: url.to_string(),
-            final_url: None,
+            final_url,
             status_code: status,
             html,
             content_type: None,
@@ -796,7 +820,7 @@ mod tests {
             .await
             .expect_err("non-string result should error");
         match err {
-            CrwError::RendererError(m) => assert!(m.contains("not an HTML string")),
+            CrwError::RendererError(m) => assert!(m.contains("not a string")),
             other => panic!("expected RendererError, got {other:?}"),
         }
     }
