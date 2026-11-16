@@ -723,6 +723,18 @@ codex mcp add crw -- npx crw-mcp</code></pre>
 <td>no</td>
 <td>Max age of a cached copy of the fetch, in ms (default 3600000 = 1h; <code>0</code> = always fetch; cap 24h). Proxy mode only</td>
 </tr>
+<tr>
+<td><code>mode</code></td>
+<td>string</td>
+<td>no</td>
+<td><code>standard</code> (default) or <code>auto</code>. fastCRW cloud only, see <a href="/scraping#auto-and-max-mode">Auto and max mode</a>. On the hosted MCP and in proxy mode pointed at the cloud; a self-hosted server ignores it</td>
+</tr>
+<tr>
+<td><code>maxCredits</code></td>
+<td>integer</td>
+<td>no</td>
+<td>Most credits one page may cost with <code>mode: &quot;auto&quot;</code> (2 to 1000). fastCRW cloud only</td>
+</tr>
 </tbody></table>
 <h3 id="crw_crawl">crw_crawl</h3>
 <table>

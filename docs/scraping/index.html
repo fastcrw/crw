@@ -785,6 +785,7 @@ a discount.</p>
 <li>At most 4 auto or max pages in flight per account.</li>
 </ul>
 <p>The errors these cases return are listed under <a href="/error-codes#cloud-only-error-codes">Cloud-only error codes</a>.</p>
+<p>When a <code>standard</code> scrape on the cloud stops at a challenge that <code>auto</code> can get through, its <code>error</code> message ends with a pointer to <code>mode: &quot;auto&quot;</code>, or to the pricing page when your plan does not include it. The rest of the message and <code>errorCode: &quot;anti_bot&quot;</code> stay the same.</p>
 <h2 id="common-production-patterns">Common production patterns</h2>
 <ul>
 <li>Start with <code>markdown</code>, then add <code>links</code> or <code>json</code> only when downstream logic needs them.</li>
