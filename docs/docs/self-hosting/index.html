@@ -404,13 +404,22 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 stealth tier. It is a REST sidecar — separate from the CDP browsers — and is
 <strong>off by default</strong>: it requires a <code>--features camoufox</code> build and never joins
 the <code>auto</code> chain unless you opt in.</p>
-<pre data-lang="bash"><code class="language-bash"># 1. run the camofox-browser sidecar (default port 9377)
-docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser
+<pre data-lang="bash"><code class="language-bash"># 1. run the camofox-browser sidecar (default port 9377), bound to loopback
+#    and protected by an access key
+docker run -p 127.0.0.1:9377:9377 -e CAMOFOX_PORT=9377 \
+  -e CAMOFOX_ACCESS_KEY=&quot;$CAMOFOX_ACCESS_KEY&quot; jo-inc/camofox-browser
 
 # 2. point CRW at it (config.toml)
 #    [renderer.camoufox]
 #    base_url = &quot;http://127.0.0.1:9377&quot;
+#    api_key = &quot;&lt;the same access key&gt;&quot;
 #    # include_in_auto = true   # optional: add as the last auto-failover tier</code></pre>
+<p>The sidecar is a full browser that follows redirects and runs page scripts
+with no destination checks of its own. Run it on a network that cannot reach
+your internal services or cloud metadata; see
+<a href="/docs/self-hosting-hardening#what-the-guard-cannot-see-isolate-browser-sidecars">Hardening → What the guard cannot see</a>.
+If you point <code>[renderer.lightpanda] ws_url</code> at a LightPanda you run yourself,
+start it with <code>--block-private-networks</code>, as the bundled one is.</p>
 <p>Reach it per request with <code>&quot;renderer&quot;: &quot;camoufox&quot;</code>, pin every request with
 <code>mode = &quot;camoufox&quot;</code>, or set <code>include_in_auto = true</code>. It is a heavier
 (Firefox-class) render than the CDP tiers, so enable it only for the requests
