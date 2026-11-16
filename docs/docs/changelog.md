@@ -8,6 +8,21 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.45.0](https://github.com/fastcrw/crw/compare/v0.44.3...v0.45.0) (2026-11-15)
+
+
+### Features
+
+* **enrich:** read search snippets and pages in one extraction per step ([f409e61](https://github.com/fastcrw/crw/commit/f409e61a34b1206ce5d87cfa65966aa6aa099ec0))
+* **server:** add /v1/enrich to fill table cells from the web ([5def44f](https://github.com/fastcrw/crw/commit/5def44f8f197fe1a730ec58ef5a0f3907267e339))
+
+
+### Bug Fixes
+
+* **extract:** ask for null, not a placeholder, on the first attempt ([aff095c](https://github.com/fastcrw/crw/commit/aff095cd575f8f109e8432bfe3f90e7243012f70))
+* **extract:** keep the schema retry from inventing a missing value ([3cf5ea4](https://github.com/fastcrw/crw/commit/3cf5ea455594f79622cff85bc058c5f860e56233))
+* **renderer:** reach LightPanda 1.x over a service name and pin 1.0.4 ([2c1462b](https://github.com/fastcrw/crw/commit/2c1462b06c3c1b18deceb97b6b1040def8d9a0a8))
+
 ## [0.44.3](https://github.com/fastcrw/crw/compare/v0.44.2...v0.44.3) (2026-11-15)
 
 
