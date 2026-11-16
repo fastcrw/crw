@@ -215,7 +215,8 @@ fn installer_resolves_latest_without_the_rate_limited_github_api() {
 
 /// Journey C (Phase 1 transitional scope): `crw setup --local` must be able
 /// to run non-interactively — completing without touching stdin, writing
-/// `~/.config/crw/config.toml`, and exiting zero.
+/// `~/.config/crw/config.toml`, and exiting zero. With no AI tool in HOME
+/// there is nothing to register, so no integration section is printed.
 #[test]
 fn journey_c_setup_local_non_interactive_writes_config_and_exits_zero() {
     let config_dir = tempfile::tempdir().expect("tempdir");
@@ -228,6 +229,10 @@ fn journey_c_setup_local_non_interactive_writes_config_and_exits_zero() {
         .expect("crw binary")
         .args(["setup", "--local", "--non-interactive", "--no-color"])
         .env("CRW_USER_CONFIG_DIR", config_dir.path())
+        // An empty HOME: scripted local setup registers MCP with every
+        // detected AI tool, and a test must never touch the developer's own.
+        .env("HOME", config_dir.path())
+        .env("USERPROFILE", config_dir.path())
         .timeout(Duration::from_secs(30))
         .assert()
         .success()
@@ -267,6 +272,10 @@ search_backend_url = "http://old-search:8080"
         .expect("crw binary")
         .args(["setup", "--local", "--non-interactive", "--no-color"])
         .env("CRW_USER_CONFIG_DIR", config_dir.path())
+        // An empty HOME: scripted local setup registers MCP with every
+        // detected AI tool, and a test must never touch the developer's own.
+        .env("HOME", config_dir.path())
+        .env("USERPROFILE", config_dir.path())
         .env_remove("CRW_API_URL")
         .env_remove("CRW_API_KEY")
         .timeout(Duration::from_secs(30))
@@ -291,6 +300,10 @@ fn local_setup_warns_when_cloud_env_still_overrides_it() {
         .expect("crw binary")
         .args(["setup", "--local", "--non-interactive", "--no-color"])
         .env("CRW_USER_CONFIG_DIR", config_dir.path())
+        // An empty HOME: scripted local setup registers MCP with every
+        // detected AI tool, and a test must never touch the developer's own.
+        .env("HOME", config_dir.path())
+        .env("USERPROFILE", config_dir.path())
         .env("CRW_API_URL", "https://api.fastcrw.com")
         .env("CRW_API_KEY", "fc-legacy-shell")
         .timeout(Duration::from_secs(30))
@@ -582,4 +595,54 @@ fn live_mcp_smoke_calls_crw_scrape() {
         .expect("capture MCP proxy scrape request");
     assert!(request.starts_with("POST /v1/scrape HTTP/1.1"));
     assert!(request.contains(r#""url":"https://example.com""#));
+}
+
+/// Scripted local setup registers MCP with every detected AI tool, the same as
+/// `--api-key`. npx is kept off PATH so the test stays offline: the installer
+/// cannot start, which setup reports as non-fatal with the manual command.
+#[test]
+fn local_non_interactive_setup_registers_detected_agents() {
+    let home = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path().join(".codex")).expect("codex dir");
+    let empty_path = tempfile::tempdir().expect("empty PATH dir");
+
+    Command::cargo_bin("crw")
+        .expect("crw binary")
+        .args(["setup", "--local", "--non-interactive", "--no-color"])
+        .env("CRW_USER_CONFIG_DIR", home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("PATH", empty_path.path())
+        .timeout(Duration::from_secs(30))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("AI TOOL INTEGRATION"))
+        .stdout(predicate::str::contains("Detected: Codex"))
+        .stdout(predicate::str::contains("install --from-config --codex"));
+}
+
+/// `--no-agents` keeps scripted local setup away from AI tool configs.
+#[test]
+fn local_non_interactive_setup_honours_no_agents() {
+    let home = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(home.path().join(".codex")).expect("codex dir");
+    let empty_path = tempfile::tempdir().expect("empty PATH dir");
+
+    Command::cargo_bin("crw")
+        .expect("crw binary")
+        .args([
+            "setup",
+            "--local",
+            "--non-interactive",
+            "--no-agents",
+            "--no-color",
+        ])
+        .env("CRW_USER_CONFIG_DIR", home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("PATH", empty_path.path())
+        .timeout(Duration::from_secs(30))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("AI TOOL INTEGRATION").not());
 }
