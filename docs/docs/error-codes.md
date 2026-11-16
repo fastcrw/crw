@@ -9,7 +9,7 @@
 - `success: true` means the pipeline produced usable page content.
 - `success: false` means the request failed -- either an engine error or the target returned an error status (4xx/5xx) with minimal content.
 - `error` is present when `success: false`. It describes what went wrong.
-- `warning` flags degraded target outcomes (problematic status codes, a partial render) when `success: true`, meaning content was produced but may be incomplete. An anti-bot wall is not one of these: it is always `success: false` with `errorCode: "anti_bot"`.
+- `warning` flags degraded target outcomes (problematic status codes, a partial render) when `success: true`, meaning content was produced but may be incomplete. An anti-bot wall is not one of these: it is always `success: false` with `errorCode: "anti_bot"`. On the cloud, when `mode: "auto"` can get past the wall, the `error` message ends with a pointer to it ([Auto and max mode](/scraping#auto-and-max-mode)).
 - `metadata.statusCode` is the target site's HTTP status.
 - `data` may still be present when `success: false` if partial content was extracted.
 

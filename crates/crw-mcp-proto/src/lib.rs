@@ -591,6 +591,21 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                     "minimum": 0,
                     "description": "Max age of a cached copy of this fetch, in ms (default 3600000; 0 = always fetch; cap 24h)"
                 });
+                // fastCRW cloud only: the hosted `/v1/scrape` takes `mode` and
+                // `maxCredits`, the proxy forwards args verbatim, and a self-hosted
+                // engine ignores both. `max` is left out (it refuses screenshots,
+                // a pinned renderer and short timeouts, which agents trip over).
+                tool["inputSchema"]["properties"]["mode"] = json!({
+                    "type": "string",
+                    "enum": ["standard", "auto"],
+                    "description": "fastCRW cloud only. Fetch effort: `standard` (default) or `auto`, which retries pages that need more work; `auto` is billed by use, up to `maxCredits` per page, and is not available with the summary, json or change-tracking formats. Availability depends on the account's plan; a self-hosted server ignores it."
+                });
+                tool["inputSchema"]["properties"]["maxCredits"] = json!({
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 1000,
+                    "description": "fastCRW cloud only. Most credits one page may cost with `mode: \"auto\"`. Only valid with `auto`."
+                });
             }
         }
         // Added after the strip on purpose: their result is shaped on this side
@@ -1320,6 +1335,32 @@ mod tests {
                 .get("maxAge")
                 .is_none(),
             "embedded mode discards maxAge (routes/mcp.rs forces a fresh fetch); do not advertise it"
+        );
+    }
+
+    #[test]
+    fn crw_scrape_schema_advertises_mode_in_proxy_mode_only() {
+        let proxy_defs = tool_definitions(true);
+        let proxy = tool_by_name(&proxy_defs, "crw_scrape");
+        let props = &proxy["inputSchema"]["properties"];
+        assert_eq!(props["mode"]["enum"], json!(["standard", "auto"]));
+        assert_eq!(props["maxCredits"]["type"], "integer");
+        assert_eq!(props["maxCredits"]["minimum"], 2);
+        assert_eq!(props["maxCredits"]["maximum"], 1000);
+        for key in ["mode", "maxCredits"] {
+            let text = props[key]["description"].as_str().unwrap_or_default();
+            assert!(text.starts_with("fastCRW cloud only."), "{key}: {text}");
+            for banned in ["bypass", "evade", "stealth", "proxy", "captcha"] {
+                assert!(!text.to_lowercase().contains(banned), "{key}: {banned}");
+            }
+        }
+
+        let embedded_defs = tool_definitions(false);
+        let embedded = tool_by_name(&embedded_defs, "crw_scrape");
+        let embedded_props = &embedded["inputSchema"]["properties"];
+        assert!(
+            embedded_props.get("mode").is_none() && embedded_props.get("maxCredits").is_none(),
+            "a self-hosted engine ignores mode; do not advertise it in embedded mode"
         );
     }
 
