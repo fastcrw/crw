@@ -8,6 +8,15 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.45.1](https://github.com/fastcrw/crw/compare/v0.45.0...v0.45.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **deps:** bump rustls-webpki to distrust eMudhra intermediates ([0dc68c7](https://github.com/fastcrw/crw/commit/0dc68c715aa1173af5238c0507cc07a7234579ea))
+* **mcp:** pass install and init their own flags without the subcommand ([d092246](https://github.com/fastcrw/crw/commit/d092246b6201e4bb2ed8325e60768bf56252816f))
+* **security:** close SSRF paths in redirects, DNS, BYOP and BYOK ([d81ca79](https://github.com/fastcrw/crw/commit/d81ca79b7ef5d558ef8b43221e3afa94c1a7b25e))
+
 ## [0.45.0](https://github.com/fastcrw/crw/compare/v0.44.3...v0.45.0) (2026-11-15)
 
 
