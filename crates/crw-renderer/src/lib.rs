@@ -409,6 +409,9 @@ struct JsAttemptClass {
     hard_block: bool,
     /// A fingerprint-vendor wall chrome_proxy cannot clear (suppresses the arm).
     unrecoverable_wall: bool,
+    /// The non-Cloudflare part of `unrecoverable_wall`: a wall the arm must not
+    /// even probe (see `is_non_cf_vendor_wall`).
+    non_cf_wall: bool,
     /// Passes the success accept-gate (return as-is, don't escalate).
     acceptable: bool,
 }
@@ -474,24 +477,39 @@ fn is_fingerprint_vendor_wall(
     vendor_block: Option<&str>,
     antibot_signal: crw_extract::antibot::AntibotSignal,
 ) -> bool {
-    use crw_extract::antibot::AntibotSignal;
     cf_challenge
         || matches!(
-            vendor_block,
-            Some("datadome" | "perimeterx" | "kasada" | "akamai" | "imperva")
+            antibot_signal,
+            crw_extract::antibot::AntibotSignal::Cloudflare
         )
+        || is_non_cf_vendor_wall(vendor_block, antibot_signal)
+}
+
+/// The fingerprint-vendor walls other than Cloudflare: DataDome, PerimeterX,
+/// Kasada, Akamai, Imperva. The post-ladder chrome_proxy arm stays suppressed on
+/// these. A Cloudflare managed challenge is split out because chrome_proxy DOES
+/// clear it on some hosts (diyfpv.com, manuals.plus, getfpv.com in prod,
+/// 2026-11-16) and not on others (robotshop.com, robu.in), so the arm probes it
+/// once per host instead (see `cf_walled_hosts`).
+fn is_non_cf_vendor_wall(
+    vendor_block: Option<&str>,
+    antibot_signal: crw_extract::antibot::AntibotSignal,
+) -> bool {
+    use crw_extract::antibot::AntibotSignal;
+    matches!(
+        vendor_block,
+        Some("datadome" | "perimeterx" | "kasada" | "akamai" | "imperva")
+    )
         // `antibot::classify` recognises these vendors from visible text alone
-        // (a PerimeterX/Imperva page without its SDK marker, or a CF page with a
-        // single weak marker) that `looks_like_vendor_block` misses — yet those
-        // feed `saw_hard_block` via `antibot.signal.is_blocked()`, so without
-        // this arm the residential tier would fire on a wall it can't clear.
-        // Sucuri / NetworkSecurity / GenericBlock / RateLimited /
-        // StructuralFailure stay OUT (IP-reputation blocks a residential egress
-        // recovers).
+        // (a PerimeterX/Imperva page without its SDK marker) that
+        // `looks_like_vendor_block` misses — yet those feed `saw_hard_block` via
+        // `antibot.signal.is_blocked()`, so without this arm the residential tier
+        // would fire on a wall it can't clear. Sucuri / NetworkSecurity /
+        // GenericBlock / RateLimited / StructuralFailure stay OUT (IP-reputation
+        // blocks a residential egress recovers).
         || matches!(
             antibot_signal,
-            AntibotSignal::Cloudflare
-                | AntibotSignal::Datadome
+            AntibotSignal::Datadome
                 | AntibotSignal::PerimeterX
                 | AntibotSignal::Akamai
                 | AntibotSignal::Imperva
@@ -507,8 +525,9 @@ enum HedgeOutcome {
     /// (so the caller can fire the gated auto-egress recovery arm), and whether
     /// any attempt was a fingerprint-vendor wall (so the arm is suppressed even
     /// if the size-race stitch dropped that attempt's HTML). Mirrors the serial
-    /// loop's `thin_result` + `saw_hard_block` + `saw_unrecoverable_wall`.
-    Thin(FetchResult, bool, bool),
+    /// loop's `thin_result` + `saw_hard_block` + `saw_unrecoverable_wall` +
+    /// `saw_non_cf_wall`.
+    Thin(FetchResult, bool, bool, bool),
     /// Both tiers errored. Each leg's error is kept so the serial loop can replay
     /// one an immediate rerun would only repeat (see [`hedge_error_repeats`])
     /// instead of fetching the same tier again.
@@ -990,6 +1009,18 @@ pub const MIN_TIER_BUDGET: Duration = Duration::from_millis(500);
 /// proxy tier only.
 pub(crate) const CHROME_PROXY_ARM_BUDGET_MS: u64 = 20_000;
 
+/// Budget a residential-first attempt always leaves for lightpanda/chrome to
+/// run after it if chrome_proxy fails.
+const RESIDENTIAL_FIRST_RESERVE: Duration = Duration::from_secs(10);
+
+/// Smallest request budget for which a host in `residential_hosts` tries
+/// chrome_proxy FIRST: the arm's own budget plus [`RESIDENTIAL_FIRST_RESERVE`].
+/// Below this the request keeps the normal order (ladder, then the post-ladder
+/// arm on a fresh budget), so a short-deadline caller never loses the ladder to
+/// a slow first tier.
+const RESIDENTIAL_FIRST_MIN_BUDGET: Duration =
+    Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS).saturating_add(RESIDENTIAL_FIRST_RESERVE);
+
 // Concurrency permits for the chrome_proxy auto-egress recovery arm are sized to
 // `config.chrome_proxy_pool_size()` at construction (see `chrome_proxy_arm_sem`) —
 // falls back to `pool_size` when unset, but can be raised independently so a burst
@@ -1063,6 +1094,17 @@ pub struct FallbackRenderer {
     has_recovery_tier: bool,
     /// Per-host renderer preference learning (auto-mode only).
     preferences: Arc<HostPreferences>,
+    /// Hosts the post-ladder chrome_proxy arm recently served usable content
+    /// for. While a host is held, a request with at least
+    /// [`RESIDENTIAL_FIRST_MIN_BUDGET`] tries chrome_proxy first instead of
+    /// re-climbing a ladder the datacenter IP cannot pass. Per instance like
+    /// `preferences` (prod runs one renderer per process). `EgressMemory` is
+    /// reused as a plain host TTL set: TTL expiry re-probes the normal order.
+    residential_hosts: crate::egress::EgressMemory,
+    /// Hosts where the arm, fired as a Cloudflare-challenge probe, did not get
+    /// usable content. Holds the probe off for the TTL, so a CF host chrome_proxy
+    /// cannot clear pays the slow residential attempt once per TTL, not per URL.
+    cf_walled_hosts: crate::egress::EgressMemory,
     /// Per-host + global circuit breakers per renderer.
     breakers: Arc<BreakerRegistry>,
     /// Per-tier configured timeouts (Duration). Used by the breaker layer
@@ -1333,6 +1375,8 @@ impl FallbackRenderer {
                 // recovery is the HTTP fallback proxy.
                 has_recovery_tier: http_fallback_proxy_ready,
                 preferences: Arc::new(HostPreferences::with_defaults()),
+                residential_hosts: crate::egress::EgressMemory::with_defaults(),
+                cf_walled_hosts: crate::egress::EgressMemory::with_defaults(),
                 breakers: Arc::new(BreakerRegistry::with_defaults()),
                 tier_timeouts: tier_timeouts_from(config),
                 requests_per_second: 0.0,
@@ -1651,6 +1695,8 @@ impl FallbackRenderer {
             )),
             has_recovery_tier: recovery_tier_available,
             preferences: Arc::new(HostPreferences::with_defaults()),
+            residential_hosts: crate::egress::EgressMemory::with_defaults(),
+            cf_walled_hosts: crate::egress::EgressMemory::with_defaults(),
             breakers: Arc::new(BreakerRegistry::with_defaults()),
             tier_timeouts: tier_timeouts_from(config),
             requests_per_second: 0.0,
@@ -3300,6 +3346,7 @@ impl FallbackRenderer {
                 || (!is_status_blocked && !antibot_blocked));
         let unrecoverable_wall =
             is_fingerprint_vendor_wall(cf_challenge, vendor_block, antibot.signal);
+        let non_cf_wall = is_non_cf_vendor_wall(vendor_block, antibot.signal);
         JsAttemptClass {
             text_len,
             is_placeholder,
@@ -3311,8 +3358,44 @@ impl FallbackRenderer {
             antibot_blocked,
             hard_block,
             unrecoverable_wall,
+            non_cf_wall,
             acceptable,
         }
+    }
+
+    /// The chrome_proxy arm's body gate (minus the Cloudflare check, which the
+    /// arm keeps separately because the cloak route reads it): enough text and
+    /// no failed-render, placeholder, bot-wall or vendor-block shape.
+    fn residential_body_ok(r: &FetchResult) -> bool {
+        html_body_text_len(&r.html) >= Self::MIN_RENDERED_TEXT_LEN
+            && detector::looks_like_failed_render(&r.html).is_none()
+            && !detector::looks_like_loading_placeholder(&r.html)
+            && !detector::looks_like_generic_bot_wall(&r.html, r.truncated)
+            && detector::looks_like_vendor_block(&r.html).is_none()
+    }
+
+    /// Whether the ladder's keeper is a wall in the BODY (bot wall, vendor
+    /// block, CF challenge, an antibot verdict), the shape that makes a host
+    /// worth sending to chrome_proxy first. A rate limit, or the generic verdict
+    /// `classify` gives any 429/503, is often transient: pinning a whole domain
+    /// to the slow metered tier for the TTL on one would cost every later URL
+    /// its fast path.
+    fn ladder_hit_body_wall(&self, keeper: Option<&FetchResult>) -> bool {
+        use crw_extract::antibot::AntibotSignal;
+        keeper.is_some_and(|t| {
+            let c = self.classify_js_attempt(t);
+            let transient_status = matches!(t.status_code, 429 | 503);
+            c.is_bot_wall
+                || c.vendor_block.is_some()
+                || c.unrecoverable_wall
+                || match c.antibot.signal {
+                    AntibotSignal::None
+                    | AntibotSignal::RateLimited
+                    | AntibotSignal::StructuralFailure => false,
+                    AntibotSignal::GenericBlock => !transient_status,
+                    _ => true,
+                }
+        })
     }
 
     /// Conditional hedge: race lightpanda + chrome CONCURRENTLY (chrome's render
@@ -3439,10 +3522,12 @@ impl FallbackRenderer {
         // lightpanda completed thin → record it (serial would have).
         let mut saw_hard_block = false;
         let mut saw_unrecoverable_wall = false;
+        let mut saw_non_cf_wall = false;
         if let Some(Ok(res)) = &lp_res {
             let cls = self.classify_js_attempt(res);
             saw_hard_block |= cls.hard_block;
             saw_unrecoverable_wall |= cls.unrecoverable_wall;
+            saw_non_cf_wall |= cls.non_cf_wall;
             self.record_hedge_thin(host, RendererKind::Lightpanda, &cls, &mut lp_guard)
                 .await;
         }
@@ -3462,6 +3547,7 @@ impl FallbackRenderer {
             let cls = self.classify_js_attempt(res);
             saw_hard_block |= cls.hard_block;
             saw_unrecoverable_wall |= cls.unrecoverable_wall;
+            saw_non_cf_wall |= cls.non_cf_wall;
             self.record_hedge_thin(host, RendererKind::Chrome, &cls, &mut ch_guard)
                 .await;
         }
@@ -3519,6 +3605,7 @@ impl FallbackRenderer {
                 r,
                 saw_hard_block,
                 saw_unrecoverable_wall,
+                saw_non_cf_wall,
             ))),
             None => Ok(None),
         }
@@ -3731,7 +3818,6 @@ impl FallbackRenderer {
             });
             tracing::debug!(host = %host, "host promoted to chrome by preference learner");
         }
-
         if renderers.is_empty() {
             let available = self.js_renderer_names();
             return Err(CrwError::RendererError(format!(
@@ -3758,11 +3844,75 @@ impl FallbackRenderer {
         // `thin_result`, whose largest-HTML keeper can drop a small vendor shell
         // in a multi-hop chain) so the arm is reliably suppressed on those.
         let mut saw_unrecoverable_wall = false;
+        // The non-Cloudflare part of the above: a vendor wall the arm must not
+        // even probe. A CF challenge alone lets the arm probe the host once.
+        let mut saw_non_cf_wall = false;
         // Snapshot for the leak-through fallback below. The main loop
         // consumes `renderers`; we keep a parallel reference list so a
         // single skipped renderer can still get a shot when its host
         // breaker is closed.
         let renderers_snapshot: Vec<&Arc<dyn PageFetcher>> = renderers.clone();
+
+        // Residential-first: the arm recently served this host after a body wall
+        // from our IP, so the ladder in front of it is known to fail. Fire the
+        // arm once BEFORE the ladder on its own budget; a usable page returns,
+        // anything else forgets the host and runs the ladder exactly as today
+        // (hedge and leak-through included) on the time left. Needs a free arm
+        // permit (non-blocking, released when the attempt returns) and a
+        // deadline that still leaves RESIDENTIAL_FIRST_RESERVE for the ladder, so
+        // short-deadline callers keep today's order. `chain` then holds
+        // ChromeProxy, which keeps the post-ladder arm from a second attempt.
+        // A residential body that missed the accept gate (a 403 that carries the
+        // real page, a thin page) is weighed against the ladder's keeper after
+        // the ladder, exactly as the post-ladder arm's body would be.
+        let mut residential_fallback: Option<FetchResult> = None;
+        if let Some(arm) = auto_egress_arm.as_ref()
+            && !cloak_attempted
+            && !host.is_empty()
+            && deadline.remaining() >= RESIDENTIAL_FIRST_MIN_BUDGET
+            && self.residential_hosts.should_proxy(&host).await
+            && !self
+                .breakers
+                .host_for(&host, RendererKind::ChromeProxy)
+                .await
+                .is_open()
+            && let Ok(_permit) = self.chrome_proxy_arm_sem.clone().try_acquire_owned()
+        {
+            let kind = RendererKind::ChromeProxy;
+            chain.push(kind);
+            metrics()
+                .render_route_decision_total
+                .with_label_values(&[kind.as_str(), "residentialFirst"])
+                .inc();
+            let arm_deadline =
+                crw_core::Deadline::now_plus(Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS));
+            let attempt = REQUEST_PROXY
+                .scope(
+                    self.pick_proxy_for_url(url),
+                    arm.fetch(url, headers, wait_for_ms, arm_deadline),
+                )
+                .await;
+            match attempt {
+                Ok(mut r) if self.classify_js_attempt(&r).acceptable => {
+                    self.record_hedge_success(&host, kind, &r, &mut None).await;
+                    r.credit_cost = credit_for(kind);
+                    r.render_decision = Some(RenderDecision::AutoPromoted {
+                        chosen: kind,
+                        from: renderers
+                            .first()
+                            .and_then(|f| renderer_kind_for(f.name()))
+                            .unwrap_or(RendererKind::Chrome),
+                        reason: "host served by chrome_proxy recently".into(),
+                    });
+                    return Ok(r);
+                }
+                Ok(r) => {
+                    self.residential_hosts.forget(&host).await;
+                    residential_fallback = Some(r);
+                }
+                Err(_) => self.residential_hosts.forget(&host).await,
+            }
+        }
 
         // latency-qn conditional hedge: when lightpanda is first (cheap-first, not
         // promoted to chrome) and chrome is present, race them concurrently so
@@ -3796,10 +3946,11 @@ impl FallbackRenderer {
                 .await
             {
                 Ok(Some(HedgeOutcome::Accepted(r))) => return Ok(r),
-                Ok(Some(HedgeOutcome::Thin(r, hb, uw))) => {
+                Ok(Some(HedgeOutcome::Thin(r, hb, uw, ncf))) => {
                     thin_result = Some(r);
                     saw_hard_block |= hb;
                     saw_unrecoverable_wall |= uw;
+                    saw_non_cf_wall |= ncf;
                     chain.push(RendererKind::Lightpanda);
                     chain.push(RendererKind::Chrome);
                     hedge_done = true;
@@ -4042,6 +4193,9 @@ impl FallbackRenderer {
                     // (not 404/410/412/451/500) + interstitial walls.
                     if is_fingerprint_vendor_wall(cf_challenge, vendor_block, antibot.signal) {
                         saw_unrecoverable_wall = true;
+                    }
+                    if is_non_cf_vendor_wall(vendor_block, antibot.signal) {
+                        saw_non_cf_wall = true;
                     }
                     if is_hard_block_status(result.status_code)
                         || is_bot_wall
@@ -4484,6 +4638,7 @@ impl FallbackRenderer {
                         // ff09f30 was tuned against: success -2pp, p90 +69%).
                         saw_hard_block |= cls.hard_block;
                         saw_unrecoverable_wall |= cls.unrecoverable_wall;
+                        saw_non_cf_wall |= cls.non_cf_wall;
                         // A large CF challenge shell has body text > 50 and no
                         // placeholder/failed marker, so guard it explicitly or it
                         // would leak through this path as success. Same for a
@@ -4615,6 +4770,13 @@ impl FallbackRenderer {
         // comes from a residential exit.
         #[cfg(feature = "cloak")]
         let mut arm_uncovered_cf = false;
+        if let Some(r) = residential_fallback.take() {
+            let r_ok = !detector::looks_like_cloudflare_challenge(&r.html)
+                && Self::residential_body_ok(&r);
+            if Self::arm_result_replaces_keeper(r_ok, &r, thin_result.as_ref()) {
+                thin_result = Some(r);
+            }
+        }
         if let Some(arm) = auto_egress_arm {
             let kind = RendererKind::ChromeProxy;
             // chrome_proxy is default-Chrome + residential IP: it recovers
@@ -4662,9 +4824,24 @@ impl FallbackRenderer {
                 && self.cloak_arm.is_some();
             #[cfg(not(feature = "cloak"))]
             let opted_after_egress = false;
+            // A Cloudflare challenge with no other vendor wall is probed: the arm
+            // fires once per host per TTL, and a host it cannot clear lands in
+            // `cf_walled_hosts` below so later URLs skip it. Measured from the
+            // prod IP (2026-11-16): chrome_proxy cleared diyfpv.com, manuals.plus
+            // and getfpv.com, not robotshop.com or robu.in.
+            // Unlike the rest of the arm, the probe is deadline-gated: on a short
+            // deadline it would run ~20 s past the caller for a wall it often
+            // cannot clear.
+            let cf_probe = saw_unrecoverable_wall && !saw_non_cf_wall;
+            let wall_allows_arm = !saw_unrecoverable_wall
+                || (cf_probe
+                    && !host.is_empty()
+                    && deadline.remaining() >= Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS)
+                    && !self.cf_walled_hosts.should_proxy(&host).await);
             let arm_wanted = saw_hard_block
+                && !chain.contains(&kind)
                 && !route_to_cloak
-                && !saw_unrecoverable_wall
+                && wall_allows_arm
                 && (opted_after_egress || !self.breakers.host_for(&host, kind).await.is_open());
             let arm_permit = if arm_wanted {
                 self.chrome_proxy_arm_sem.clone().try_acquire_owned().ok()
@@ -4683,6 +4860,18 @@ impl FallbackRenderer {
             }
             if let Some(_permit) = arm_permit {
                 chain.push(kind);
+                if cf_probe {
+                    metrics()
+                        .render_route_decision_total
+                        .with_label_values(&[kind.as_str(), "cfProbe"])
+                        .inc();
+                    // Claim before firing: concurrent requests on the same host
+                    // see the claim and skip the probe, so a batch pays one probe
+                    // per host per TTL, not a poolful. Released on success below.
+                    if !host.is_empty() {
+                        self.cf_walled_hosts.note_block(&host).await;
+                    }
+                }
                 let entry = self.pick_proxy_for_url(url);
                 // Fresh budget (not the exhausted shared deadline) so the
                 // residential connect + nav + render can actually complete; the
@@ -4696,7 +4885,6 @@ impl FallbackRenderer {
                     .await;
                 match attempt {
                     Ok(r) => {
-                        let r_text = html_body_text_len(&r.html);
                         // Block detection is load-bearing here, not defensive: a
                         // residential exit can land in the SAME ban range as the
                         // box (or be challenged on its own), and this gate drives
@@ -4718,12 +4906,7 @@ impl FallbackRenderer {
                         // floor, and would buy every one of them a cold
                         // interactive solve.
                         let r_cf_challenge = detector::looks_like_cloudflare_challenge(&r.html);
-                        let r_ok = r_text >= Self::MIN_RENDERED_TEXT_LEN
-                            && detector::looks_like_failed_render(&r.html).is_none()
-                            && !detector::looks_like_loading_placeholder(&r.html)
-                            && !detector::looks_like_generic_bot_wall(&r.html, r.truncated)
-                            && detector::looks_like_vendor_block(&r.html).is_none()
-                            && !r_cf_challenge;
+                        let r_ok = !r_cf_challenge && Self::residential_body_ok(&r);
                         // The challenge this arm uncovered is the ONLY thing
                         // that can open the cloak gate below. Set under cfg so
                         // the lean build neither binds nor assigns it.
@@ -4741,6 +4924,18 @@ impl FallbackRenderer {
                                         "afterEgressEligible",
                                     ])
                                     .inc();
+                            }
+                        }
+                        if r_ok && !host.is_empty() {
+                            // Status-aware: a 401/403 login page with text is
+                            // `r_ok` but not a page worth remembering the tier for.
+                            if self.ladder_hit_body_wall(thin_result.as_ref())
+                                && self.classify_js_attempt(&r).acceptable
+                            {
+                                self.residential_hosts.note_block(&host).await;
+                            }
+                            if cf_probe {
+                                self.cf_walled_hosts.forget(&host).await;
                             }
                         }
                         if !host.is_empty() {
@@ -4824,6 +5019,12 @@ impl FallbackRenderer {
                         }
                     }
                     Err(e) => {
+                        // A transport failure says nothing about the host's wall:
+                        // release the claim. A timeout keeps it, the next probe
+                        // would burn the same 20 s.
+                        if cf_probe && !host.is_empty() && !matches!(e, CrwError::Timeout(_)) {
+                            self.cf_walled_hosts.forget(&host).await;
+                        }
                         if !host.is_empty() {
                             // Same split as the cloak-first arm: a body the tier
                             // returned and we rejected is the page's verdict, an
@@ -7161,6 +7362,8 @@ mod tests {
         name: &'static str,
         script: Vec<MockBehavior>,
         calls: std::sync::atomic::AtomicUsize,
+        /// `Deadline::remaining()` of the latest call.
+        last_budget: std::sync::Mutex<Option<Duration>>,
     }
 
     impl SeqFetcher {
@@ -7169,10 +7372,14 @@ mod tests {
                 name,
                 script,
                 calls: std::sync::atomic::AtomicUsize::new(0),
+                last_budget: std::sync::Mutex::new(None),
             })
         }
         fn calls(&self) -> usize {
             self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+        fn last_budget(&self) -> Option<Duration> {
+            *self.last_budget.lock().unwrap()
         }
     }
 
@@ -7186,6 +7393,7 @@ mod tests {
             deadline: crw_core::Deadline,
         ) -> CrwResult<FetchResult> {
             let i = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            *self.last_budget.lock().unwrap() = Some(deadline.remaining());
             let behavior = self.script[i.min(self.script.len() - 1)].clone();
             MockFetcher {
                 name: self.name,
@@ -9305,30 +9513,49 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn chrome_proxy_suppressed_on_cloudflare_challenge() {
-        // chrome_proxy (default Chrome fingerprint) cannot clear a CF managed
-        // challenge, so the arm must NOT fire on it — it would only burn the
-        // deadline. The chain stops at chrome and returns the honest block.
-        // 60s deadline isolates the suppression from the budget floor.
-        let cf = format!(
+    fn cf_interstitial_html() -> String {
+        format!(
             "<html><body><div id=\"cf-browser-verification\">Just a moment...</div>{}</body></html>",
             "x".repeat(200)
-        );
+        )
+    }
+
+    /// The tier that produced an accepted result.
+    fn chosen_tier(result: &FetchResult) -> RendererKind {
+        match &result.render_decision {
+            Some(RenderDecision::AutoDefault { chosen }) => *chosen,
+            Some(RenderDecision::Failover { chain, .. }) => *chain.last().expect("chain"),
+            Some(RenderDecision::AutoPromoted { chosen, .. }) => *chosen,
+            other => panic!("unexpected decision {other:?}"),
+        }
+    }
+
+    fn chain_of(result: &FetchResult) -> Vec<RendererKind> {
+        match &result.render_decision {
+            Some(RenderDecision::Failover { chain, .. }) => chain.clone(),
+            other => panic!("expected a failover decision, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn chrome_proxy_probes_a_cloudflare_challenge() {
+        // A CF managed challenge used to suppress the arm outright. From the prod
+        // IP chrome_proxy clears it on some hosts (diyfpv.com, manuals.plus), so
+        // the arm now probes it and a host it clears is remembered.
         let lp = Arc::new(MockFetcher {
             name: "lightpanda",
-            behavior: MockBehavior::Ok(cf.clone()),
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
         }) as Arc<dyn PageFetcher>;
         let chrome = Arc::new(MockFetcher {
             name: "chrome",
-            behavior: MockBehavior::Ok(cf),
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
         }) as Arc<dyn PageFetcher>;
         let chrome_proxy = Arc::new(MockFetcher {
             name: "chrome_proxy",
             behavior: MockBehavior::Ok(rich_html("PROXY-")),
         }) as Arc<dyn PageFetcher>;
         let mut r = make_renderer_with_mocks(vec![lp, chrome, chrome_proxy]);
-        r.auto_egress_escalation = true; // pull chrome_proxy into the gated arm
+        r.auto_egress_escalation = true;
 
         let result = r
             .fetch(
@@ -9342,15 +9569,312 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            !result.html.contains("PROXY-"),
-            "chrome_proxy must be suppressed on a CF challenge, got proxy output"
+            result.html.contains("PROXY-"),
+            "the arm must probe a CF challenge, got: {}",
+            result.html
         );
-        if let Some(RenderDecision::Failover { chain, .. }) = &result.render_decision {
+        assert!(chain_of(&result).contains(&RendererKind::ChromeProxy));
+        assert!(r.residential_hosts.should_proxy("example.com").await);
+        assert!(!r.cf_walled_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn failed_cf_probe_is_not_repeated_for_the_host() {
+        // robotshop.com class: chrome_proxy gets the same challenge. The first
+        // request pays the probe, the next one on the host must not.
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome_proxy = SeqFetcher::new(
+            "chrome_proxy",
+            vec![MockBehavior::Ok(cf_interstitial_html())],
+        );
+        let mut r = make_renderer_with_mocks(vec![
+            lp,
+            chrome,
+            chrome_proxy.clone() as Arc<dyn PageFetcher>,
+        ]);
+        r.auto_egress_escalation = true;
+
+        for _ in 0..2 {
+            r.fetch(
+                "https://example.com/a",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        }
+        assert_eq!(chrome_proxy.calls(), 1, "one probe per host per TTL");
+        assert!(r.cf_walled_hosts.should_proxy("example.com").await);
+        assert!(!r.residential_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn cf_probe_needs_the_arm_budget_left() {
+        // A short-deadline caller must not wait ~20 s past its deadline for a
+        // probe that often fails: no probe, no claim.
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let proxy = SeqFetcher::new("chrome_proxy", vec![MockBehavior::Ok(recovered_html())]);
+        let mut r =
+            make_renderer_with_mocks(vec![lp, chrome, proxy.clone() as Arc<dyn PageFetcher>]);
+        r.auto_egress_escalation = true;
+        r.fetch(
+            "https://example.com",
+            &HashMap::new(),
+            Some(true),
+            None,
+            Some("auto"),
+            crw_core::Deadline::from_request_ms(15_000),
+        )
+        .await
+        .unwrap();
+        assert_eq!(proxy.calls(), 0);
+        assert!(!r.cf_walled_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn status_only_block_recovered_by_the_arm_is_not_remembered() {
+        // A 429 or 503 is often transient: the arm may serve the page, but the
+        // domain must not be pinned to the slow metered tier for the TTL.
+        let unavailable = format!(
+            "<html><body><h1>Service Unavailable</h1>{}</body></html>",
+            "x".repeat(200)
+        );
+        for (status, body) in [(429, String::new()), (503, unavailable)] {
+            let lp = Arc::new(MockFetcher {
+                name: "lightpanda",
+                behavior: MockBehavior::OkStatus(status, body.clone()),
+            }) as Arc<dyn PageFetcher>;
+            let chrome = Arc::new(MockFetcher {
+                name: "chrome",
+                behavior: MockBehavior::OkStatus(status, body),
+            }) as Arc<dyn PageFetcher>;
+            let proxy = SeqFetcher::new("chrome_proxy", vec![MockBehavior::Ok(recovered_html())]);
+            let mut r =
+                make_renderer_with_mocks(vec![lp, chrome, proxy.clone() as Arc<dyn PageFetcher>]);
+            r.auto_egress_escalation = true;
+            let result = r
+                .fetch(
+                    "https://example.com",
+                    &HashMap::new(),
+                    Some(true),
+                    None,
+                    Some("auto"),
+                    tdl(),
+                )
+                .await
+                .unwrap();
             assert!(
-                !chain.contains(&RendererKind::ChromeProxy),
-                "chain must not include chrome_proxy on a CF challenge: {chain:?}"
+                result.html.contains("PROXY-"),
+                "{status}: the arm still recovers it"
+            );
+            assert!(
+                !r.residential_hosts.should_proxy("example.com").await,
+                "{status} must not pin the host"
             );
         }
+    }
+
+    /// A residential body larger than the thin wall it replaces
+    /// (best-result-wins only takes a bigger usable body).
+    fn recovered_html() -> String {
+        format!(
+            "<html><body><article>PROXY-{}</article></body></html>",
+            "y".repeat(400)
+        )
+    }
+
+    /// Ladder tiers that fail with a network-security wall (IP reputation, the
+    /// rcgroups shape) and a residential tier that serves the page.
+    fn walled_ladder_with_proxy(
+        proxy_script: Vec<MockBehavior>,
+    ) -> (
+        Arc<SeqFetcher>,
+        Arc<SeqFetcher>,
+        Arc<SeqFetcher>,
+        FallbackRenderer,
+    ) {
+        let lp = SeqFetcher::new(
+            "lightpanda",
+            vec![MockBehavior::Ok(network_security_block_html())],
+        );
+        let chrome = SeqFetcher::new(
+            "chrome",
+            vec![MockBehavior::Ok(network_security_block_html())],
+        );
+        let proxy = SeqFetcher::new("chrome_proxy", proxy_script);
+        let mut r = make_renderer_with_mocks(vec![
+            lp.clone() as Arc<dyn PageFetcher>,
+            chrome.clone() as Arc<dyn PageFetcher>,
+            proxy.clone() as Arc<dyn PageFetcher>,
+        ]);
+        r.auto_egress_escalation = true;
+        (lp, chrome, proxy, r)
+    }
+
+    #[tokio::test]
+    async fn host_the_arm_served_goes_residential_first() {
+        let (lp, chrome, proxy, r) =
+            walled_ladder_with_proxy(vec![MockBehavior::Ok(recovered_html())]);
+        let first = r
+            .fetch(
+                "https://example.com/1",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert!(first.html.contains("PROXY-"));
+        let (lp_before, chrome_before) = (lp.calls(), chrome.calls());
+
+        let second = r
+            .fetch(
+                "https://example.com/2",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert!(second.html.contains("PROXY-"));
+        assert_eq!(proxy.calls(), 2);
+        assert_eq!(
+            lp.calls(),
+            lp_before,
+            "ladder must not run before chrome_proxy"
+        );
+        assert_eq!(chrome.calls(), chrome_before);
+        assert_eq!(chosen_tier(&second), RendererKind::ChromeProxy);
+        // The arm's budget, not the 60 s request deadline.
+        let budget = proxy.last_budget().expect("chrome_proxy called");
+        assert!(
+            budget <= Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS),
+            "residential-first must be clamped to the arm budget, got {budget:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn wrong_residential_memory_falls_back_and_is_forgotten() {
+        // The residential IP got walled too: the ladder still runs after it,
+        // the post-ladder arm does not fire a second time, and the host leaves
+        // the memory so the next URL climbs the normal order.
+        let (lp, _chrome, proxy, r) =
+            walled_ladder_with_proxy(vec![MockBehavior::Ok(network_security_block_html())]);
+        r.residential_hosts.note_block("example.com").await;
+        r.fetch(
+            "https://example.com/1",
+            &HashMap::new(),
+            Some(true),
+            None,
+            Some("auto"),
+            tdl(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            proxy.calls(),
+            1,
+            "no second residential attempt in one request"
+        );
+        assert!(
+            lp.calls() >= 1,
+            "the ladder runs after a failed residential-first"
+        );
+        assert!(!r.residential_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn residential_first_body_that_misses_the_gate_still_beats_a_wall() {
+        // A 403 that carries the real page fails `acceptable`, but the old
+        // post-ladder arm would have served it over the ladder's wall. So must
+        // the residential-first attempt, without a second residential call.
+        let (_lp, _chrome, proxy, r) =
+            walled_ladder_with_proxy(vec![MockBehavior::OkStatus(403, recovered_html())]);
+        r.residential_hosts.note_block("example.com").await;
+        let result = r
+            .fetch(
+                "https://example.com/1",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert!(result.html.contains("PROXY-"), "got: {}", result.html);
+        assert_eq!(proxy.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn residential_first_needs_a_budget_for_the_fallback_ladder() {
+        let (lp, _chrome, proxy, r) =
+            walled_ladder_with_proxy(vec![MockBehavior::Ok(rich_html("PROXY-"))]);
+        r.residential_hosts.note_block("example.com").await;
+        // Under RESIDENTIAL_FIRST_MIN_BUDGET (30 s): today's order, ladder first.
+        r.fetch(
+            "https://example.com/1",
+            &HashMap::new(),
+            Some(true),
+            None,
+            Some("auto"),
+            crw_core::Deadline::from_request_ms(25_000),
+        )
+        .await
+        .unwrap();
+        assert!(lp.calls() >= 1, "short deadline keeps the ladder first");
+        assert_eq!(proxy.calls(), 1, "and the arm still recovers after it");
+    }
+
+    #[tokio::test]
+    async fn residential_first_without_a_free_permit_keeps_the_ladder_first() {
+        let (lp, _chrome, proxy, r) =
+            walled_ladder_with_proxy(vec![MockBehavior::Ok(rich_html("PROXY-"))]);
+        r.residential_hosts.note_block("example.com").await;
+        let held: Vec<_> = (0..r.chrome_proxy_arm_sem.available_permits())
+            .map(|_| {
+                r.chrome_proxy_arm_sem
+                    .clone()
+                    .try_acquire_owned()
+                    .expect("permit")
+            })
+            .collect();
+        let result = r
+            .fetch(
+                "https://example.com/1",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        drop(held);
+        assert!(lp.calls() >= 1);
+        assert_eq!(proxy.calls(), 0, "no permit: no residential attempt at all");
+        assert!(!result.html.contains("PROXY-"));
     }
 
     #[tokio::test]
