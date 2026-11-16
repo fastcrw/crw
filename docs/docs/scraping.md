@@ -329,6 +329,8 @@ Limits:
 
 The errors these cases return are listed under [Cloud-only error codes](/error-codes#cloud-only-error-codes).
 
+When a `standard` scrape on the cloud stops at a challenge that `auto` can get through, its `error` message ends with a pointer to `mode: "auto"`, or to the pricing page when your plan does not include it. The rest of the message and `errorCode: "anti_bot"` stay the same.
+
 ## Common production patterns
 
 - Start with `markdown`, then add `links` or `json` only when downstream logic needs them.

@@ -251,6 +251,8 @@ For cloud mode and file-based configs, continue in [MCP Client Setup](#mcp-clien
 | `maxLength` | integer | no | Max chars for content fields; `0` = unlimited (default: ~15 000) |
 | `startIndex` | integer | no | Char offset to resume a truncated result: a truncated field ends with a marker naming the `startIndex` that continues it. Each call fetches the page again (or reuses a cached fetch), so a page that renders differently between calls can shift the offset |
 | `maxAge` | integer | no | Max age of a cached copy of the fetch, in ms (default 3600000 = 1h; `0` = always fetch; cap 24h). Proxy mode only |
+| `mode` | string | no | `standard` (default) or `auto`. fastCRW cloud only, see [Auto and max mode](/scraping#auto-and-max-mode). On the hosted MCP and in proxy mode pointed at the cloud; a self-hosted server ignores it |
+| `maxCredits` | integer | no | Most credits one page may cost with `mode: "auto"` (2 to 1000). fastCRW cloud only |
 
 ### crw_crawl
 
