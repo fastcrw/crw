@@ -202,6 +202,7 @@ crw is better because of these people. Thank you, all of you:
 <!-- contributors:start -->
 <p align="center">
   <a href="https://github.com/us" title="us"><img src="https://github.com/us.png?size=96" width="48" height="48" alt="us"/></a>
+  <a href="https://github.com/swackhamer" title="swackhamer"><img src="https://github.com/swackhamer.png?size=96" width="48" height="48" alt="swackhamer"/></a>
   <a href="https://github.com/paoloantinori" title="paoloantinori"><img src="https://github.com/paoloantinori.png?size=96" width="48" height="48" alt="paoloantinori"/></a>
   <a href="https://github.com/behramcelen" title="behramcelen"><img src="https://github.com/behramcelen.png?size=96" width="48" height="48" alt="behramcelen"/></a>
   <a href="https://github.com/WhiteNoise0000" title="WhiteNoise0000"><img src="https://github.com/WhiteNoise0000.png?size=96" width="48" height="48" alt="WhiteNoise0000"/></a>
