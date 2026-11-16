@@ -2,6 +2,23 @@
 
 All notable changes to CRW are documented here.
 
+## [0.46.0](https://github.com/fastcrw/crw/compare/v0.45.1...v0.46.0) (2026-11-16)
+
+
+### Features
+
+* **mcp:** advertise mode and maxCredits on crw_scrape in proxy mode ([f60d9d1](https://github.com/fastcrw/crw/commit/f60d9d1f263a8fbec570675541b90c8e2fe82671))
+
+
+### Bug Fixes
+
+* **renderer:** stop LightPanda aborting on a nav-budget hit ([403ad03](https://github.com/fastcrw/crw/commit/403ad038d2f48a471d7ab7523f3273c1b6a288ae))
+
+
+### Performance
+
+* **renderer:** skip LightPanda after Chrome hits a vendor wall ([56df890](https://github.com/fastcrw/crw/commit/56df890f308fe08ad351ff1eb2fd2db269e32e09))
+
 ## [0.45.1](https://github.com/fastcrw/crw/compare/v0.45.0...v0.45.1) (2026-11-16)
 
 
