@@ -737,7 +737,11 @@ pub(crate) async fn call_anthropic(
     let _llm_permit = crate::llm_gate::acquire_llm().await;
     let url = anthropic_messages_url(llm.base_url.as_deref(), "https://api.anthropic.com");
 
-    let client = shared_client();
+    let client = if llm.endpoint_from_request {
+        crate::llm::guarded_client()
+    } else {
+        shared_client()
+    };
     // Same drop-the-force-once guard as the OpenAI transport: a proxy in front of
     // the Messages API that does not accept `tool_choice` must not become a hard
     // extraction failure where it works today.
@@ -1051,7 +1055,11 @@ pub(crate) async fn call_openai(
     };
     let url = openai_chat_url(llm.base_url.as_deref(), default_base);
 
-    let client = shared_client();
+    let client = if llm.endpoint_from_request {
+        crate::llm::guarded_client()
+    } else {
+        shared_client()
+    };
     // Force the tool, but do not let that force become a new way to fail. An
     // arbitrary `base_url` is explicitly supported config, and a gateway that
     // does not implement the `tool_choice` object form would reject the whole

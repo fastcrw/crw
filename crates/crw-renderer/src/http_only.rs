@@ -128,10 +128,22 @@ fn is_connection_failure(e: &reqwest::Error) -> bool {
 ///   to `mailto:`). As an `HttpError` the ladder handed it on to chrome, which
 ///   aborts the navigation (`net::ERR_ABORTED`), and the caller got a 502.
 ///
-/// An SSRF refusal ("Access to 10.0.0.1 is not allowed") matches neither and
-/// stays an `HttpError`. The matched text is owned by `url_safety.rs`;
+/// An SSRF refusal ("Access to 10.0.0.1 is not allowed") never reaches here:
+/// it is a typed `DestinationRefused`, mapped by [`destination_refused`]. The matched text is owned by `url_safety.rs`;
 /// `redirect_to_unresolvable_host_is_target_unreachable` and
 /// `redirect_to_non_http_scheme_is_target_unreachable` break if it changes.
+/// The error for a fetch the SSRF policy refused mid-flight (connect-time DNS
+/// answer or a redirect hop). `InvalidRequest`, the class the route gives a
+/// private request URL, and terminal for the renderer ladder
+/// (`lib.rs::is_terminal_fetch_error`). Names only the caller's own URL: the
+/// refused internal address stays out of the response.
+pub(crate) fn destination_refused(url: &str) -> CrwError {
+    CrwError::InvalidRequest(format!(
+        "{}: it leads to an address that is not allowed",
+        url_for_error(url)
+    ))
+}
+
 fn dead_redirect_reason(e: &reqwest::Error) -> Option<&'static str> {
     if !e.is_redirect() {
         return None;
@@ -324,11 +336,29 @@ fn build_client(
     request_timeout: std::time::Duration,
     relaxed_tls: bool,
 ) -> CrwResult<reqwest::Client> {
+    build_client_for(user_agent, proxy, true, request_timeout, relaxed_tls)
+}
+
+/// [`build_client`] with the proxy's provenance. `trusted_proxy` = the proxy is
+/// operator-configured, so its host is resolved without the SSRF check (it may
+/// live on a private address). A caller-supplied (BYOP) proxy is not trusted:
+/// the connect-time resolver checks its host like any destination.
+fn build_client_for(
+    user_agent: &str,
+    proxy: Option<&str>,
+    trusted_proxy: bool,
+    request_timeout: std::time::Duration,
+    relaxed_tls: bool,
+) -> CrwResult<reqwest::Client> {
+    let exempt = if trusted_proxy { proxy } else { None };
     let mut builder = reqwest::Client::builder()
         .user_agent(user_agent)
         .connect_timeout(HTTP_CONNECT_TIMEOUT)
         .timeout(request_timeout)
-        .redirect(crw_core::url_safety::safe_redirect_policy());
+        .redirect(crw_core::url_safety::safe_redirect_policy())
+        .dns_resolver(std::sync::Arc::new(
+            crw_core::url_safety::SsrfResolver::new(exempt),
+        ));
 
     // Relaxed client used ONLY as a cert-error fallback (see `is_cert_error`):
     // disable cert + hostname verification so a broken chain / expired / self-
@@ -417,8 +447,12 @@ impl HttpFetcher {
         request_timeout: std::time::Duration,
     ) -> Self {
         let client = build_client(user_agent, proxy, request_timeout, false).unwrap_or_else(|e| {
-            tracing::error!("{e}, using default client");
-            reqwest::Client::new()
+            tracing::error!("{e}, using a client without the proxy");
+            // Same egress as before this fallback existed (no proxy), but keeping
+            // the SSRF resolver and redirect policy a bare `Client::new()` lacked.
+            build_client(user_agent, None, request_timeout, false)
+                .or_else(|_| build_client("CRW", None, request_timeout, false))
+                .expect("an HTTP client without a proxy always builds")
         });
         let relaxed_client = if tls_relaxed_fallback_enabled() {
             build_client(user_agent, proxy, request_timeout, true).ok()
@@ -442,15 +476,31 @@ impl HttpFetcher {
     /// URL or client build failure is a hard error — never a silent direct
     /// (no-proxy) client. Used for per-request proxy egress (config rotation +
     /// BYOP) so the HTTP path provably uses the selected proxy.
+    ///
+    /// `trusted_proxy`: see [`build_client_for`]; false for a BYOP entry.
     pub fn with_proxy(
         user_agent: &str,
         proxy_url: &str,
+        trusted_proxy: bool,
         inject_stealth_headers: bool,
         request_timeout: std::time::Duration,
     ) -> CrwResult<Self> {
-        let client = build_client(user_agent, Some(proxy_url), request_timeout, false)?;
+        let client = build_client_for(
+            user_agent,
+            Some(proxy_url),
+            trusted_proxy,
+            request_timeout,
+            false,
+        )?;
         let relaxed_client = if tls_relaxed_fallback_enabled() {
-            build_client(user_agent, Some(proxy_url), request_timeout, true).ok()
+            build_client_for(
+                user_agent,
+                Some(proxy_url),
+                trusted_proxy,
+                request_timeout,
+                true,
+            )
+            .ok()
         } else {
             None
         };
@@ -829,6 +879,20 @@ impl PageFetcher for HttpFetcher {
                     direct_rescue_used = true;
                 }
                 Ok(Ok(r)) => break r,
+                // The SSRF policy refused where this fetch was going: the connect-time
+                // resolver (a name that answered a blocked address, e.g. DNS rebinding)
+                // or a redirect hop. Ahead of every retry arm: another egress or a
+                // relaxed client would only ask for the same destination again.
+                Ok(Err(e)) if crw_core::url_safety::refused_destination(&e).is_some() => {
+                    tracing::warn!(
+                        url = %LogUrl(&url),
+                        reason = %crw_core::url_safety::refused_destination(&e)
+                            .map(ToString::to_string)
+                            .unwrap_or_default(),
+                        "SSRF policy refused the destination mid-fetch"
+                    );
+                    return Err(destination_refused(url));
+                }
                 // TLS cert verification failed and relaxed-TLS fallback is armed:
                 // swap to the cert-disabled client and retry once. NOT a transient
                 // retry — does not consume the retry budget or back off. Placed
@@ -2125,11 +2189,18 @@ mod tests {
     fn with_proxy_is_fail_closed_on_bad_url() {
         // A malformed proxy is a hard error — never a silent direct client.
         assert!(
-            HttpFetcher::with_proxy("ua", "", false, std::time::Duration::from_secs(5)).is_err()
+            HttpFetcher::with_proxy("ua", "", true, false, std::time::Duration::from_secs(5))
+                .is_err()
         );
         assert!(
-            HttpFetcher::with_proxy("ua", "not a url", false, std::time::Duration::from_secs(5))
-                .is_err()
+            HttpFetcher::with_proxy(
+                "ua",
+                "not a url",
+                true,
+                false,
+                std::time::Duration::from_secs(5)
+            )
+            .is_err()
         );
     }
 
@@ -2139,6 +2210,7 @@ mod tests {
             HttpFetcher::with_proxy(
                 "ua",
                 "http://user:pass@host:8080",
+                true,
                 false,
                 std::time::Duration::from_secs(5),
             )
@@ -2667,6 +2739,7 @@ mod tests {
         let f = HttpFetcher::with_proxy(
             "ua",
             "http://gw.example.com:823",
+            true,
             false,
             std::time::Duration::from_secs(5),
         )
@@ -2721,6 +2794,7 @@ mod tests {
         let f = HttpFetcher::with_proxy(
             "ua",
             "http://static-proxy.example.com:1",
+            true,
             false,
             std::time::Duration::from_secs(5),
         )
@@ -2784,6 +2858,7 @@ mod tests {
         let f = HttpFetcher::with_proxy(
             "ua",
             "http://gw.example.com:823",
+            true,
             false,
             std::time::Duration::from_secs(5),
         )
@@ -2856,6 +2931,7 @@ mod tests {
         match HttpFetcher::with_proxy(
             "bad\nua",
             "http://gw.example.com:823",
+            true,
             false,
             std::time::Duration::from_secs(5),
         ) {
@@ -3055,6 +3131,33 @@ mod tests {
             .route("/clean", axum::routing::get(clean_200_handler))
     }
 
+    /// DNS rebinding: the route's pre-flight check saw a public answer, the
+    /// fetch is then handed a name that now answers loopback. The connect-time
+    /// resolver must refuse to dial it. `localhost` stands in for the rebound
+    /// name: the fetcher is called directly, past the route check, so only the
+    /// resolver stands between it and the listener.
+    #[tokio::test]
+    // Holds ENV_LOCK across awaits on purpose: the guard serialises these
+    // tests against each other while they mutate a process-wide env var.
+    #[allow(clippy::await_holding_lock)]
+    async fn a_name_that_answers_loopback_at_connect_time_is_not_dialed() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::remove_var("CRW_ALLOW_LOOPBACK_FOR_TESTS") };
+        let base = spawn_router(redirect_router()).await;
+        let rebound = base.replace("127.0.0.1", "localhost");
+        let fetcher = HttpFetcher::new("crw-test", None, false);
+        let err = fetcher
+            .fetch(
+                &format!("{rebound}/clean"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(5_000),
+            )
+            .await
+            .expect_err("a name answering loopback must not be connected to");
+        assert!(matches!(err, CrwError::InvalidRequest(_)), "got {err:?}");
+    }
+
     /// By default (no `CRW_ALLOW_LOOPBACK_FOR_TESTS` escape hatch), a redirect
     /// to a loopback host is blocked by `safe_redirect_policy` even when the
     /// origin itself is also loopback — the SSRF check runs on every redirect
@@ -3077,7 +3180,9 @@ mod tests {
             )
             .await
             .expect_err("a redirect to a loopback host must be blocked by default");
-        assert!(matches!(err, CrwError::HttpError(_)), "got {err:?}");
+        // A policy refusal: `InvalidRequest`, which the ladder treats as terminal
+        // (a browser tier must not retry the destination).
+        assert!(matches!(err, CrwError::InvalidRequest(_)), "got {err:?}");
     }
 
     /// A redirect to a host that does not resolve is the target's fault, the

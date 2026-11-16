@@ -2011,6 +2011,12 @@ pub struct LlmConfig {
     /// value when it is one of their levels (`low` to `max`), else `low`.
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    /// `base_url` came from the API request (BYOK `baseUrl`), not from operator
+    /// config. The call then runs on the SSRF-guarded client, which refuses a
+    /// private or loopback destination and checks every redirect hop. Never read
+    /// from config: an operator endpoint on localhost (Ollama) stays reachable.
+    #[serde(skip)]
+    pub endpoint_from_request: bool,
     /// Budget in milliseconds for one structured-extraction LLM call, its
     /// schema-validation retry included; the change-tracking judge uses it too.
     /// Basis mode gets at least 300000. Raise it for slow self-hosted models.
@@ -2033,6 +2039,7 @@ impl Default for LlmConfig {
             require_byok_header: None,
             temperature: None,
             reasoning_effort: None,
+            endpoint_from_request: false,
             timeout_ms: default_llm_timeout_ms(),
         }
     }

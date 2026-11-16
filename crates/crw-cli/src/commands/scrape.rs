@@ -265,18 +265,16 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
             None, // render_js = None → auto, but with no JS renderer it stays HTTP
             args.css.clone(),
             args.xpath.clone(),
-            args.proxy.clone(),
+            // The CLI user is the operator: `--proxy` rides the renderer's rotator
+            // (trusted, may be local such as Tor on 127.0.0.1), not the request
+            // field, which carries caller-supplied (BYOP) proxies that must be public.
+            None,
             args.stealth,
             args.prompt.clone(),
             extract_schema.clone(),
         );
 
-        let http_renderer = match FallbackRenderer::new(
-            &http_cfg,
-            "crw/0.7.0",
-            args.proxy.as_deref(),
-            &stealth_config,
-        ) {
+        let http_renderer = match cli_renderer(&http_cfg, args.proxy.as_deref(), &stealth_config) {
             Ok(r) => Arc::new(r),
             Err(e) => {
                 eprintln!("error: failed to build renderer: {e}");
@@ -395,12 +393,8 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
             }
         }
 
-        let renderer = match FallbackRenderer::new(
-            &renderer_config,
-            "crw/0.7.0",
-            args.proxy.as_deref(),
-            &stealth_config,
-        ) {
+        let renderer = match cli_renderer(&renderer_config, args.proxy.as_deref(), &stealth_config)
+        {
             Ok(r) => Arc::new(r),
             Err(e) => {
                 eprintln!("error: failed to build renderer: {e}");
@@ -415,7 +409,7 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
             if force_js { Some(true) } else { None },
             args.css,
             args.xpath,
-            args.proxy.clone(),
+            None, // `--proxy` rides the renderer's rotator, see above
             args.stealth,
             args.prompt,
             extract_schema,
@@ -798,6 +792,20 @@ async fn run_local_file(args: &ScrapeArgs) -> Result<(), CmdError> {
         None => println!("{content}"),
     }
     Ok(())
+}
+
+/// The CLI renderer, with `--proxy` as an operator proxy: passed to `new` for
+/// the HTTP tier and attached as a rotator so it also reaches REQUEST_PROXY,
+/// which the JS tiers read (as `crawl` does).
+fn cli_renderer(
+    cfg: &RendererConfig,
+    proxy: Option<&str>,
+    stealth: &crw_core::config::StealthConfig,
+) -> crw_core::CrwResult<FallbackRenderer> {
+    let rotator = crw_core::ProxyRotator::build(&[], proxy, crw_core::ProxyRotation::default())
+        .map_err(crw_core::CrwError::ConfigError)?
+        .map(Arc::new);
+    FallbackRenderer::new(cfg, "crw/0.7.0", proxy, stealth)?.with_proxy_rotator(rotator)
 }
 
 #[allow(clippy::too_many_arguments)]

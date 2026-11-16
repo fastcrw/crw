@@ -288,6 +288,9 @@ pub async fn search_inner(
     req: SearchRequest,
 ) -> Result<SearchResponse, CrwError> {
     validate_request(&req, state.config.search.max_limit)?;
+    if let (Some(base_url), Some(_)) = (req.base_url.as_deref(), req.llm_api_key.as_ref()) {
+        crw_crawl::single::check_caller_llm_endpoint(base_url).await?;
+    }
 
     let client = state
         .searxng
@@ -1238,6 +1241,8 @@ fn build_byok_search_llm_config(
     }
     if let Some(b) = &req.base_url {
         cfg.base_url = Some(b.clone());
+        // A caller-chosen endpoint runs on the SSRF-guarded LLM client.
+        cfg.endpoint_from_request = true;
     }
     // Never inherit the server's reasoning_effort into a BYOK request — the
     // customer's endpoint must receive only what they explicitly configure.

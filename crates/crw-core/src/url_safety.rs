@@ -7,12 +7,86 @@ pub fn safe_redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
         if attempt.previous().len() >= 10 {
             attempt.error("too many redirects")
-        } else if let Err(e) = validate_safe_url_blocking_resolved(attempt.url()) {
-            attempt.error(format!("redirect blocked: {e}"))
+        } else if let Err(e) = check_redirect_target(attempt.url()) {
+            attempt.error(e)
         } else {
             attempt.follow()
         }
     })
+}
+
+/// A destination the SSRF policy refuses: a blocked literal address, a blocked
+/// host name, or a name that resolved to a blocked address.
+///
+/// Typed so it survives the transport's error wrapping: the renderer ladder
+/// must stop on it (a later tier would only retry the same destination, and a
+/// browser tier has weaker guards than the one that refused), while a DNS
+/// failure or a malformed URL stays an ordinary failure the ladder may recover.
+#[derive(Debug)]
+pub struct DestinationRefused(pub String);
+
+impl std::fmt::Display for DestinationRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DestinationRefused {}
+
+/// The [`DestinationRefused`] in `e` or anywhere in its source chain.
+pub fn refused_destination<'a>(
+    e: &'a (dyn std::error::Error + 'static),
+) -> Option<&'a DestinationRefused> {
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(e);
+    while let Some(err) = cur {
+        if let Some(refused) = err.downcast_ref::<DestinationRefused>() {
+            return Some(refused);
+        }
+        cur = err.source();
+    }
+    None
+}
+
+/// The verdict on one redirect hop, shared by the reqwest and wreq policies.
+///
+/// A policy refusal is a [`DestinationRefused`]; a URL-shape problem or a DNS
+/// failure is a plain `"redirect blocked: ..."` message, whose text
+/// `http_only::dead_redirect_reason` matches.
+pub fn check_redirect_target(
+    url: &url::Url,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // A non-HTTP target (`mailto:`) has no host to refuse; it is a dead link,
+    // left to the shape check below.
+    if matches!(url.scheme(), "http" | "https") {
+        validate_safe_host(url).map_err(DestinationRefused)?;
+    }
+    let blocked = |e: String| -> Box<dyn std::error::Error + Send + Sync> {
+        format!("redirect blocked: {e}").into()
+    };
+    validate_safe_url(url).map_err(blocked)?;
+    if std::env::var("CRW_ALLOW_LOOPBACK_FOR_TESTS").as_deref() == Ok("1") {
+        return Ok(());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| blocked("URL has no host".into()))?;
+    let stripped = host.trim_start_matches('[').trim_end_matches(']');
+    if stripped.parse::<IpAddr>().is_ok() {
+        return Ok(());
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| blocked("URL has no resolvable port".into()))?;
+    // Blocking DNS: reqwest's redirect callback cannot await.
+    let ips: Vec<IpAddr> = (stripped, port)
+        .to_socket_addrs()
+        .map_err(|_| blocked("DNS resolution failed".into()))?
+        .map(|addr| addr.ip())
+        .collect();
+    if ips.is_empty() {
+        return Err(blocked("DNS resolution returned no addresses".into()));
+    }
+    validate_resolved_ips(ips).map_err(|e| Box::new(DestinationRefused(e)) as _)
 }
 
 /// Validate that a URL is safe to fetch (not targeting internal/private networks).
@@ -187,6 +261,123 @@ async fn resolve_and_validate(url: &url::Url) -> Result<(), String> {
     .map_err(|_| "DNS resolution timed out".to_string())?
     .map_err(|_| "DNS resolution failed".to_string())?;
     validate_resolved_ips(addrs.map(|addr| addr.ip()))
+}
+
+/// Resolve `host` and refuse the answer if any address is blocked, returning
+/// the addresses that passed. The connect-time half of the SSRF guard: a
+/// client that dials what this returns dials what was checked, so a name that
+/// answers "public" to the pre-flight check and "private" a moment later (DNS
+/// rebinding) cannot move the socket.
+///
+/// `exempt` names hosts resolved without the check: an operator-configured
+/// proxy, which may legitimately live on a private address.
+pub async fn resolve_checked(host: &str, exempt: &[String]) -> Result<Vec<IpAddr>, HostRejection> {
+    let addrs = tokio::time::timeout(DNS_RESOLVE_TIMEOUT, tokio::net::lookup_host((host, 0)))
+        .await
+        .map_err(|_| HostRejection::Unresolved("DNS resolution timed out".into()))?
+        .map_err(|_| HostRejection::Unresolved("DNS resolution failed".into()))?;
+    let ips: Vec<IpAddr> = addrs.map(|addr| addr.ip()).collect();
+    if ips.is_empty() {
+        return Err(HostRejection::Unresolved(
+            "DNS resolution returned no addresses".into(),
+        ));
+    }
+    let test_allow_loopback = std::env::var("CRW_ALLOW_LOOPBACK_FOR_TESTS").as_deref() == Ok("1");
+    let exempted = exempt.iter().any(|e| e.eq_ignore_ascii_case(host));
+    if !test_allow_loopback && !exempted {
+        validate_resolved_ips(ips.iter().copied()).map_err(HostRejection::Policy)?;
+    }
+    Ok(ips)
+}
+
+/// reqwest resolver backed by [`resolve_checked`]. Install it on every client
+/// that fetches a caller- or page-controlled URL.
+///
+/// With an HTTP(S) proxy reqwest resolves only the proxy host, never the
+/// target, so the proxy's host must be in `exempt` or a proxy on a private
+/// address stops working. IP-literal hosts skip DNS entirely and stay covered
+/// by [`validate_safe_url`] and [`safe_redirect_policy`].
+pub struct SsrfResolver {
+    exempt: std::sync::Arc<[String]>,
+}
+
+impl SsrfResolver {
+    /// Exempts `proxy`'s host (when given) plus every environment proxy host.
+    pub fn new(proxy: Option<&str>) -> Self {
+        let mut exempt = env_proxy_hosts();
+        exempt.extend(proxy.and_then(proxy_host));
+        Self {
+            exempt: exempt.into(),
+        }
+    }
+
+    /// The exemption list, for transport adapters that cannot use this type
+    /// directly (the wreq tier).
+    pub fn exempt(&self) -> std::sync::Arc<[String]> {
+        self.exempt.clone()
+    }
+}
+
+impl reqwest::dns::Resolve for SsrfResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let exempt = self.exempt.clone();
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let ips = resolve_checked(&host, &exempt)
+                .await
+                .map_err(resolver_error)?;
+            let addrs: reqwest::dns::Addrs =
+                Box::new(ips.into_iter().map(|ip| std::net::SocketAddr::new(ip, 0)));
+            Ok(addrs)
+        })
+    }
+}
+
+/// A [`resolve_checked`] failure as a transport resolver error: a policy
+/// refusal stays a typed [`DestinationRefused`] through the transport's
+/// wrapping, a DNS failure is an ordinary error.
+pub fn resolver_error(e: HostRejection) -> Box<dyn std::error::Error + Send + Sync> {
+    match e {
+        HostRejection::Policy(m) => Box::new(DestinationRefused(m)),
+        HostRejection::Unresolved(m) => m.into(),
+    }
+}
+
+/// Hosts of the proxies reqwest picks up from the environment on its own
+/// (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, either case). Operator-set, so
+/// trusted like a configured proxy.
+pub fn env_proxy_hosts() -> Vec<String> {
+    [
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .iter()
+    .filter_map(|k| std::env::var(k).ok())
+    .filter_map(|v| proxy_host(&v))
+    .collect()
+}
+
+/// Host of a proxy URL. reqwest accepts a bare `host:port` for env proxies and
+/// assumes `http://`, so this does too.
+fn proxy_host(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let parsed = url::Url::parse(raw)
+        .ok()
+        .filter(|u| u.has_host())
+        .or_else(|| url::Url::parse(&format!("http://{raw}")).ok())?;
+    let host = parsed.host_str()?;
+    Some(
+        host.trim_start_matches('[')
+            .trim_end_matches(']')
+            .to_string(),
+    )
 }
 
 /// Upper bound on a single SSRF DNS resolution. Purpose is to bound a stalled /
@@ -527,5 +718,58 @@ mod tests {
         let res = validate_safe_url_resolved(&url("https://nonexistent.invalid")).await;
         assert!(res.is_err());
         assert!(start.elapsed() < DNS_RESOLVE_TIMEOUT + std::time::Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn connect_time_resolver_refuses_blocked_answers_unless_exempt() {
+        // `localhost` answers loopback: the pinned resolver must refuse it, so a
+        // rebinding name that flips to a private address cannot be dialed.
+        assert!(matches!(
+            resolve_checked("localhost", &[]).await,
+            Err(HostRejection::Policy(_))
+        ));
+        // An operator proxy on a private address stays reachable.
+        let ips = resolve_checked("localhost", &["LOCALHOST".to_string()])
+            .await
+            .expect("exempt host resolves");
+        assert!(ips.iter().all(|ip| ip.is_loopback()));
+    }
+
+    #[test]
+    fn proxy_host_reads_urls_and_bare_host_port() {
+        assert_eq!(
+            proxy_host("http://u:p@squid:3128").as_deref(),
+            Some("squid")
+        );
+        assert_eq!(
+            proxy_host("socks5h://10.0.0.5:1080").as_deref(),
+            Some("10.0.0.5")
+        );
+        assert_eq!(proxy_host("proxy.corp:8080").as_deref(), Some("proxy.corp"));
+        assert_eq!(proxy_host("http://[::1]:3128").as_deref(), Some("::1"));
+        assert_eq!(proxy_host("  "), None);
+    }
+
+    #[test]
+    fn redirect_verdict_types_policy_refusals_only() {
+        let refused = check_redirect_target(&url("http://169.254.169.254/latest")).unwrap_err();
+        assert!(refused_destination(refused.as_ref()).is_some());
+        let refused = check_redirect_target(&url("http://localhost/")).unwrap_err();
+        assert!(refused_destination(refused.as_ref()).is_some());
+        // Shape and DNS failures stay recoverable, with the text
+        // `dead_redirect_reason` matches.
+        let scheme = check_redirect_target(&url("mailto:a@example.com")).unwrap_err();
+        assert!(refused_destination(scheme.as_ref()).is_none());
+        assert!(
+            scheme
+                .to_string()
+                .contains("Only http/https URLs are allowed")
+        );
+        let dns = check_redirect_target(&url("https://nonexistent.invalid/")).unwrap_err();
+        assert!(refused_destination(dns.as_ref()).is_none());
+        assert!(dns.to_string().contains("DNS resolution"));
+        let long = format!("https://example.com/{}", "a".repeat(3000));
+        let long = check_redirect_target(&url(&long)).unwrap_err();
+        assert!(refused_destination(long.as_ref()).is_none());
     }
 }

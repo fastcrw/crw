@@ -1145,6 +1145,22 @@ fn build_auth_response(request_id: &str, creds: Option<(&str, &str)>) -> serde_j
     }
 }
 
+/// The credentials to answer one `Fetch.authRequired` with: the proxy's, and only
+/// for a proxy's own challenge (`authChallenge.source == "Proxy"`).
+fn challenge_creds<'a>(
+    params: &serde_json::Value,
+    creds: Option<&'a (String, String)>,
+) -> Option<(&'a str, &'a str)> {
+    let from_proxy = params
+        .get("authChallenge")
+        .and_then(|c| c.get("source"))
+        .and_then(|s| s.as_str())
+        == Some("Proxy");
+    creds
+        .filter(|_| from_proxy)
+        .map(|(u, p)| (u.as_str(), p.as_str()))
+}
+
 /// Drive `Fetch.authRequired` events to supply DataImpulse credentials per
 /// request. Mirrors `run_intercept_pump`'s shape (borrow `&CdpConnection`,
 /// filter by `session_id`, exit on `Closed`).
@@ -1184,7 +1200,10 @@ async fn run_auth_pump(
         if request_id.is_empty() {
             continue;
         }
-        let creds_ref = creds.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
+        // Proxy credentials answer only a proxy's challenge. A page's own 401
+        // (source "Server") gets CancelAuth: any origin could otherwise ask for
+        // Basic auth and read the proxy username and password.
+        let creds_ref = challenge_creds(&ev.params, creds.as_ref());
         let payload = build_auth_response(&request_id, creds_ref);
         let _ = conn
             .send_recv(
@@ -1312,6 +1331,11 @@ struct OutboundCtx {
     doc_host: String,
     /// Set when a check failed because our own resolver could not answer.
     unresolved: std::sync::atomic::AtomicBool,
+    /// Frame id of the page's main frame (Chrome uses the target id).
+    main_frame_id: String,
+    /// Set when the policy refused the main frame's own document: the page
+    /// navigated, or was redirected, into a blocked destination.
+    refused_document: std::sync::atomic::AtomicBool,
 }
 
 /// Host verdicts already decided during one render. See [`outbound_allowed`].
@@ -1710,6 +1734,12 @@ async fn run_intercept_pump(
 
         // Blocklist first: a blocked request never leaves the browser, so there
         // is no destination to validate and no lookup to pay for.
+        // The page's own document request (navigation or redirect hop), as
+        // opposed to a subresource or an iframe: refusing it decides the render.
+        let main_document = event_session == session_id
+            && resource_type == "Document"
+            && ev.params.get("frameId").and_then(|v| v.as_str())
+                == Some(ctx.main_frame_id.as_str());
         let blocked_by_list = blocklist
             .and_then(|list| list.should_block(resource_type, &req_url))
             .map(|reason| match reason {
@@ -1723,6 +1753,10 @@ async fn run_intercept_pump(
                     Some(label) => Some(label),
                     None => outbound_block_label(&req_url, ctx).await,
                 };
+                if main_document && block_label == Some(BLOCK_LABEL_POLICY) {
+                    ctx.refused_document
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                }
                 let (method, params) = match block_label {
                     Some(label) => {
                         crw_core::metrics::metrics()
@@ -2566,7 +2600,16 @@ impl CdpRenderer {
             )));
         }
 
+        // LightPanda may not emit `Fetch.requestPaused`, so where it landed is the
+        // one check its page gets from crw; a page that cannot say where it is
+        // goes to the next tier instead. Chrome checks every request itself.
+        if final_href.is_none() && self.name == "lightpanda" {
+            return Err(CrwError::RendererError(
+                "lightpanda: could not read where the page landed".into(),
+            ));
+        }
         let final_url = final_href.filter(|h| *h != url);
+        crate::check_landing(url, final_url.as_deref(), &deadline).await?;
         let budget_warning = self.budget_warning(truncated, settled);
         Ok(FetchResult {
             url: url.to_string(),
@@ -2760,7 +2803,16 @@ impl CdpRenderer {
             )));
         }
 
+        // LightPanda may not emit `Fetch.requestPaused`, so where it landed is the
+        // one check its page gets from crw; a page that cannot say where it is
+        // goes to the next tier instead. Chrome checks every request itself.
+        if final_href.is_none() && self.name == "lightpanda" {
+            return Err(CrwError::RendererError(
+                "lightpanda: could not read where the page landed".into(),
+            ));
+        }
         let final_url = final_href.filter(|h| *h != url);
+        crate::check_landing(url, final_url.as_deref(), &deadline).await?;
         let budget_warning = self.budget_warning(truncated, settled);
         Ok(FetchResult {
             url: url.to_string(),
@@ -3615,11 +3667,18 @@ impl CdpRenderer {
         //      authenticates correctly.
         //   2. Otherwise the chrome_proxy tier's DataImpulse base creds, with
         //      the country suffix composed from REQUEST_COUNTRY → default → none.
-        let request_proxy_auth: Option<(String, String)> = crate::REQUEST_PROXY
-            .try_with(|p| p.as_ref().and_then(|e| e.auth().cloned()))
-            .ok()
-            .flatten();
+        //   A caller-supplied (BYOP) proxy never gets (2): those are the
+        //   operator's credentials and the caller runs that proxy.
+        let request_proxy = crate::REQUEST_PROXY.try_with(|p| p.clone()).ok().flatten();
+        let caller_proxy = request_proxy
+            .as_ref()
+            .is_some_and(|e| e.is_caller_supplied());
+        let request_proxy_auth: Option<(String, String)> =
+            request_proxy.as_ref().and_then(|e| e.auth().cloned());
         let effective_creds: Option<(String, String)> = request_proxy_auth.or_else(|| {
+            if caller_proxy {
+                return None;
+            }
             let req_country = crate::REQUEST_COUNTRY
                 .try_with(|c| c.clone())
                 .ok()
@@ -3884,6 +3943,8 @@ impl CdpRenderer {
                 .and_then(|u| u.host_str().map(str::to_string))
                 .unwrap_or_default(),
             unresolved: std::sync::atomic::AtomicBool::new(false),
+            main_frame_id: target_id.clone(),
+            refused_document: std::sync::atomic::AtomicBool::new(false),
         };
         let outstanding: Outstanding = Arc::new(StdMutex::new(std::collections::HashSet::new()));
         let intercept_pump = run_intercept_pump(
@@ -3984,6 +4045,19 @@ impl CdpRenderer {
         // navigation failure lets a DNS brown-out be reported as an unreachable
         // target: refunded, and invisible to the 5xx watchdog.
         let outcome = match outcome {
+            // The policy refused the page's own document (a redirect into a
+            // blocked range): terminal, so no later tier retries the destination.
+            _ if outbound_ctx
+                .refused_document
+                .load(std::sync::atomic::Ordering::Relaxed) =>
+            {
+                tracing::warn!(
+                    url = %LogUrl(&url),
+                    tier = %self.name,
+                    "SSRF policy refused the page document",
+                );
+                Err(crate::http_only::destination_refused(url))
+            }
             Err(err)
                 if outbound_ctx
                     .unresolved
@@ -4689,6 +4763,24 @@ mod tests {
         assert!(v["authChallengeResponse"].get("password").is_none());
     }
 
+    /// Proxy credentials answer a proxy's challenge only: an origin that asks
+    /// for Basic auth (source "Server") must not receive them.
+    #[test]
+    fn proxy_credentials_never_answer_an_origin_challenge() {
+        let creds = ("user__cr.us".to_string(), "pw".to_string());
+        let proxy = serde_json::json!({ "authChallenge": { "source": "Proxy" } });
+        let server = serde_json::json!({ "authChallenge": { "source": "Server" } });
+        assert_eq!(
+            super::challenge_creds(&proxy, Some(&creds)),
+            Some(("user__cr.us", "pw"))
+        );
+        assert_eq!(super::challenge_creds(&server, Some(&creds)), None);
+        assert_eq!(
+            super::challenge_creds(&serde_json::json!({}), Some(&creds)),
+            None
+        );
+    }
+
     #[test]
     fn auth_response_no_password_leak_on_cancel() {
         // Sanity: a CancelAuth payload never carries credentials, even if the
@@ -5085,6 +5177,8 @@ mod tests {
             budget: std::time::Duration::from_secs(5),
             doc_host: String::new(),
             unresolved: std::sync::atomic::AtomicBool::new(false),
+            main_frame_id: String::new(),
+            refused_document: std::sync::atomic::AtomicBool::new(false),
         }
     }
 

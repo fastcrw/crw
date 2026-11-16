@@ -76,6 +76,33 @@ pub(crate) fn shared_client() -> &'static reqwest::Client {
     })
 }
 
+/// The client for an LLM endpoint the API caller chose
+/// ([`LlmConfig::endpoint_from_request`]): the connect-time SSRF resolver and the
+/// per-hop redirect check, so a caller `baseUrl` cannot reach loopback, private
+/// or metadata addresses (directly, by DNS rebinding, or by redirect).
+pub(crate) fn guarded_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .redirect(crw_core::url_safety::safe_redirect_policy())
+            .dns_resolver(std::sync::Arc::new(
+                crw_core::url_safety::SsrfResolver::new(None),
+            ))
+            .build()
+            .expect("reqwest client build (LLM guarded)")
+    })
+}
+
+/// [`guarded_client`] for a caller-chosen endpoint, else [`shared_client`].
+pub(crate) fn client_for(guarded: bool) -> &'static reqwest::Client {
+    if guarded {
+        guarded_client()
+    } else {
+        shared_client()
+    }
+}
+
 /// hyper's wording for a pooled keep-alive connection the peer had already
 /// closed. Matched on the message because hyper is not a direct dependency of
 /// this crate; `crates/crw-extract/tests/transport_retry.rs` drives the real
@@ -168,6 +195,7 @@ pub async fn extract_via_llm(
         format!("Extract the main article/content body from this HTML as markdown:\n\n{truncated}");
 
     let result = dispatch(
+        false, // operator config: `extract_via_llm` takes no caller endpoint
         provider,
         api_key,
         model,
@@ -200,6 +228,7 @@ pub async fn chat(
         ));
     }
     dispatch(
+        cfg.endpoint_from_request,
         &cfg.provider,
         &cfg.api_key,
         &cfg.model,
@@ -324,6 +353,7 @@ pub async fn scout_followups(
 
 #[allow(clippy::too_many_arguments)]
 async fn dispatch(
+    guarded: bool,
     provider: &str,
     api_key: &str,
     model: &str,
@@ -344,7 +374,7 @@ async fn dispatch(
         return Err(unknown_provider_error(provider));
     }
     let _llm_permit = crate::llm_gate::acquire_llm().await;
-    let client = shared_client();
+    let client = client_for(guarded);
     match provider.to_ascii_lowercase().as_str() {
         "anthropic" => {
             call_anthropic(
@@ -388,6 +418,7 @@ async fn dispatch(
                 max_tokens,
                 temperature,
                 reasoning_effort: reasoning_effort.map(str::to_string),
+                endpoint_from_request: guarded,
                 ..LlmConfig::default()
             };
             crate::responses::call_text(&cfg, system_prompt, user_msg, REQUEST_TIMEOUT).await
@@ -880,7 +911,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_provider_is_rejected_before_any_http_call() {
         let err = dispatch(
-            "gemini", "key", "model", None, 128, None, None, None, "sys", "user",
+            false, "gemini", "key", "model", None, 128, None, None, None, "sys", "user",
         )
         .await
         .expect_err("an unsupported provider must be rejected");

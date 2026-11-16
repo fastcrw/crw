@@ -32,7 +32,7 @@ fn resolve_request_proxy(
             req.proxy_rotation.unwrap_or_default(),
         )
         .map_err(crw_core::error::CrwError::InvalidRequest)?;
-        if let Some(byop) = byop {
+        if let Some(byop) = byop.map(crw_core::ProxyRotator::caller_supplied) {
             let host = url::Url::parse(&req.url)
                 .ok()
                 .and_then(|u| u.host_str().map(str::to_string));
@@ -40,6 +40,50 @@ fn resolve_request_proxy(
         }
     }
     Ok(renderer.pick_proxy_for_url(&req.url))
+}
+
+/// Refuse a caller-supplied (BYOP) proxy whose host is, or resolves to, a
+/// blocked address. The page URL guard does not cover the proxy hop, and the
+/// server dials the proxy itself. A proxy name that does not resolve is the
+/// proxy's fault, not the caller's target: 422, like an unreachable origin.
+pub async fn check_caller_proxy(entry: &crw_core::ProxyEntry) -> CrwResult<()> {
+    use crw_core::error::CrwError;
+    use crw_core::url_safety::HostRejection;
+    let redacted = crw_core::redact_proxy_url(entry.raw());
+    match crw_core::proxy::check_request_proxy(entry).await {
+        Ok(()) => Ok(()),
+        Err(HostRejection::Policy(_)) => Err(CrwError::InvalidRequest(format!(
+            "proxy '{redacted}' points to an address that is not allowed"
+        ))),
+        Err(HostRejection::Unresolved(_)) => Err(CrwError::TargetUnreachable(format!(
+            "proxy '{redacted}' could not be resolved"
+        ))),
+    }
+}
+
+/// Refuse a caller-supplied LLM `baseUrl` that is, or resolves to, a blocked
+/// address, or that does not resolve (fail-closed, the rule the route applies to
+/// the page URL: an endpoint we cannot place is not one we may call; behind an
+/// environment proxy the proxy would resolve it on our private side). A name
+/// that does not resolve is a 422, not the caller's 400. The call
+/// itself runs on the SSRF-guarded client (`LlmConfig::endpoint_from_request`), which pins
+/// the address it dials.
+pub async fn check_caller_llm_endpoint(base_url: &str) -> CrwResult<()> {
+    use crw_core::error::CrwError;
+    use crw_core::url_safety::HostRejection;
+    let refused =
+        || CrwError::InvalidRequest("baseUrl points to an address that is not allowed".into());
+    let url = url::Url::parse(base_url)
+        .map_err(|_| CrwError::InvalidRequest("baseUrl is not a valid URL".into()))?;
+    crw_core::url_safety::validate_safe_url(&url).map_err(|_| refused())?;
+    match crw_core::url_safety::classify_safe_host_resolved(&url).await {
+        Ok(()) => Ok(()),
+        Err(HostRejection::Policy(_)) => Err(refused()),
+        // Not the caller's fault and not billed (422), like an unreachable origin.
+        Err(HostRejection::Unresolved(_)) => Err(CrwError::TargetUnreachable(
+            "baseUrl host could not be resolved".into(),
+        )),
+    }
 }
 
 /// Scrape a single URL: fetch → extract → (optional) LLM structured extraction.
@@ -65,6 +109,15 @@ pub async fn scrape_url(
     // credential country; `REQUEST_PROXY` carries the resolved proxy (BYOP >
     // config) so BOTH the HTTP and JS/CDP paths egress through the same entry.
     let resolved_proxy = resolve_request_proxy(req, renderer)?;
+    if let Some(entry) = resolved_proxy.as_deref().filter(|e| e.is_caller_supplied()) {
+        check_caller_proxy(entry).await?;
+    }
+    // A caller-supplied LLM endpoint is a destination too: refuse a private one
+    // before any page is fetched (the LLM call happens after the render). Only
+    // when it will be used: `baseUrl` is read only alongside `llmApiKey`.
+    if let (Some(base_url), Some(_)) = (req.base_url.as_deref(), req.llm_api_key.as_ref()) {
+        check_caller_llm_endpoint(base_url).await?;
+    }
     // `REQUEST_SCREENSHOT` carries the (out-of-band) screenshot params into the
     // renderer stack so the CDP path can capture without trait-signature churn
     // (mirrors REQUEST_PROXY). `Some` only when `formats` asked for it.
@@ -341,6 +394,7 @@ async fn scrape_url_inner(
                         Some(entry) => HttpFetcher::with_proxy(
                             &effective_ua,
                             entry.raw(),
+                            !entry.is_caller_supplied(),
                             inject_stealth,
                             std::time::Duration::from_secs(30),
                         )?,
@@ -2024,6 +2078,8 @@ pub fn build_byok_llm_config(
     }
     if let Some(b) = &req.base_url {
         cfg.base_url = Some(b.clone());
+        // A caller-chosen endpoint runs on the SSRF-guarded LLM client.
+        cfg.endpoint_from_request = true;
     }
     Some(cfg)
 }
@@ -3434,6 +3490,48 @@ mod tests {
         };
         let cfg = build_byok_llm_config(&req, None).unwrap();
         assert_eq!(cfg.base_url.as_deref(), Some("https://byok.example.com/v1"));
+        // A caller-chosen endpoint runs on the SSRF-guarded LLM client.
+        assert!(cfg.endpoint_from_request);
+        // Without `baseUrl` the operator's endpoint is used, unguarded.
+        let server = LlmConfig {
+            base_url: Some("http://localhost:11434/v1".to_string()),
+            ..LlmConfig::default()
+        };
+        let req = ScrapeRequest {
+            llm_api_key: Some("sk-test".to_string()),
+            ..Default::default()
+        };
+        let cfg = build_byok_llm_config(&req, Some(&server)).unwrap();
+        assert!(!cfg.endpoint_from_request);
+    }
+
+    #[tokio::test]
+    async fn caller_llm_endpoint_on_a_blocked_destination_is_refused() {
+        for base_url in [
+            "http://127.0.0.1:9009",
+            "http://169.254.169.254/latest",
+            "http://[::1]:11434/v1",
+            "http://localhost:11434/v1",
+            "file:///etc/passwd",
+        ] {
+            let err = check_caller_llm_endpoint(base_url)
+                .await
+                .expect_err(base_url);
+            assert!(
+                matches!(err, crw_core::error::CrwError::InvalidRequest(_)),
+                "{base_url}: {err:?}"
+            );
+        }
+        assert!(
+            check_caller_llm_endpoint("https://93.184.215.14/v1")
+                .await
+                .is_ok()
+        );
+        // A name that does not resolve: fail-closed, but a 422, not the caller's 400.
+        assert!(matches!(
+            check_caller_llm_endpoint("https://nonexistent.invalid/v1").await,
+            Err(crw_core::error::CrwError::TargetUnreachable(_))
+        ));
     }
 
     #[test]

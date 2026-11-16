@@ -823,6 +823,81 @@ fn is_unrenderable_body_error(e: &CrwError) -> bool {
     )
 }
 
+/// The SSRF policy refused where the fetch was going: a connect-time DNS answer,
+/// a redirect hop, a browser main-frame request or a landing URL
+/// (`http_only::destination_refused`, `check_landing`). No tier may retry it:
+/// the next one would ask for the same destination, usually with weaker guards
+/// (Camoufox has none of its own). Nothing else in the renderer returns
+/// `InvalidRequest`.
+fn is_policy_refusal(e: &CrwError) -> bool {
+    matches!(e, CrwError::InvalidRequest(_))
+}
+
+/// Refuse a browser tier's page when the browser landed on a destination the
+/// SSRF policy refuses: a public URL that redirected (HTTP, meta refresh or
+/// script) into loopback, a private range or a metadata address.
+///
+/// Browser tiers navigate on their own, so the per-hop redirect check of the
+/// HTTP tiers never sees their hops. Chrome also checks every request through
+/// `Fetch.requestPaused`; Camoufox has no such surface, and whether a
+/// LightPanda build emits those events is not guaranteed, so this is the check
+/// every browser tier shares before its page is accepted. It sees only where
+/// the page ended up, not requests made on the way.
+///
+/// Skipped for the requested host itself (validated before the fetch) and for
+/// non-http(s) landings (`about:blank`, error pages). A landing we cannot
+/// resolve fails this attempt only: the next tier still gets its own.
+#[cfg(any(feature = "cdp", feature = "camoufox"))]
+const LANDING_CHECK_MIN_BUDGET: Duration = Duration::from_millis(500);
+
+#[cfg(any(feature = "cdp", feature = "camoufox"))]
+pub(crate) async fn check_landing(
+    requested: &str,
+    landed: Option<&str>,
+    deadline: &crw_core::Deadline,
+) -> CrwResult<()> {
+    use crw_core::url_safety::HostRejection;
+    let Some(landed_url) = landed.and_then(|l| url::Url::parse(l).ok()) else {
+        return Ok(());
+    };
+    if !matches!(landed_url.scheme(), "http" | "https") {
+        return Ok(());
+    }
+    let host_of = |u: &url::Url| u.host_str().map(str::to_ascii_lowercase);
+    if url::Url::parse(requested).ok().as_ref().and_then(host_of) == host_of(&landed_url) {
+        return Ok(());
+    }
+    // Floor: a render may finish with its deadline already spent, and a zero
+    // budget would drop a page that is fine.
+    let budget = deadline.remaining().max(LANDING_CHECK_MIN_BUDGET);
+    let verdict = tokio::time::timeout(
+        budget,
+        crw_core::url_safety::classify_safe_host_resolved(&landed_url),
+    )
+    .await;
+    match verdict {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(HostRejection::Policy(reason))) => {
+            tracing::warn!(
+                url = %LogUrl(&requested),
+                landed = %LogUrl(&landed_url.as_str()),
+                reason = %reason,
+                "SSRF policy refused where the browser landed",
+            );
+            Err(http_only::destination_refused(requested))
+        }
+        Ok(Err(HostRejection::Unresolved(_))) | Err(_) => Err(CrwError::RendererError(
+            "could not verify where the page landed".into(),
+        )),
+    }
+}
+
+/// An error no other tier can turn into a page: an unrenderable body or a
+/// policy refusal.
+fn is_terminal_fetch_error(e: &CrwError) -> bool {
+    is_unrenderable_body_error(e) || is_policy_refusal(e)
+}
+
 /// A plain-HTTP failure the Chrome-impersonating client may get past: the
 /// origin turned reqwest's TLS handshake or headers away. Not a body no
 /// client turns into a page, not a dead origin (`TargetUnreachable`: DNS,
@@ -830,7 +905,7 @@ fn is_unrenderable_body_error(e: &CrwError) -> bool {
 /// to every client, and a second request would only re-learn that. The auto
 /// arm's comment at its call site has the measurements.
 fn is_fingerprint_shaped_transport_error(e: &CrwError) -> bool {
-    !is_unrenderable_body_error(e)
+    !is_terminal_fetch_error(e)
         && !matches!(e, CrwError::TargetUnreachable(_))
         && !matches!(e, CrwError::Timeout(_))
 }
@@ -858,7 +933,7 @@ const PROXY_CLIENT_CACHE_CAP: usize = 512;
 /// resolved REQUEST_PROXY raw URL, if any (None fetches direct).
 #[cfg(feature = "impersonated")]
 type ImpersonatedHopFactory =
-    Arc<dyn Fn(Option<&str>) -> CrwResult<Arc<dyn PageFetcher>> + Send + Sync>;
+    Arc<dyn Fn(Option<&crw_core::ProxyEntry>) -> CrwResult<Arc<dyn PageFetcher>> + Send + Sync>;
 
 /// Why the impersonated hop fired; label for logs and the route-decision
 /// metric. Kept as an enum (not a bool) so the Failover reason mapping cannot
@@ -1181,7 +1256,11 @@ impl FallbackRenderer {
                 let fetcher = match proxy {
                     // Fail-closed like the warm path: a bad proxy URL is a hard
                     // error, never a silent direct connection.
-                    Some(raw) => impersonated::ImpersonatedFetcher::with_proxy(raw, timeout)?,
+                    Some(entry) => impersonated::ImpersonatedFetcher::with_proxy(
+                        entry.raw(),
+                        !entry.is_caller_supplied(),
+                        timeout,
+                    )?,
                     None => impersonated::ImpersonatedFetcher::new(timeout)?,
                 };
                 Ok(Arc::new(fetcher) as Arc<dyn PageFetcher>)
@@ -1632,6 +1711,7 @@ impl FallbackRenderer {
             Ok(Arc::new(http_only::HttpFetcher::with_proxy(
                 &self.http_ua,
                 entry.raw(),
+                !entry.is_caller_supplied(),
                 self.http_inject_stealth,
                 std::time::Duration::from_millis(self.http_timeout_ms),
             )?) as Arc<dyn PageFetcher>)
@@ -1648,10 +1728,13 @@ impl FallbackRenderer {
         entry: &crw_core::ProxyEntry,
         build: impl FnOnce() -> CrwResult<Arc<dyn PageFetcher>>,
     ) -> CrwResult<Arc<dyn PageFetcher>> {
+        // Provenance is part of the key: a caller-supplied entry gets a client
+        // whose resolver checks the proxy host, an operator one does not.
+        let key = format!("{}{}", entry.is_caller_supplied(), entry.raw());
         if let Some(f) = cache
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .get(entry.raw())
+            .get(&key)
             .cloned()
         {
             return Ok(f);
@@ -1662,7 +1745,7 @@ impl FallbackRenderer {
         if cache.len() >= PROXY_CLIENT_CACHE_CAP {
             cache.clear();
         }
-        cache.insert(entry.raw().to_string(), fetcher.clone());
+        cache.insert(key, fetcher.clone());
         Ok(fetcher)
     }
 
@@ -1690,6 +1773,7 @@ impl FallbackRenderer {
         Self::cached_per_proxy_fetcher(&self.impersonated_client_cache, &entry, || {
             Ok(Arc::new(impersonated::ImpersonatedFetcher::with_proxy(
                 entry.raw(),
+                !entry.is_caller_supplied(),
                 std::time::Duration::from_millis(self.impersonated_timeout_ms),
             )?) as Arc<dyn PageFetcher>)
         })
@@ -1789,8 +1873,10 @@ impl FallbackRenderer {
         deadline: crw_core::Deadline,
         trigger: ImpersonatedTrigger,
         ladder_follows: bool,
-    ) -> Option<FetchResult> {
-        self.impersonated.as_ref()?;
+    ) -> CrwResult<Option<FetchResult>> {
+        if self.impersonated.is_none() {
+            return Ok(None);
+        }
         // Budget split, mirroring the cloak-first arm's
         // `CLOAK_FIRST_LADDER_RESERVE_MS`: the hop runs BEFORE the ladder on
         // the SHARED request deadline, so without a cap a slow or futile hop
@@ -1808,14 +1894,14 @@ impl FallbackRenderer {
         // a `renderJs: false` request, which runs no ladder either.
         let remaining = deadline.remaining();
         if remaining < MIN_TIER_BUDGET {
-            return None;
+            return Ok(None);
         }
         let deadline = if self.js_renderers.is_empty() || !ladder_follows {
             deadline
         } else {
             let share = remaining / 2;
             if share < MIN_TIER_BUDGET {
-                return None;
+                return Ok(None);
             }
             crw_core::Deadline::now_plus(share)
         };
@@ -1824,11 +1910,8 @@ impl FallbackRenderer {
         let kind = RendererKind::ImpersonatedHttp;
         // Fresh, use-once client for this attempt (see the factory field's
         // doc). REQUEST_PROXY stays fail-closed through `with_proxy`.
-        let proxy_raw = REQUEST_PROXY
-            .try_with(|p| p.as_ref().map(|e| e.raw().to_string()))
-            .ok()
-            .flatten();
-        let fetcher = match (self.impersonated_hop_factory)(proxy_raw.as_deref()) {
+        let proxy = REQUEST_PROXY.try_with(|p| p.clone()).ok().flatten();
+        let fetcher = match (self.impersonated_hop_factory)(proxy.as_deref()) {
             Ok(f) => f,
             Err(e) => {
                 tracing::warn!(
@@ -1841,7 +1924,7 @@ impl FallbackRenderer {
                     .render_route_decision_total
                     .with_label_values(&[kind.as_str(), "error"])
                     .inc();
-                return None;
+                return Ok(None);
             }
         };
         match fetcher.fetch(url, headers, None, deadline).await {
@@ -1870,7 +1953,7 @@ impl FallbackRenderer {
                         .render_route_decision_total
                         .with_label_values(&[kind.as_str(), "success"])
                         .inc();
-                    Some(r)
+                    Ok(Some(r))
                 } else {
                     tracing::info!(
                         url = %LogUrl(&url),
@@ -1882,9 +1965,12 @@ impl FallbackRenderer {
                         .render_route_decision_total
                         .with_label_values(&[kind.as_str(), "blocked"])
                         .inc();
-                    None
+                    Ok(None)
                 }
             }
+            // The SSRF policy refused the destination: terminal, the ladder must
+            // not hand it to a browser tier.
+            Err(e) if is_policy_refusal(&e) => Err(e),
             Err(e) => {
                 tracing::info!(
                     url = %LogUrl(&url),
@@ -1896,7 +1982,7 @@ impl FallbackRenderer {
                     .render_route_decision_total
                     .with_label_values(&[kind.as_str(), "error"])
                     .inc();
-                None
+                Ok(None)
             }
         }
     }
@@ -2562,7 +2648,7 @@ impl FallbackRenderer {
                     if let Some(trigger) = trigger
                         && let Some(hop) = self
                             .try_impersonated_hop(url, headers, deadline, trigger, false)
-                            .await
+                            .await?
                     {
                         return Ok(hop);
                     }
@@ -2596,7 +2682,7 @@ impl FallbackRenderer {
                     // ~23s and a Camoufox session) and still fails, with the
                     // precise cause lost behind the ladder's generic "no usable
                     // content".
-                    Err(e) if !self.js_renderers.is_empty() && !is_unrenderable_body_error(&e) => {
+                    Err(e) if !self.js_renderers.is_empty() && !is_terminal_fetch_error(&e) => {
                         tracing::info!(
                             url = %LogUrl(&url),
                             error = %LogErr(&e),
@@ -2814,7 +2900,7 @@ impl FallbackRenderer {
                                 ImpersonatedTrigger::Transport,
                                 true,
                             )
-                            .await
+                            .await?
                         {
                             return Ok(r);
                         }
@@ -2828,7 +2914,7 @@ impl FallbackRenderer {
                     // same reason as the `renderJs:true` arm above: a body that is
                     // not a web page, or one over the size cap, is one no renderer
                     // can fix, and the climb only hides the precise cause.
-                    Err(e) if !self.js_renderers.is_empty() && !is_unrenderable_body_error(&e) => {
+                    Err(e) if !self.js_renderers.is_empty() && !is_terminal_fetch_error(&e) => {
                         tracing::info!(
                             url = %LogUrl(&url),
                             error = %LogErr(&e),
@@ -2974,7 +3060,7 @@ impl FallbackRenderer {
                             ImpersonatedTrigger::Wall,
                             true,
                         )
-                        .await
+                        .await?
                 {
                     return Ok(r);
                 }
@@ -3322,6 +3408,15 @@ impl FallbackRenderer {
             }
         }
         // The still-pending future (if any) drops at scope end → PoolGuard reaper.
+
+        // A leg the SSRF policy refused decides the request: the destination is
+        // refused whichever tier asked for it, so the other leg's page is not used.
+        if matches!(&lp_res, Some(Err(e)) if is_policy_refusal(e)) {
+            return Err(lp_res.and_then(Result::err).expect("matched above"));
+        }
+        if matches!(&ch_res, Some(Err(e)) if is_policy_refusal(e)) {
+            return Err(ch_res.and_then(Result::err).expect("matched above"));
+        }
 
         // Finalize. Record side-effects only for COMPLETED tiers (Some result).
         let lp_accept =
@@ -3720,6 +3815,7 @@ impl FallbackRenderer {
                 }
                 // breaker open / no permit → fall back to the serial loop.
                 Ok(None) => {}
+                Err(e) if is_policy_refusal(&e) => return Err(e),
                 Err(e) => last_error = Some(e),
             }
         }
@@ -4240,6 +4336,14 @@ impl FallbackRenderer {
                             keeper
                         }
                     });
+                }
+                // The SSRF policy refused the destination (main-frame block or landing
+                // check): no later tier may retry it, and it is no tier's fault.
+                Err(e) if is_policy_refusal(&e) => {
+                    if let Some(g) = probe_guard.take() {
+                        g.disarm();
+                    }
+                    return Err(e);
                 }
                 Err(e) => {
                     // A replayed hedge leg was already logged as `hedge leg failed`.
@@ -8242,6 +8346,145 @@ mod tests {
             .await
             .expect("a dead HTTP tier must escalate, not abort the request");
         assert!(res.html.contains("CHROME-"));
+    }
+
+    /// A destination the SSRF policy refused (connect-time DNS answer, redirect
+    /// hop, browser main frame, landing URL) is terminal: no later tier may
+    /// fetch it. Before, the ladder treated the HTTP tier's refused redirect as
+    /// an ordinary failure and handed the URL to a browser tier, which followed
+    /// the same redirect into the internal address.
+    #[tokio::test]
+    async fn a_policy_refusal_is_never_retried_by_another_tier() {
+        struct Refused(&'static str);
+        #[async_trait::async_trait]
+        impl PageFetcher for Refused {
+            async fn fetch(
+                &self,
+                url: &str,
+                _h: &HashMap<String, String>,
+                _w: Option<u64>,
+                _d: crw_core::Deadline,
+            ) -> CrwResult<FetchResult> {
+                Err(http_only::destination_refused(url))
+            }
+            fn name(&self) -> &str {
+                self.0
+            }
+            fn supports_js(&self) -> bool {
+                self.0 != "http"
+            }
+            async fn is_available(&self) -> bool {
+                true
+            }
+        }
+
+        // HTTP tier refuses: neither the forced-JS arm nor the auto arm escalates.
+        for render_js in [Some(true), None] {
+            let chrome = Arc::new(MockFetcher {
+                name: "chrome",
+                behavior: MockBehavior::Panic("a refused destination reached chrome"),
+            }) as Arc<dyn PageFetcher>;
+            let mut r = make_renderer_with_mocks(vec![chrome]);
+            r.http = Arc::new(Refused("http"));
+            let err = r
+                .fetch(
+                    "https://example.com",
+                    &HashMap::new(),
+                    render_js,
+                    None,
+                    None,
+                    tdl(),
+                )
+                .await
+                .expect_err("a refused destination must fail the request");
+            assert!(
+                matches!(err, CrwError::InvalidRequest(_)),
+                "{render_js:?}: {err:?}"
+            );
+        }
+
+        // A browser tier refuses: the next browser tier is not tried either (the
+        // `Panic` mock proves chrome is never consulted). The request may still
+        // answer with the HTTP tier's own body: that came from the public URL.
+        let lightpanda = Arc::new(Refused("lightpanda")) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Panic("a refused destination reached chrome"),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![lightpanda, chrome]);
+        r.http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::Ok(rich_html("HTTP-")),
+        });
+        let res = r
+            .fetch(
+                "https://example.com",
+                &HashMap::new(),
+                Some(true),
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .expect("the forced-JS arm keeps the public HTTP body");
+        assert_eq!(res.rendered_with.as_deref(), Some("http"));
+        assert!(
+            res.warning
+                .as_deref()
+                .is_some_and(|w| w.contains("not allowed")),
+            "{:?}",
+            res.warning
+        );
+    }
+
+    /// Where a browser landed is checked before its page is accepted.
+    #[cfg(any(feature = "cdp", feature = "camoufox"))]
+    #[tokio::test]
+    // Holds TEST_ENV_LOCK across awaits on purpose: serialises against the
+    // tests that flip the loopback escape hatch.
+    #[allow(clippy::await_holding_lock)]
+    async fn landing_check_refuses_a_private_landing_and_skips_the_rest() {
+        let _g = crate::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::remove_var("CRW_ALLOW_LOOPBACK_FOR_TESTS") };
+        let d = crw_core::Deadline::from_request_ms(5_000);
+        let req = "https://example.com/";
+        for landed in [
+            "http://127.0.0.1:8321/",
+            "http://169.254.169.254/latest",
+            "http://[::1]/",
+        ] {
+            assert!(
+                matches!(
+                    check_landing(req, Some(landed), &d).await,
+                    Err(CrwError::InvalidRequest(_))
+                ),
+                "{landed}"
+            );
+        }
+        // The requested host (validated before the fetch), non-http landings
+        // and no landing at all pass; so does a public address.
+        for landed in [
+            Some("https://EXAMPLE.com/en/"),
+            Some("about:blank"),
+            None,
+            Some("https://93.184.215.14/"),
+        ] {
+            assert!(check_landing(req, landed, &d).await.is_ok(), "{landed:?}");
+        }
+        // A landing we cannot resolve fails this attempt only (not terminal).
+        assert!(matches!(
+            check_landing(req, Some("https://nonexistent.invalid/"), &d).await,
+            Err(CrwError::RendererError(_))
+        ));
+        // A spent deadline still gets the floor.
+        let spent = crw_core::Deadline::now_plus(Duration::ZERO);
+        assert!(
+            check_landing(req, Some("https://93.184.215.14/"), &spent)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]

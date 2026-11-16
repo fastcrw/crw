@@ -49,7 +49,7 @@ impl ImpersonatedFetcher {
     /// non-impersonating client, which would silently hand the wall a plain
     /// reqwest fingerprint.
     pub fn new(timeout: std::time::Duration) -> CrwResult<Self> {
-        Self::build(None, timeout)
+        Self::build(None, true, timeout)
     }
 
     /// Fail-closed proxy twin, mirroring `HttpFetcher::with_proxy`: a bad
@@ -57,12 +57,26 @@ impl ImpersonatedFetcher {
     /// leak the host's real IP to the wall. Used by the warm per-proxy cache
     /// in `FallbackRenderer::impersonated_fetcher_for_request` so a set
     /// `REQUEST_PROXY` is honored by this tier like every other one.
-    pub fn with_proxy(proxy_url: &str, timeout: std::time::Duration) -> CrwResult<Self> {
-        Self::build(Some(proxy_url), timeout)
+    ///
+    /// `trusted_proxy`: the proxy is operator-configured (its host is resolved
+    /// without the SSRF check); false for a caller-supplied (BYOP) entry.
+    pub fn with_proxy(
+        proxy_url: &str,
+        trusted_proxy: bool,
+        timeout: std::time::Duration,
+    ) -> CrwResult<Self> {
+        Self::build(Some(proxy_url), trusted_proxy, timeout)
     }
 
-    fn build(proxy: Option<&str>, timeout: std::time::Duration) -> CrwResult<Self> {
+    fn build(
+        proxy: Option<&str>,
+        trusted_proxy: bool,
+        timeout: std::time::Duration,
+    ) -> CrwResult<Self> {
+        let exempt =
+            crw_core::url_safety::SsrfResolver::new(proxy.filter(|_| trusted_proxy)).exempt();
         let mut builder = wreq::Client::builder()
+            .dns_resolver(WreqSsrfResolver { exempt })
             // Owns UA + sec-ch-* + accept-encoding so the header set stays
             // coherent with the emulated JA3. The configured CRW user_agent is
             // deliberately NOT injected here.
@@ -84,6 +98,29 @@ impl ImpersonatedFetcher {
             .build()
             .map_err(|e| CrwError::ConfigError(format!("impersonated client: {e}")))?;
         Ok(Self { client })
+    }
+}
+
+/// wreq adapter for `crw_core::url_safety::SsrfResolver`: the address this tier
+/// dials is the address the SSRF check passed (no DNS rebinding between the
+/// check and the connect). The policy itself stays in crw-core, which must not
+/// link wreq.
+struct WreqSsrfResolver {
+    exempt: std::sync::Arc<[String]>,
+}
+
+impl wreq::dns::Resolve for WreqSsrfResolver {
+    fn resolve(&self, name: wreq::dns::Name) -> wreq::dns::Resolving {
+        let exempt = self.exempt.clone();
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let ips = crw_core::url_safety::resolve_checked(&host, &exempt)
+                .await
+                .map_err(crw_core::url_safety::resolver_error)?;
+            let addrs: wreq::dns::Addrs =
+                Box::new(ips.into_iter().map(|ip| std::net::SocketAddr::new(ip, 0)));
+            Ok(addrs)
+        })
     }
 }
 
@@ -114,9 +151,9 @@ fn safe_redirect_policy_wreq() -> wreq::redirect::Policy {
             // `http::Uri` has no `as_str()`; Display renders scheme +
             // authority + path, which is what `url::Url::parse` needs.
             match url::Url::parse(&attempt.uri.to_string()) {
-                Ok(u) => match crw_core::url_safety::validate_safe_url_blocking_resolved(&u) {
+                Ok(u) => match crw_core::url_safety::check_redirect_target(&u) {
                     Ok(()) => attempt.follow(),
-                    Err(e) => attempt.error(format!("redirect blocked: {e}")),
+                    Err(e) => attempt.error(e),
                 },
                 Err(e) => attempt.error(format!("invalid redirect target: {e}")),
             }
@@ -164,7 +201,11 @@ impl PageFetcher for ImpersonatedFetcher {
             return Err(CrwError::Timeout(deadline.requested_ms()));
         }
         let resp = match tokio::time::timeout(remaining, req.send()).await {
-            Ok(r) => r.map_err(|e| CrwError::HttpError(format!("{}: {e}", url_for_error(url))))?,
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) if crw_core::url_safety::refused_destination(&e).is_some() => {
+                return Err(http_only::destination_refused(url));
+            }
+            Ok(Err(e)) => return Err(CrwError::HttpError(format!("{}: {e}", url_for_error(url)))),
             Err(_) => return Err(CrwError::Timeout(deadline.requested_ms())),
         };
         let status = resp.status().as_u16();
@@ -252,8 +293,11 @@ mod tests {
 
     #[test]
     fn client_build_is_fail_closed_with_bad_proxy() {
-        let f =
-            ImpersonatedFetcher::with_proxy("not a valid uri", std::time::Duration::from_secs(10));
+        let f = ImpersonatedFetcher::with_proxy(
+            "not a valid uri",
+            true,
+            std::time::Duration::from_secs(10),
+        );
         assert!(f.is_err(), "a malformed proxy must be a hard error");
     }
 
