@@ -727,15 +727,20 @@ impl CdpRenderer {
     }
 
     /// The `proxy_auth_base` credentials with the country composed in:
-    /// per-request country, then `default_country`, then none (global pool).
-    fn base_proxy_credentials(&self, req_country: Option<&str>) -> Option<(String, String)> {
+    /// per-request country, then `default_country`, then none (global pool),
+    /// and the sticky session when the caller pinned one (a fresh exit when not).
+    fn base_proxy_credentials(
+        &self,
+        req_country: Option<&str>,
+        session: Option<&str>,
+    ) -> Option<(String, String)> {
         let (base_user, base_pass) = self.proxy_auth_base.as_ref()?;
         let cc = crw_core::config::normalize_proxy_country(
             req_country.or(self.default_country.as_deref()),
         );
         Some((
             self.proxy_username_format
-                .compose(base_user, cc.as_deref(), None),
+                .compose(base_user, cc.as_deref(), session),
             base_pass.clone(),
         ))
     }
@@ -3581,7 +3586,20 @@ impl CdpRenderer {
                     let proxy_id = crate::REQUEST_PROXY
                         .try_with(|p| p.as_ref().map(|e| e.raw().to_string()))
                         .ok()
-                        .flatten();
+                        .flatten()
+                        // The residential tier's own exit: keyed by its sticky
+                        // session so a cookie solved on one exit is replayed on
+                        // that exit only, never on our datacenter IP or on
+                        // another residential IP.
+                        .or_else(|| {
+                            self.proxy_auth_base.as_ref().map(|_| {
+                                let session = crate::REQUEST_PROXY_SESSION
+                                    .try_with(|s| s.clone())
+                                    .ok()
+                                    .flatten();
+                                format!("{}:{}", self.name, session.as_deref().unwrap_or("-"))
+                            })
+                        });
                     crate::clearance::ClearanceCache::key(&host, proxy_id.as_deref(), effective_ua)
                 })
         };
@@ -3683,7 +3701,11 @@ impl CdpRenderer {
                 .try_with(|c| c.clone())
                 .ok()
                 .flatten();
-            self.base_proxy_credentials(req_country.as_deref())
+            let session = crate::REQUEST_PROXY_SESSION
+                .try_with(|s| s.clone())
+                .ok()
+                .flatten();
+            self.base_proxy_credentials(req_country.as_deref(), session.as_deref())
         });
         let auth_active = effective_creds.is_some();
 
@@ -3761,7 +3783,14 @@ impl CdpRenderer {
         // The work future drives navigate → wait_for_load → post-navigate work.
         // It races against the interception pump via `tokio::select!`. The
         // pump never returns; when work completes, the pump future is dropped.
-        let nav_budget = self.nav_budget.min(deadline.remaining());
+        // A residential-first attempt may raise the tier's nav budget for its own
+        // call only (`REQUEST_NAV_BUDGET`); every other call keeps the tier's.
+        let nav_budget = crate::REQUEST_NAV_BUDGET
+            .try_with(|b| *b)
+            .ok()
+            .flatten()
+            .unwrap_or(self.nav_budget)
+            .min(deadline.remaining());
         let work = async {
             // Tier 0 metric M2: time Page.navigate send → loadEventFired.
             let nav_t0 = Instant::now();
@@ -6064,12 +6093,17 @@ mod tests {
             Some("de".to_string()),
         );
         assert_eq!(
-            r.base_proxy_credentials(Some("US")),
+            r.base_proxy_credentials(Some("US"), None),
             Some(("diuser__cr.us".to_string(), "dipass".to_string()))
         );
         assert_eq!(
-            r.base_proxy_credentials(None).map(|c| c.0),
+            r.base_proxy_credentials(None, None).map(|c| c.0),
             Some("diuser__cr.de".to_string())
+        );
+        // A pinned sticky session keeps the exit that served the host.
+        assert_eq!(
+            r.base_proxy_credentials(None, Some("crp1")).map(|c| c.0),
+            Some("diuser__cr.de;sessid.stickcrp1".to_string())
         );
     }
 
@@ -6079,11 +6113,11 @@ mod tests {
             .with_proxy_auth_base("acct".to_string(), "pw".to_string(), None)
             .with_proxy_username_format(crw_core::config::ProxyUsernameFormat::NodeMaven);
         assert_eq!(
-            r.base_proxy_credentials(Some("gb")),
+            r.base_proxy_credentials(Some("gb"), None),
             Some(("acct-country-gb".to_string(), "pw".to_string()))
         );
         assert_eq!(
-            r.base_proxy_credentials(None).map(|c| c.0),
+            r.base_proxy_credentials(None, None).map(|c| c.0),
             Some("acct".to_string())
         );
     }
