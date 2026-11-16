@@ -3830,14 +3830,23 @@ impl CdpRenderer {
                             && net_tracker.adopted_frame.get() == nav_frame.as_ref(),
                         "nav budget hit; attempting partial snapshot",
                     );
-                    let _ = conn
-                        .send_recv(
-                            "Page.stopLoading",
-                            serde_json::json!({}),
-                            Some(&session_id),
-                            Duration::from_secs(1),
-                        )
-                        .await;
+                    // Not on LightPanda: 1.0.4 aborts the paused transfers on
+                    // `Page.stopLoading` but keeps them findable by request id, so
+                    // the interception pump's next `Fetch.continueRequest` or the
+                    // leftover `Fetch.failRequest` below hits an assertion
+                    // (`Transfer.unpark`, state `.delivering`) that aborts the whole
+                    // browser and every render on it. Seen 7x in prod on 2026-11-15.
+                    // Its snapshot does not need the stop; the target is closed next.
+                    if self.name != "lightpanda" {
+                        let _ = conn
+                            .send_recv(
+                                "Page.stopLoading",
+                                serde_json::json!({}),
+                                Some(&session_id),
+                                Duration::from_secs(1),
+                            )
+                            .await;
+                    }
                     let html = Self::eval_html(conn, &session_id, Duration::from_secs(2))
                         .await
                         .unwrap_or_default();
@@ -5045,6 +5054,88 @@ mod tests {
             }
         };
         assert_eq!(seen.as_ref().and_then(|v| v.as_str()), Some(ua));
+    }
+
+    /// Drives one render against a fake browser that loads the page but never
+    /// answers `Runtime.evaluate`, so the nav budget always fires. Returns every
+    /// CDP method the renderer sent.
+    async fn methods_sent_on_budget_hit(renderer: &str) -> Vec<String> {
+        use futures::{SinkExt, StreamExt};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio_tungstenite::tungstenite::Message;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let ws_url = format!("ws://{}/devtools/browser/t", listener.local_addr().unwrap());
+        let seen = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let log = log.clone();
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(Message::Text(text))) = ws.next().await {
+                        let req: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        let method = req["method"].as_str().unwrap_or_default().to_string();
+                        log.lock().unwrap().push(method.clone());
+                        if method == "Runtime.evaluate" {
+                            continue;
+                        }
+                        let reply = serde_json::json!({
+                            "id": req["id"],
+                            "result": { "targetId": "t", "sessionId": "s", "frameId": "f" },
+                        });
+                        let _ = ws.send(Message::Text(reply.to_string().into())).await;
+                        if method == "Page.navigate" {
+                            let load = serde_json::json!({
+                                "method": "Page.loadEventFired",
+                                "params": { "timestamp": 1.0 },
+                                "sessionId": "s",
+                            });
+                            let _ = ws.send(Message::Text(load.to_string().into())).await;
+                        }
+                    }
+                });
+            }
+        });
+
+        let r = CdpRenderer::new(renderer, &ws_url, 1_000, 1);
+        let deadline = crw_core::Deadline::now_plus(Duration::from_secs(20));
+        // The render must end through the budget branch, not this outer cap: the
+        // Chrome twin of this test proves that branch is where stopLoading lives.
+        let finished = tokio::time::timeout(
+            Duration::from_secs(20),
+            r.fetch_with_ws("http://example.com/", &HashMap::new(), None, deadline),
+        )
+        .await
+        .is_ok();
+        assert!(finished, "render hung past the nav budget");
+        let methods = seen.lock().unwrap().clone();
+        assert!(
+            methods.iter().any(|m| m == "Page.navigate"),
+            "the fake browser must have been driven to navigation: {methods:?}"
+        );
+        methods
+    }
+
+    #[tokio::test]
+    async fn lightpanda_budget_hit_sends_no_stop_loading() {
+        let methods = methods_sent_on_budget_hit("lightpanda").await;
+        assert!(
+            !methods.iter().any(|m| m == "Page.stopLoading"),
+            "Page.stopLoading aborts lightpanda's paused transfers and the next \
+             Fetch command on one of them crashes the browser: {methods:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn chrome_budget_hit_still_stops_loading() {
+        let methods = methods_sent_on_budget_hit("chrome").await;
+        assert!(
+            methods.iter().any(|m| m == "Page.stopLoading"),
+            "chrome keeps freezing the page before the partial snapshot: {methods:?}"
+        );
     }
 
     #[test]
