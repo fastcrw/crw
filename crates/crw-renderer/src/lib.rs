@@ -1139,6 +1139,15 @@ pub struct FallbackRenderer {
     /// challenge probes again through a fresh exit; the second failure holds
     /// the host off for the TTL.
     cf_failed_once_hosts: crate::egress::EgressMemory,
+    /// Hosts that dropped out of `residential_hosts` because the remembered exit
+    /// was walled or timed out. The post-ladder arm skips them for the TTL.
+    /// Without this a host residential serves only intermittently loops: the
+    /// arm serves it (remembered), residential-first is challenged (forgotten),
+    /// the next challenge probes again through a fresh exit and serves it, and
+    /// each success clears the CF failure count. Measured on robu.in
+    /// (2026-11-16): 8 residential attempts in 6 minutes, same success as no
+    /// arm at all, twice the p50.
+    residential_held_hosts: crate::egress::EgressMemory,
     /// Per-host + global circuit breakers per renderer.
     breakers: Arc<BreakerRegistry>,
     /// Per-tier configured timeouts (Duration). Used by the breaker layer
@@ -1413,6 +1422,7 @@ impl FallbackRenderer {
                 cf_walled_hosts: crate::egress::EgressMemory::with_defaults(),
                 cf_seen_hosts: crate::egress::EgressMemory::with_defaults(),
                 cf_failed_once_hosts: crate::egress::EgressMemory::with_defaults(),
+                residential_held_hosts: crate::egress::EgressMemory::with_defaults(),
                 breakers: Arc::new(BreakerRegistry::with_defaults()),
                 tier_timeouts: tier_timeouts_from(config),
                 requests_per_second: 0.0,
@@ -1735,6 +1745,7 @@ impl FallbackRenderer {
             cf_walled_hosts: crate::egress::EgressMemory::with_defaults(),
             cf_seen_hosts: crate::egress::EgressMemory::with_defaults(),
             cf_failed_once_hosts: crate::egress::EgressMemory::with_defaults(),
+            residential_held_hosts: crate::egress::EgressMemory::with_defaults(),
             breakers: Arc::new(BreakerRegistry::with_defaults()),
             tier_timeouts: tier_timeouts_from(config),
             requests_per_second: 0.0,
@@ -3412,6 +3423,33 @@ impl FallbackRenderer {
             && detector::looks_like_vendor_block(&r.html).is_none()
     }
 
+    /// Whether a residential body is itself a wall (challenge, bot wall, vendor
+    /// block, a bare 403). Narrower than
+    /// `!residential_body_ok`: a thin 404 or a failed render says the URL is
+    /// bad, not that the exit lost the host, and must not hold the host.
+    /// Same wall verdict the ladder reads (`classify_js_attempt`), plus the
+    /// Cloudflare and placeholder shapes it scores separately.
+    fn residential_body_walled(&self, r: &FetchResult) -> bool {
+        let c = self.classify_js_attempt(r);
+        // The body half of `hard_block`, without its status half (antibot is
+        // read at 200 for that reason): a 404 or a 500 alone is the URL, not
+        // the host. A structural failure (thin or broken page) is the URL too,
+        // and a rate limit is transient (see `ladder_failure_persists`).
+        use crw_extract::antibot::AntibotSignal;
+        c.is_bot_wall
+            || c.vendor_block.is_some()
+            || c.unrecoverable_wall
+            || detector::looks_like_cloudflare_challenge(&r.html)
+            // A bare 403 is a wall even with no phrase to match; one that
+            // carries the page passes the body gate. 429/503/52x are transient
+            // and 401 belongs to the URL, as in `ladder_failure_persists`.
+            || (r.status_code == 403 && !Self::residential_body_ok(r))
+            || !matches!(
+                self.antibot_result(200, &r.html).signal,
+                AntibotSignal::None | AntibotSignal::StructuralFailure | AntibotSignal::RateLimited
+            )
+    }
+
     /// Whether the ladder's failure is worth sending later URLs on the host to
     /// chrome_proxy first. The ladder failed and the residential tier served
     /// the page, which is itself the signal (a wall, a challenge stuck on its
@@ -3965,11 +4003,25 @@ impl FallbackRenderer {
                     });
                     return Ok(r);
                 }
+                // The remembered exit missed: forget it. Hold the host off the
+                // post-ladder arm for the TTL (see `residential_held_hosts`)
+                // only when the exit itself lost the host: a wall body, or a
+                // timeout (read like the arm reads a probe timeout). A bad URL
+                // (thin 404, failed render) or a transport error (proxy
+                // unreachable) says nothing about the host.
                 Ok(r) => {
                     self.residential_hosts.forget(&host).await;
+                    if self.residential_body_walled(&r) {
+                        self.residential_held_hosts.note_block(&host).await;
+                    }
                     residential_fallback = Some(r);
                 }
-                Err(_) => self.residential_hosts.forget(&host).await,
+                Err(e) => {
+                    self.residential_hosts.forget(&host).await;
+                    if matches!(e, CrwError::Timeout(_)) {
+                        self.residential_held_hosts.note_block(&host).await;
+                    }
+                }
             }
         }
 
@@ -4906,6 +4958,9 @@ impl FallbackRenderer {
                 && !chain.contains(&kind)
                 && !route_to_cloak
                 && wall_allows_arm
+                // Same exemption as the breaker: an opted-in cloak request still
+                // needs the arm to uncover the challenge that opens cloak.
+                && (opted_after_egress || !self.residential_held_hosts.should_proxy(&host).await)
                 && (opted_after_egress || !self.breakers.host_for(&host, kind).await.is_open());
             let arm_permit = if arm_wanted {
                 self.chrome_proxy_arm_sem.clone().try_acquire_owned().ok()
@@ -5000,8 +5055,13 @@ impl FallbackRenderer {
                         if r_ok && !host.is_empty() {
                             // Status-aware: a 401/403 login page with text is
                             // `r_ok` but not a page worth remembering the tier for.
+                            // Not while the host is held: an arm let through the
+                            // hold (opted-in cloak, or one already in flight when
+                            // the hold landed) must not re-arm residential-first
+                            // and restart the loop the hold exists to break.
                             if self.ladder_failure_persists(thin_result.as_ref())
                                 && self.classify_js_attempt(&r).acceptable
+                                && !self.residential_held_hosts.should_proxy(&host).await
                             {
                                 self.residential_hosts.remember(&host, sessid).await;
                             }
@@ -9977,6 +10037,209 @@ mod tests {
         assert!(r.residential_hosts.get("example.com").await.is_none());
     }
 
+    async fn fetch_example(r: &FallbackRenderer, n: usize) {
+        for i in 0..n {
+            r.fetch(
+                &format!("https://example.com/{i}"),
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                tdl(),
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn cf_host_that_drops_out_of_memory_is_not_reprobed() {
+        // robu.in class (bench 2026-11-16): residential serves the host only
+        // sometimes. Before the hold, every success re-armed the probe and the
+        // host looped: 8 residential attempts in 6 minutes.
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let proxy = SeqFetcher::new(
+            "chrome_proxy",
+            vec![
+                MockBehavior::Ok(recovered_html()),
+                MockBehavior::Ok(cf_interstitial_html()),
+                MockBehavior::Ok(recovered_html()),
+            ],
+        );
+        let mut r =
+            make_renderer_with_mocks(vec![lp, chrome, proxy.clone() as Arc<dyn PageFetcher>]);
+        r.auto_egress_escalation = true;
+
+        // 1 marks the host seen, 2 probes and is served (remembered),
+        // 3 goes residential-first and is challenged (forgotten, held),
+        // 4 and 5 are held off the arm.
+        fetch_example(&r, 5).await;
+        assert_eq!(
+            proxy.calls(),
+            2,
+            "a host that dropped out of memory must wait for the TTL"
+        );
+        assert!(r.residential_hosts.get("example.com").await.is_none());
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn non_cf_host_that_drops_out_of_memory_is_held_too() {
+        // Same loop on a non-CF wall: the arm fires on any hard block, so the
+        // hold has to gate the whole arm, not only the CF probe.
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::Ok(recovered_html()),
+            MockBehavior::Ok(network_security_block_html()),
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        fetch_example(&r, 4).await;
+        assert_eq!(proxy.calls(), 2, "served, then walled, then held");
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn residential_first_timeout_holds_the_host() {
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::Timeout,
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        r.residential_hosts
+            .remember("example.com", "crptest".into())
+            .await;
+        fetch_example(&r, 2).await;
+        assert_eq!(proxy.calls(), 1, "a timed-out exit holds the host off");
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn residential_first_bare_403_holds_the_host() {
+        // An exit banned with an empty 403 has no phrase to match, but it is
+        // the same wall the ladder reads off the status.
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::OkStatus(403, String::new()),
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        r.residential_hosts
+            .remember("example.com", "crptest".into())
+            .await;
+        fetch_example(&r, 2).await;
+        assert_eq!(proxy.calls(), 1, "a bare 403 holds the host off");
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn residential_first_bad_url_does_not_hold_the_host() {
+        // A dead link through a good exit is a thin 404, not a wall: the next
+        // walled URL on the host must still get the arm.
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::OkStatus(404, "<html><body>Not found</body></html>".into()),
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        r.residential_hosts
+            .remember("example.com", "crptest".into())
+            .await;
+        fetch_example(&r, 2).await;
+        assert_eq!(proxy.calls(), 2, "the arm still fires on the next request");
+        assert!(!r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn residential_first_transport_error_only_forgets() {
+        // An unreachable proxy says nothing about the host: forget the exit
+        // but let the next request's arm try a fresh one.
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::Err("connection refused".into()),
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        r.residential_hosts
+            .remember("example.com", "crptest".into())
+            .await;
+        fetch_example(&r, 2).await;
+        assert_eq!(proxy.calls(), 2, "the arm still fires on the next request");
+        assert!(!r.residential_held_hosts.should_proxy("example.com").await);
+        assert!(r.residential_hosts.get("example.com").await.is_some());
+    }
+
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn held_host_still_arms_for_an_opted_in_cloak_request() {
+        // The arm is what uncovers the challenge that opens cloak; the hold
+        // must not close that door for a request entitled to cloak.
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cloak = Arc::new(CountingBodyFetcher {
+            name: "cloak",
+            calls: calls.clone(),
+            html: solved_html(),
+            fail: false,
+        }) as Arc<dyn PageFetcher>;
+        let mut r = renderer_with_egress_and_cloak(cf_challenge_html(), cloak);
+        r.cloak_after_egress = true;
+        r.cloak_opt_in_only = true;
+        r.residential_held_hosts.note_block("example.com").await;
+        let res = r
+            .fetch_hinted(
+                "https://example.com",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                false,
+                true,
+                crw_core::Deadline::from_request_ms(6_000),
+            )
+            .await
+            .unwrap();
+        assert!(res.html.contains("SOLVED"), "got: {}", res.html);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[cfg(feature = "cloak")]
+    #[tokio::test]
+    async fn arm_let_through_the_hold_does_not_rearm_residential_first() {
+        // An opted-in request passes the hold and the arm serves the page.
+        // Remembering it would send the next long request residential-first
+        // again and restart the loop the hold breaks.
+        let cloak = Arc::new(CountingBodyFetcher {
+            name: "cloak",
+            calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            html: solved_html(),
+            fail: false,
+        }) as Arc<dyn PageFetcher>;
+        let mut r = renderer_with_egress_and_cloak(recovered_html(), cloak);
+        r.cloak_after_egress = true;
+        r.cloak_opt_in_only = true;
+        r.residential_held_hosts.note_block("example.com").await;
+        let res = r
+            .fetch_hinted(
+                "https://example.com",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                false,
+                true,
+                crw_core::Deadline::from_request_ms(60_000),
+            )
+            .await
+            .unwrap();
+        assert!(
+            res.html.contains("PROXY-"),
+            "the arm served it, got: {}",
+            res.html
+        );
+        assert!(
+            r.residential_hosts.get("example.com").await.is_none(),
+            "a held host must not be remembered"
+        );
+    }
+
     #[tokio::test]
     async fn residential_first_body_that_misses_the_gate_still_beats_a_wall() {
         // A 403 that carries the real page fails `acceptable`, but the old
@@ -10000,6 +10263,10 @@ mod tests {
             .unwrap();
         assert!(result.html.contains("PROXY-"), "got: {}", result.html);
         assert_eq!(proxy.calls(), 1);
+        assert!(
+            !r.residential_held_hosts.should_proxy("example.com").await,
+            "a 403 that carries the page is not a wall: do not hold the host"
+        );
     }
 
     #[tokio::test]
