@@ -17,7 +17,17 @@
 use crate::commands::setup::{shell, ui};
 use dialoguer::{MultiSelect, Select};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
+use std::time::{Duration, Instant};
+
+/// `npx` ships as a batch script on Windows, and std only appends `.exe` when
+/// it searches PATH, so the bare name is never found there.
+const NPX: &str = if cfg!(windows) { "npx.cmd" } else { "npx" };
+
+/// Without a limit, an unreachable npm registry keeps npm retrying for about
+/// eight minutes and `crw setup` looks hung. A cold install downloads about
+/// 11 MB, so this still lets it finish on a link down to roughly 600 kbit/s.
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Agent {
@@ -210,17 +220,25 @@ fn run_installer(selected: &[Agent]) {
     println!();
     ui::print_info("Installing CRW MCP and skill…");
     let args = installer_args(selected);
-    let result = Command::new("npx")
+    let result = Command::new(NPX)
         .args(&args)
         // The MCP launcher reads the config.toml just written by setup. Do not
         // copy credentials into every agent config, even if the parent shell
         // still has legacy CRW_* exports.
         .env_remove("CRW_API_KEY")
         .env_remove("CRW_API_URL")
-        .status();
+        .spawn()
+        .and_then(|mut child| wait_with_timeout(&mut child, INSTALL_TIMEOUT));
 
     match result {
-        Ok(status) if status.success() => {
+        Ok(None) => {
+            ui::print_warning(&format!(
+                "MCP installer did not finish within {} seconds (is the network down?); CRW setup is still complete.",
+                INSTALL_TIMEOUT.as_secs()
+            ));
+            ui::print_detail(&format!("Retry: {}", manual_command(selected)));
+        }
+        Ok(Some(status)) if status.success() => {
             ui::print_success(&format!(
                 "MCP installed for {}",
                 selected
@@ -231,7 +249,7 @@ fn run_installer(selected: &[Agent]) {
             ));
             ui::print_detail("Restart those tools to load the CRW MCP server.");
         }
-        Ok(status) => {
+        Ok(Some(status)) => {
             ui::print_warning(&format!(
                 "MCP installer exited with status {status}; CRW setup is still complete."
             ));
@@ -249,9 +267,60 @@ fn run_installer(selected: &[Agent]) {
     }
 }
 
+/// Wait for `child`, killing it once `limit` passes. `Ok(None)` means it was
+/// killed. On any error the child is killed too, so it never outlives setup.
+fn wait_with_timeout(child: &mut Child, limit: Duration) -> std::io::Result<Option<ExitStatus>> {
+    let deadline = Instant::now() + limit;
+    loop {
+        let polled = child.try_wait();
+        if let Ok(Some(status)) = polled {
+            return Ok(Some(status));
+        }
+        if polled.is_err() || Instant::now() >= deadline {
+            kill_tree(child);
+            let _ = child.wait();
+            return polled.map(|_| None);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
+fn kill_tree(child: &mut Child) {
+    // On Windows the child is cmd.exe running npx.cmd, and node runs under it;
+    // killing cmd.exe alone would leave node retrying in the background. On
+    // Unix npx is node itself, and the registry fetch runs in that process.
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn installer_wait_returns_the_exit_status_or_kills_on_timeout() {
+        let mut quick = Command::new("true").spawn().expect("spawn true");
+        let status = wait_with_timeout(&mut quick, Duration::from_secs(5)).expect("wait");
+        assert!(status.is_some_and(|status| status.success()));
+
+        let mut stuck = Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let started = Instant::now();
+        let status = wait_with_timeout(&mut stuck, Duration::from_millis(300)).expect("wait");
+        assert!(status.is_none());
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(stuck.try_wait().expect("reaped").is_some());
+    }
 
     #[test]
     fn detection_matches_only_existing_agent_directories() {
