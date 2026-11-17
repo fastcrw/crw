@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.46.2](https://github.com/fastcrw/crw/compare/v0.46.1...v0.46.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **cli:** bound the setup MCP installer and find npx on Windows ([76ae937](https://github.com/fastcrw/crw/commit/76ae937b789bc83b9f8f12fb9f6e82000d1a48e5))
+
 ## [0.46.1](https://github.com/fastcrw/crw/compare/v0.46.0...v0.46.1) (2026-11-17)
 
 
