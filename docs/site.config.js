@@ -86,6 +86,7 @@ export default {
         { title: "Enrich", slug: "enrich", icon: "layers" },
         { title: "PDF Parsing", slug: "pdf-parsing", icon: "file-text" },
         { title: "Monitoring", slug: "monitoring", icon: "bell" },
+        { title: "Pergamon (Data API)", slug: "pergamon", icon: "server" },
       ],
     },
     {
