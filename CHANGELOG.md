@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.46.1](https://github.com/fastcrw/crw/compare/v0.46.0...v0.46.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **setup:** register MCP with detected agents on local non-interactive setup ([41a6bb9](https://github.com/fastcrw/crw/commit/41a6bb970e06439721853e26cfff94a96ab4ed9c))
+
 ## [0.46.0](https://github.com/fastcrw/crw/compare/v0.45.1...v0.46.0) (2026-11-16)
 
 
