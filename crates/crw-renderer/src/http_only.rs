@@ -61,6 +61,15 @@ const CHALLENGE_DIRECT_RESERVE: std::time::Duration = std::time::Duration::from_
 /// exit is in its bad tail. Everything above it stays with the direct rescue.
 const CHALLENGE_PROXY_MAX: std::time::Duration = std::time::Duration::from_secs(6);
 
+/// The response declares a PDF (`application/pdf`, any case, any parameters).
+fn is_pdf_response(r: &reqwest::Response) -> bool {
+    r.headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .is_some_and(|t| t.trim().eq_ignore_ascii_case("application/pdf"))
+}
+
 /// Returns true if a `reqwest::Error` is worth retrying on the SAME egress.
 /// Read-phase timeouts only (`is_timeout` without `is_connect`): the origin
 /// connected and is slow, so a retry may catch a faster response. Connection-level
@@ -534,7 +543,10 @@ impl PageFetcher for HttpFetcher {
             )));
         }
         let start = Instant::now();
-        let is_pdf_path = crate::url_path_is_pdf(url);
+        // Whether the body gets this attempt's whole budget instead of the tier
+        // timeout. Known up front for a `.pdf` path; set on the way for a PDF
+        // behind any other URL, once its headers say what it is.
+        let mut lift_body_budget = crate::url_path_is_pdf(url);
 
         // Build a fresh, fully-decorated request for each attempt. Closure
         // captures `self`, `url`, and `headers`; called once per attempt so
@@ -704,13 +716,14 @@ impl PageFetcher for HttpFetcher {
             // and it covers the body, so a PDF that takes longer to stream was cut
             // mid-body and the request ended as a 500. Measured over 7 days of
             // prod: 59 customer 502s, nearly all PDFs of 3 to 27 MB on a 60s
-            // deadline. Lift the cap to this attempt's budget for a `.pdf` path.
+            // deadline. Lift the cap to this attempt's budget for a PDF (a `.pdf`
+            // path, or a response whose headers declared one, see below).
             // Never lowered: a budget below the tier timeout keeps the client's.
             // Only the body gets the longer budget: the wait for headers stays at
             // the tier timeout, so a `.pdf` origin that never answers still fails
             // as fast as before instead of holding the request for the deadline.
             let mut header_budget = remaining;
-            if is_pdf_path && remaining > self.request_timeout {
+            if lift_body_budget && remaining > self.request_timeout {
                 req = req.timeout(remaining);
                 header_budget = self.request_timeout;
             }
@@ -877,6 +890,30 @@ impl PageFetcher for HttpFetcher {
                     drop(r);
                     use_proxy = false;
                     direct_rescue_used = true;
+                }
+                // A PDF behind a URL that does not end in `.pdf` (a repository's
+                // `/bitstreams/<id>/download`, a `?file=` handler) shows what it is
+                // only in its headers, and by then the request carries the tier
+                // timeout, which also covers the body. Seen on prod: a 9.9 MB thesis
+                // on drum.lib.umd.edu cut at 4s, then LightPanda and chrome could
+                // not fetch it either, 16 failed calls before one landed. Ask once
+                // more with the budget a `.pdf` path gets. Direct egress only: there
+                // the next attempt's budget is exactly `deadline.remaining()`, so the
+                // guard below is the lift's own condition; a proxied attempt holds
+                // back a rescue reserve and pays per byte for a second download.
+                Ok(Ok(r))
+                    if !lift_body_budget
+                        && !use_proxy
+                        && r.status().is_success()
+                        && deadline.remaining() > self.request_timeout
+                        && is_pdf_response(&r) =>
+                {
+                    tracing::debug!(
+                        "{url} answered with a PDF; asking again with the body budget",
+                        url = LogUrl(&url),
+                    );
+                    drop(r);
+                    lift_body_budget = true;
                 }
                 Ok(Ok(r)) => break r,
                 // The SSRF policy refused where this fetch was going: the connect-time
@@ -3770,11 +3807,12 @@ mod tests {
 
     /// A PDF that streams for longer than the tier timeout must still arrive
     /// whole when the caller's deadline allows it, because no browser tier can
-    /// fetch a PDF. The same slow body on a non-PDF path keeps the tier cap, so
-    /// HTML still fails fast into the JS ladder.
+    /// fetch a PDF. That holds for a `.pdf` path and for a PDF behind any other
+    /// URL (known from its Content-Type). The same slow body served as HTML keeps
+    /// the tier cap, so HTML still fails fast into the JS ladder.
     #[tokio::test]
     async fn slow_pdf_body_gets_the_deadline_not_the_tier_timeout() {
-        async fn slow_pdf() -> impl axum::response::IntoResponse {
+        fn slow_body(content_type: &'static str) -> impl axum::response::IntoResponse {
             use futures::StreamExt as _;
             let chunks = futures::stream::iter([&b"%PDF-1.4\n"[..], &b"1 0 obj\n%%EOF\n"[..]])
                 .then(|c| async move {
@@ -3784,14 +3822,30 @@ mod tests {
                     Ok::<_, std::io::Error>(axum::body::Bytes::from_static(c))
                 });
             (
-                [(axum::http::header::CONTENT_TYPE, "application/pdf")],
+                [(axum::http::header::CONTENT_TYPE, content_type)],
                 axum::body::Body::from_stream(chunks),
             )
+        }
+        async fn slow_pdf() -> impl axum::response::IntoResponse {
+            slow_body("application/pdf")
+        }
+        static DOWNLOAD_HITS: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        async fn slow_pdf_with_charset() -> impl axum::response::IntoResponse {
+            DOWNLOAD_HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            slow_body("Application/PDF;charset=UTF-8")
+        }
+        async fn slow_html() -> impl axum::response::IntoResponse {
+            slow_body("text/html")
         }
         let base = spawn_router(
             axum::Router::new()
                 .route("/doc.pdf", axum::routing::get(slow_pdf))
-                .route("/doc", axum::routing::get(slow_pdf)),
+                .route(
+                    "/bitstreams/1/download",
+                    axum::routing::get(slow_pdf_with_charset),
+                )
+                .route("/page", axum::routing::get(slow_html)),
         )
         .await;
         let fetcher = HttpFetcher::with_timeout(
@@ -3811,15 +3865,31 @@ mod tests {
             .expect("a .pdf body slower than the tier timeout must arrive under the deadline");
         assert_eq!(ok.content_type.as_deref(), Some("application/pdf"));
 
-        let err = fetcher
+        let ok = fetcher
             .fetch(
-                &format!("{base}/doc"),
+                &format!("{base}/bitstreams/1/download"),
                 &HashMap::new(),
                 None,
                 Deadline::from_request_ms(10_000),
             )
             .await
-            .expect_err("a non-PDF path keeps the 250ms tier timeout");
+            .expect("a PDF behind a non-.pdf URL must arrive under the deadline too");
+        assert_eq!(ok.content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(
+            DOWNLOAD_HITS.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "asked once more after the headers, and only once"
+        );
+
+        let err = fetcher
+            .fetch(
+                &format!("{base}/page"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(10_000),
+            )
+            .await
+            .expect_err("an HTML body keeps the 250ms tier timeout");
         assert!(
             matches!(err, CrwError::HttpError(_) | CrwError::Timeout(_)),
             "got {err:?}"
