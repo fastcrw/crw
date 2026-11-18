@@ -5197,13 +5197,17 @@ impl FallbackRenderer {
                     }
                     Err(e) => {
                         if cf_probe && !host.is_empty() {
-                            if matches!(e, CrwError::Timeout(_)) {
-                                self.note_cf_probe_failure(&host).await;
-                            } else {
-                                // A transport failure says nothing about the
-                                // host's wall: release the claim.
-                                self.cf_walled_hosts.forget(&host).await;
-                            }
+                            // Every probe that did not serve the page spends one
+                            // of the host's two probes per TTL, an error too. A
+                            // tunnel error used to release the claim without
+                            // counting, so robotshop.com took a third probe 60 s
+                            // after its second (bench 2026-11-18).
+                            self.note_cf_probe_failure(&host).await;
+                            tracing::info!(
+                                host = %host,
+                                error = %e,
+                                "cloudflare probe failed",
+                            );
                         }
                         if !host.is_empty() {
                             // Same split as the cloak-first arm: a body the tier
@@ -9832,6 +9836,41 @@ mod tests {
         );
         assert!(r.cf_walled_hosts.should_proxy("example.com").await);
         assert!(r.residential_hosts.get("example.com").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn cf_probe_error_counts_toward_the_two_probes() {
+        // A probe that errors (dead tunnel) spends a probe like one that is
+        // challenged: two per host per TTL, whatever the mix.
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(cf_interstitial_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome_proxy = SeqFetcher::new(
+            "chrome_proxy",
+            vec![
+                MockBehavior::Ok(cf_interstitial_html()),
+                MockBehavior::Err("net::ERR_TUNNEL_CONNECTION_FAILED".into()),
+                MockBehavior::Ok(cf_interstitial_html()),
+            ],
+        );
+        let mut r = make_renderer_with_mocks(vec![
+            lp,
+            chrome,
+            chrome_proxy.clone() as Arc<dyn PageFetcher>,
+        ]);
+        r.auto_egress_escalation = true;
+        fetch_example(&r, 6).await;
+        assert_eq!(
+            chrome_proxy.calls(),
+            2,
+            "at most two probes per host per TTL"
+        );
+        assert!(r.cf_walled_hosts.should_proxy("example.com").await);
     }
 
     #[tokio::test]
