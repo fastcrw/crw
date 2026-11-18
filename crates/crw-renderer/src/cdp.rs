@@ -1,3 +1,4 @@
+use crate::is_proxy_tunnel_error;
 use async_trait::async_trait;
 use crw_core::error::{CrwError, CrwResult};
 use crw_core::log_url::{LogErr, LogUrl};
@@ -2422,23 +2423,6 @@ fn detect_navigation_error(html: &str) -> Option<String> {
         return Some("unknown".to_string());
     }
     None
-}
-
-/// True for a proxy-egress CONNECT/tunnel failure — the class of error Chrome
-/// raises when the upstream proxy refuses to establish the HTTPS tunnel (e.g.
-/// DataImpulse returning `503 NO_RAY` on CONNECT for a dead country exit).
-///
-/// Deliberately narrow: matches only the two `net::ERR_*` proxy-connect codes
-/// where a *different egress* (a different country exit) could plausibly
-/// succeed. It never matches target HTTP statuses, DNS/name errors, or
-/// timeouts — those don't indicate a dead country exit, so retrying the country
-/// would be pointless (or, worse, mask a genuine target failure).
-fn is_proxy_tunnel_error(err: &CrwError) -> bool {
-    let msg = match err {
-        CrwError::RendererError(m) => m.as_str(),
-        _ => return false,
-    };
-    msg.contains("ERR_TUNNEL_CONNECTION_FAILED") || msg.contains("ERR_PROXY_CONNECTION_FAILED")
 }
 
 impl CdpRenderer {

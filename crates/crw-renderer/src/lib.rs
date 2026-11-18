@@ -500,6 +500,23 @@ fn is_fingerprint_vendor_wall(
         || is_non_cf_vendor_wall(vendor_block, antibot_signal)
 }
 
+/// True for a proxy-egress CONNECT/tunnel failure — the class of error Chrome
+/// raises when the upstream proxy refuses to establish the HTTPS tunnel (e.g.
+/// DataImpulse returning `503 NO_RAY` on CONNECT for a dead country exit).
+///
+/// Deliberately narrow: matches only the two `net::ERR_*` proxy-connect codes
+/// where a *different egress* (a different country exit) could plausibly
+/// succeed. It never matches target HTTP statuses, DNS/name errors, or
+/// timeouts — those don't indicate a dead country exit, so retrying the country
+/// would be pointless (or, worse, mask a genuine target failure).
+pub(crate) fn is_proxy_tunnel_error(err: &CrwError) -> bool {
+    let msg = match err {
+        CrwError::RendererError(m) => m.as_str(),
+        _ => return false,
+    };
+    msg.contains("ERR_TUNNEL_CONNECTION_FAILED") || msg.contains("ERR_PROXY_CONNECTION_FAILED")
+}
+
 /// The fingerprint-vendor walls other than Cloudflare: DataDome, PerimeterX,
 /// Kasada, Akamai, Imperva. The post-ladder chrome_proxy arm stays suppressed on
 /// these. A Cloudflare managed challenge is split out because chrome_proxy DOES
@@ -708,7 +725,7 @@ fn is_cloak_budget_cut(e: &CrwError) -> bool {
 /// TIER's own health? Chromium reports a proxy tunnel that will not open, and a
 /// box that lost its network, with the same `net::ERR_` shape as a dead origin,
 /// but those are ours and must keep reaching the global window or nothing ever
-/// concludes the tier is sick. `cdp.rs::is_proxy_tunnel_error` already draws
+/// concludes the tier is sick. `is_proxy_tunnel_error` already draws
 /// this exact line for its country-retry, with the same reasoning.
 ///
 /// `ERR_NAME_NOT_RESOLVED` stays on the origin side. A resolver brown-out would
@@ -1140,7 +1157,7 @@ pub struct FallbackRenderer {
     /// the host off for the TTL.
     cf_failed_once_hosts: crate::egress::EgressMemory,
     /// Hosts that dropped out of `residential_hosts` because the remembered exit
-    /// was walled or timed out. The post-ladder arm skips them for the TTL.
+    /// was walled or failed. The post-ladder arm skips them for the TTL.
     /// Without this a host residential serves only intermittently loops: the
     /// arm serves it (remembered), residential-first is challenged (forgotten),
     /// the next challenge probes again through a fresh exit and serves it, and
@@ -4003,24 +4020,50 @@ impl FallbackRenderer {
                     });
                     return Ok(r);
                 }
-                // The remembered exit missed: forget it. Hold the host off the
-                // post-ladder arm for the TTL (see `residential_held_hosts`)
-                // only when the exit itself lost the host: a wall body, or a
-                // timeout (read like the arm reads a probe timeout). A bad URL
-                // (thin 404, failed render) or a transport error (proxy
-                // unreachable) says nothing about the host.
+                // The remembered exit missed. A host only ever leaves the
+                // memory together with a hold (see `residential_held_hosts`),
+                // so it waits the TTL before the post-ladder arm probes it
+                // again: a wall through the exit, or the exit itself failing
+                // (rate limit, truncated body, timeout, dead tunnel:
+                // residential exits churn). A miss that belongs to the URL
+                // (thin 404, a 403 that carries the page, a DNS error) keeps
+                // the host remembered and unheld.
                 Ok(r) => {
-                    self.residential_hosts.forget(&host).await;
-                    if self.residential_body_walled(&r) {
+                    // A rate-limited exit (429/503/52x with no named wall) or a
+                    // body cut off by the budget is the exit failing, not the
+                    // URL: keeping it would retry it on every long request.
+                    let outcome = if self.residential_body_walled(&r) {
+                        "wall"
+                    } else if matches!(r.status_code, 429 | 503 | 520..=530) || r.truncated {
+                        "exitFailed"
+                    } else {
+                        "badUrl"
+                    };
+                    let held = outcome != "badUrl";
+                    if held {
+                        self.residential_hosts.forget(&host).await;
                         self.residential_held_hosts.note_block(&host).await;
                     }
+                    tracing::info!(host = %host, outcome, held, "residential-first missed");
                     residential_fallback = Some(r);
                 }
                 Err(e) => {
-                    self.residential_hosts.forget(&host).await;
-                    if matches!(e, CrwError::Timeout(_)) {
+                    // Only the exit's own failures (a timeout, a dead tunnel)
+                    // drop the host. A DNS, abort or refused-connection error
+                    // belongs to the URL, and holding would switch recovery off
+                    // for the whole domain over one dead subdomain.
+                    let held = matches!(e, CrwError::Timeout(_)) || is_proxy_tunnel_error(&e);
+                    if held {
+                        self.residential_hosts.forget(&host).await;
                         self.residential_held_hosts.note_block(&host).await;
                     }
+                    tracing::info!(
+                        host = %host,
+                        outcome = if held { "exitFailed" } else { "urlError" },
+                        held,
+                        error = %e,
+                        "residential-first missed",
+                    );
                 }
             }
         }
@@ -10135,9 +10178,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn residential_first_rate_limited_exit_holds_the_host() {
+        // A 429 through the remembered exit is the exit, not the URL: keeping
+        // it would retry the rate-limited exit on every long request.
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::OkStatus(429, recovered_html()),
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        r.residential_hosts
+            .remember("example.com", "crptest".into())
+            .await;
+        fetch_example(&r, 2).await;
+        assert_eq!(proxy.calls(), 1);
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn residential_first_dns_error_keeps_the_host() {
+        // A dead subdomain fails DNS through any exit: it must not switch
+        // residential recovery off for the whole domain.
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
+            MockBehavior::Err("net::ERR_NAME_NOT_RESOLVED".into()),
+            MockBehavior::Ok(recovered_html()),
+        ]);
+        r.residential_hosts
+            .remember("example.com", "crptest".into())
+            .await;
+        fetch_example(&r, 2).await;
+        assert_eq!(
+            proxy.calls(),
+            2,
+            "residential-first runs again on the next URL"
+        );
+        assert!(!r.residential_held_hosts.should_proxy("example.com").await);
+        assert!(r.residential_hosts.get("example.com").await.is_some());
+    }
+
+    #[tokio::test]
     async fn residential_first_bad_url_does_not_hold_the_host() {
-        // A dead link through a good exit is a thin 404, not a wall: the next
-        // walled URL on the host must still get the arm.
+        // A dead link through a good exit is a thin 404, not a wall: the host
+        // stays remembered and the next URL still goes residential-first.
         let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
             MockBehavior::OkStatus(404, "<html><body>Not found</body></html>".into()),
             MockBehavior::Ok(recovered_html()),
@@ -10146,25 +10226,35 @@ mod tests {
             .remember("example.com", "crptest".into())
             .await;
         fetch_example(&r, 2).await;
-        assert_eq!(proxy.calls(), 2, "the arm still fires on the next request");
+        assert_eq!(
+            proxy.calls(),
+            2,
+            "residential-first runs again on the next URL"
+        );
         assert!(!r.residential_held_hosts.should_proxy("example.com").await);
+        assert!(
+            r.residential_hosts.get("example.com").await.is_some(),
+            "a bad URL through a good exit keeps the host remembered"
+        );
     }
 
     #[tokio::test]
-    async fn residential_first_transport_error_only_forgets() {
-        // An unreachable proxy says nothing about the host: forget the exit
-        // but let the next request's arm try a fresh one.
+    async fn residential_first_exit_error_holds_the_host() {
+        // A sticky exit that went away (tunnel or proxy error) drops the host
+        // from the memory, and a host never leaves the memory without the hold:
+        // otherwise the next challenge re-probes at once (bench 2026-11-18,
+        // manuals.plus: re-probed 23 s after the exit failed).
         let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![
-            MockBehavior::Err("connection refused".into()),
+            MockBehavior::Err("net::ERR_TUNNEL_CONNECTION_FAILED".into()),
             MockBehavior::Ok(recovered_html()),
         ]);
         r.residential_hosts
             .remember("example.com", "crptest".into())
             .await;
         fetch_example(&r, 2).await;
-        assert_eq!(proxy.calls(), 2, "the arm still fires on the next request");
-        assert!(!r.residential_held_hosts.should_proxy("example.com").await);
-        assert!(r.residential_hosts.get("example.com").await.is_some());
+        assert_eq!(proxy.calls(), 1, "no probe right after the exit failed");
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+        assert!(r.residential_hosts.get("example.com").await.is_none());
     }
 
     #[cfg(feature = "cloak")]
