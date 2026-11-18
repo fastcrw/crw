@@ -66,9 +66,18 @@ const FOCUS_PAGES: usize = 2;
 /// The focused search starts only with time left for its pages and their
 /// extraction; otherwise the row ends `completed` with what it has.
 const FOCUS_MIN_LEFT: Duration = Duration::from_secs(30);
-/// Video and social pages: in the golden run 68 of 270 pages read, 1 supported
-/// cell. Their snippets still count; their pages are not fetched.
-const SKIP_HOSTS: [&str; 4] = ["youtube.com", "facebook.com", "instagram.com", "tiktok.com"];
+/// Video, social and app-store pages: in the golden run 68 of 270 pages read
+/// were video or social and gave 1 supported cell; app-store listings rank high
+/// for a company name (Spotify: Play Store above Wikipedia) and state none of a
+/// company's facts. Their snippets still count; their pages are not fetched.
+const SKIP_HOSTS: [&str; 6] = [
+    "youtube.com",
+    "facebook.com",
+    "instagram.com",
+    "tiktok.com",
+    "play.google.com",
+    "apps.apple.com",
+];
 const MAX_IDENTITY_CHARS: usize = 200;
 /// Prompt-size bounds, so the per-page LLM input stays near the reserve.
 const MAX_IDENTITY_TOTAL_CHARS: usize = 1_000;
@@ -1412,6 +1421,15 @@ mod tests {
         assert!(skip_host("https://m.facebook.com/stripe"));
         assert!(!skip_host("https://www.linkedin.com/company/stripe"));
         assert!(!skip_host("https://notyoutube.com/"));
+        assert!(skip_host(
+            "https://play.google.com/store/apps/details?id=com.spotify.music"
+        ));
+        assert!(skip_host(
+            "https://apps.apple.com/us/app/spotify-music-and-podcasts/id324684580"
+        ));
+        // Only the store hosts: Google and Apple's own pages stay readable.
+        assert!(!skip_host("https://www.google.com/about/"));
+        assert!(!skip_host("https://www.apple.com/leadership/"));
     }
 
     #[test]
