@@ -608,9 +608,17 @@ async fn scrape_url_inner(
             .markdown
             .as_deref()
             .map(crw_extract::quality::analyze_md_only);
+        // A page whose markdown is mostly a serialized JSON blob is as unread as
+        // an empty one: a renderer that ran out of budget before the app
+        // mounted left the app's bootstrap data as the only text (LightPanda on
+        // a notion.site page: ~1.5 MB of `{"feature_gates":…}`, where Chrome
+        // renders the page). It has plenty of word-like tokens, so the score
+        // alone passes it.
+        let md_is_json_dump = data.markdown.as_deref().is_some_and(markdown_is_json_dump);
         let md_is_low_quality = md_quality
             .as_ref()
-            .is_some_and(crw_extract::quality::is_low_quality);
+            .is_some_and(crw_extract::quality::is_low_quality)
+            || md_is_json_dump;
         // `impersonated-http` belongs here for the same reason `http` does: it
         // executes no JS, so a 2xx whose markdown comes out empty is exactly
         // the gap this second-chance escalation exists to close. Leaving it out
@@ -822,10 +830,15 @@ async fn scrape_url_inner(
                             prior_renderer,
                             prior_was_thin: http_was_thin,
                             prior_floor: retry_threshold,
+                            prior_is_json_dump: md_is_json_dump,
                             before_score,
                             js_md_len,
                             js_floor,
                             js_score,
+                            js_is_json_dump: js_data
+                                .markdown
+                                .as_deref()
+                                .is_some_and(markdown_is_json_dump),
                         });
                         if accept {
                             // Remember which tier really produced the body, so
@@ -1963,11 +1976,15 @@ struct JsRetry<'a> {
     prior_was_thin: bool,
     /// Floor of the prior tier (lightpanda's is higher than http's).
     prior_floor: usize,
+    /// The prior body is a serialized JSON blob ([`markdown_is_json_dump`]).
+    prior_is_json_dump: bool,
     before_score: f32,
     js_md_len: usize,
     /// Floor of the tier that produced the JS body.
     js_floor: usize,
     js_score: f32,
+    /// The JS body is itself a JSON blob.
+    js_is_json_dump: bool,
 }
 
 /// Quality margin a re-render has to clear (or stay within) to change hands.
@@ -1990,9 +2007,18 @@ const JS_RETRY_SCORE_MARGIN: f32 = 0.05;
 /// The JS body is measured against the floor of the tier that produced it. It
 /// used to be held to lightpanda's 2000-byte floor, which silently dropped any
 /// shorter Chrome render however much better it was.
+///
+/// A prior body that is a JSON dump has nothing worth keeping, and it scores
+/// well on word count alone, so the score comparison would keep it. There any
+/// render that clears its floor and is not itself a dump wins: on a
+/// notion.site page lightpanda returned ~1.5 MB of bootstrap JSON and Chrome
+/// rendered the page in under 1 KB.
 fn accept_js_retry(r: JsRetry<'_>) -> bool {
     if r.prior_was_thin {
         return r.js_md_len >= r.prior_floor;
+    }
+    if r.prior_is_json_dump {
+        return !r.js_is_json_dump && r.js_md_len >= r.js_floor;
     }
     if r.js_md_len < r.js_floor {
         return false;
@@ -2047,6 +2073,25 @@ fn escalate_for_quality(
     crw_extract::antibot::classify(Some(status), html)
         .signal
         .is_blocked()
+}
+
+/// Whether most of `markdown`'s text sits in lines that are each a whole JSON
+/// object or array: a serialized data blob standing where the page's prose
+/// should be. Feeds the low-quality term of [`escalate_for_quality`], which
+/// keeps its own content-type gate, so a real `application/json` response is
+/// never escalated for this.
+fn markdown_is_json_dump(markdown: &str) -> bool {
+    let (mut total, mut json) = (0usize, 0usize);
+    for line in markdown.lines() {
+        let line = line.trim();
+        total += line.len();
+        let object = line.starts_with("{\"") && line.ends_with('}');
+        let array = line.starts_with('[') && line.ends_with(']') && !line.starts_with("[!");
+        if (object || array) && serde_json::from_str::<serde_json::Value>(line).is_ok() {
+            json += line.len();
+        }
+    }
+    json > 0 && json * 2 > total
 }
 
 fn formats_include_json(formats: &[OutputFormat]) -> bool {
@@ -3841,7 +3886,68 @@ mod tests {
             js_md_len: js_len,
             js_floor: 100,
             js_score: js,
+            prior_is_json_dump: false,
+            js_is_json_dump: false,
         }
+    }
+
+    #[test]
+    fn json_dump_markdown_is_detected() {
+        let blob = format!(
+            "{{\"feature_gates\":{{{}}}}}",
+            (0..400)
+                .map(|i| format!("\"{i}\":{{\"name\":\"gate {i}\",\"value\":true}}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let notion = format!("# Notion Official\n\n{blob}\n\nSome trailing words here.\n");
+        assert!(markdown_is_json_dump(&notion));
+
+        // Prose, a page with one small inline JSON sample, links in brackets,
+        // and an unparseable brace line are not dumps.
+        let prose = "# Title\n\nA paragraph of ordinary text that people read.\n".repeat(20);
+        assert!(!markdown_is_json_dump(&prose));
+        let sample = format!("{prose}\n{{\"a\":1}}\n");
+        assert!(!markdown_is_json_dump(&sample));
+        assert!(!markdown_is_json_dump("[a link](/x) and [another](/y)"));
+        assert!(!markdown_is_json_dump("{\"not json at all}"));
+        assert!(!markdown_is_json_dump(""));
+    }
+
+    #[test]
+    fn json_dump_escalates_like_a_thin_page_but_not_under_a_json_content_type() {
+        let html = r#"{"id":1,"body":"comment text"},"#.repeat(200);
+        assert!(escalate_for_quality(
+            false,
+            true,
+            200,
+            &html,
+            Some("text/html")
+        ));
+        assert!(!escalate_for_quality(
+            false,
+            true,
+            200,
+            &html,
+            Some("application/json")
+        ));
+    }
+
+    #[test]
+    fn a_readable_render_replaces_a_json_dump() {
+        let dump = |js_len, js_dump| JsRetry {
+            prior_is_json_dump: true,
+            js_is_json_dump: js_dump,
+            ..js_retry("lightpanda", 0.30, js_len, 0.05)
+        };
+        // notion.site: lightpanda left ~1.5 MB of JSON, Chrome rendered 876
+        // bytes that score lower than the dump's word count does.
+        assert!(accept_js_retry(dump(876, false)));
+        // A render that is itself a dump, or under its floor, does not.
+        assert!(!accept_js_retry(dump(900_000, true)));
+        assert!(!accept_js_retry(dump(40, false)));
+        // Without the dump the same render loses on score.
+        assert!(!accept_js_retry(js_retry("lightpanda", 0.30, 876, 0.05)));
     }
 
     #[test]
