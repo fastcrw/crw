@@ -34,13 +34,43 @@ pub const SERVER_INSTRUCTIONS_NO_SEARCH: &str = "fastCRW reads public web pages.
 pub const DATA_TOOLS_INSTRUCTION: &str = "crw_find_data lists the public data sources (datasets, statistics, registries, papers) that match a question, and crw_get_data returns one source's data, with its source and licence, for the provider, capability and options crw_find_data gave.";
 
 /// The `instructions` string that matches the tool set actually advertised.
-pub fn server_instructions(search_available: bool) -> &'static str {
+///
+/// Built from the tools `tools/list` keeps: it strips `crw_search` when no search
+/// backend is configured and the [`EXTRACT_TOOLS`] when they are hidden (see
+/// [`handle_protocol_method`]), and the instructions must never name a tool the
+/// client cannot call. With extract shown this is exactly
+/// [`SERVER_INSTRUCTIONS`] or [`SERVER_INSTRUCTIONS_NO_SEARCH`].
+pub fn server_instructions(search_available: bool, extract_available: bool) -> String {
+    let mut uses: Vec<&str> = Vec::with_capacity(5);
     if search_available {
-        SERVER_INSTRUCTIONS
-    } else {
-        SERVER_INSTRUCTIONS_NO_SEARCH
+        uses.push("crw_search returns ranked web results");
     }
+    uses.push("crw_scrape reads one URL as clean markdown");
+    uses.push("crw_map lists the URLs a site publishes");
+    uses.push("crw_crawl reads a bounded set of pages under one URL (poll crw_check_crawl_status)");
+    if extract_available {
+        uses.push("crw_extract returns structured JSON from pages against a prompt or schema");
+    }
+    let last = uses.pop().expect("crw_scrape is always listed");
+    let lead = if search_available {
+        "fastCRW reads public web pages and searches the web."
+    } else {
+        "fastCRW reads public web pages."
+    };
+    format!(
+        "{lead} {}, and {last}. Every result carries its source URL.",
+        uses.join(", ")
+    )
 }
+
+/// The async extract tools. They need an LLM (server-side `[extraction.llm]` or a
+/// per-request BYOK key), so a deployment may hide them: see the
+/// `extract_available` argument of [`handle_protocol_method`].
+pub const EXTRACT_TOOLS: &[&str] = &[
+    "crw_extract",
+    "crw_check_extract_status",
+    "crw_cancel_extract",
+];
 
 // --- JSON-RPC types ---
 
@@ -726,12 +756,17 @@ pub enum ProtocolResult {
 /// Proxy callers pass `true` (the remote decides); embedded callers pass whether a
 /// search backend (SearXNG) is actually configured, so users who run `npx … crw`
 /// with no backend don't see a tool that only ever returns `search_disabled`.
+///
+/// `extract_available` does the same for [`EXTRACT_TOOLS`]: embedded callers pass
+/// `false` only when the operator opted into `[mcp] hide_extract_without_llm` and
+/// no `[extraction.llm]` is configured; proxy callers pass `true`.
 pub fn handle_protocol_method(
     server_name: &str,
     server_version: &str,
     req: &JsonRpcRequest,
     proxy_mode: bool,
     search_available: bool,
+    extract_available: bool,
 ) -> ProtocolResult {
     if req.jsonrpc != "2.0" {
         let id = req.id.clone().unwrap_or(Value::Null);
@@ -759,9 +794,12 @@ pub fn handle_protocol_method(
                         "version": server_version
                     },
                     "instructions": if proxy_mode {
-                        format!("{} {DATA_TOOLS_INSTRUCTION}", server_instructions(search_available))
+                        format!(
+                            "{} {DATA_TOOLS_INSTRUCTION}",
+                            server_instructions(search_available, extract_available)
+                        )
                     } else {
-                        server_instructions(search_available).to_string()
+                        server_instructions(search_available, extract_available)
                     }
                 }),
             ))
@@ -770,10 +808,12 @@ pub fn handle_protocol_method(
         "tools/list" => {
             let id = req.id.clone().unwrap_or(Value::Null);
             let mut defs = tool_definitions(proxy_mode);
-            if !search_available
-                && let Some(tools) = defs.get_mut("tools").and_then(Value::as_array_mut)
-            {
-                tools.retain(|t| t["name"] != "crw_search");
+            if let Some(tools) = defs.get_mut("tools").and_then(Value::as_array_mut) {
+                tools.retain(|t| {
+                    let name = t["name"].as_str().unwrap_or_default();
+                    (search_available || name != "crw_search")
+                        && (extract_available || !EXTRACT_TOOLS.contains(&name))
+                });
             }
             ProtocolResult::Response(JsonRpcResponse::success(id, defs))
         }
@@ -1930,7 +1970,7 @@ mod tests {
                 params: json!({}),
             };
             let ProtocolResult::Response(resp) =
-                handle_protocol_method("crw", "0", &req, false, search_available)
+                handle_protocol_method("crw", "0", &req, false, search_available, true)
             else {
                 panic!("expected response");
             };
@@ -1960,7 +2000,8 @@ mod tests {
             method: "initialize".into(),
             params: json!({}),
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, false, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, true, true)
         else {
             panic!("expected response");
         };
@@ -1982,7 +2023,7 @@ mod tests {
             params: json!({}),
         };
         let ProtocolResult::Response(resp2) =
-            handle_protocol_method("crw", "0", &no_search, false, false)
+            handle_protocol_method("crw", "0", &no_search, false, false, true)
         else {
             panic!("expected response");
         };
@@ -2378,7 +2419,7 @@ mod tests {
                 params: Value::Null,
             };
             let ProtocolResult::Response(resp) =
-                handle_protocol_method("crw", "0", &req, proxy_mode, true)
+                handle_protocol_method("crw", "0", &req, proxy_mode, true, true)
             else {
                 panic!("expected response");
             };
@@ -2395,10 +2436,86 @@ mod tests {
         assert!(!instructions(false).contains("crw_find_data"));
     }
 
+    /// With the extract tools shown, the assembled text is word for word the
+    /// two constants.
     #[test]
     fn server_instructions_fn_picks_the_matching_variant() {
-        assert_eq!(server_instructions(true), SERVER_INSTRUCTIONS);
-        assert_eq!(server_instructions(false), SERVER_INSTRUCTIONS_NO_SEARCH);
+        assert_eq!(server_instructions(true, true), SERVER_INSTRUCTIONS);
+        assert_eq!(
+            server_instructions(false, true),
+            SERVER_INSTRUCTIONS_NO_SEARCH
+        );
+    }
+
+    // --- [mcp] hide_extract_without_llm ---
+
+    fn protocol_result(method: &str, search: bool, extract: bool) -> Value {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: method.into(),
+            params: json!({}),
+        };
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, search, extract)
+        else {
+            panic!("expected response");
+        };
+        resp.result.unwrap()
+    }
+
+    fn listed_tools(search: bool, extract: bool) -> Vec<String> {
+        protocol_result("tools/list", search, extract)["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// Hidden extract tools leave `tools/list` and the instructions; shown, the
+    /// surface is exactly what it was.
+    #[test]
+    fn extract_tools_hidden_or_shown() {
+        let shown = listed_tools(true, true);
+        for name in EXTRACT_TOOLS {
+            assert!(shown.contains(&name.to_string()), "{name} listed");
+        }
+
+        let hidden = listed_tools(true, false);
+        for name in EXTRACT_TOOLS {
+            assert!(!hidden.contains(&name.to_string()), "{name} hidden");
+        }
+        assert_eq!(hidden.len(), shown.len() - EXTRACT_TOOLS.len());
+        assert!(hidden.contains(&"crw_search".to_string()));
+
+        // Both switches compose.
+        let neither = listed_tools(false, false);
+        assert_eq!(neither.len(), hidden.len() - 1);
+        assert!(!neither.contains(&"crw_search".to_string()));
+
+        let with = protocol_result("initialize", true, true);
+        assert_eq!(with["instructions"], json!(SERVER_INSTRUCTIONS));
+        let without = protocol_result("initialize", true, false);
+        let text = without["instructions"].as_str().unwrap();
+        assert!(!text.contains("extract"), "no extract mention: {text}");
+        assert_eq!(
+            text,
+            "fastCRW reads public web pages and searches the web. crw_search returns ranked \
+             web results, crw_scrape reads one URL as clean markdown, crw_map lists the URLs \
+             a site publishes, and crw_crawl reads a bounded set of pages under one URL (poll \
+             crw_check_crawl_status). Every result carries its source URL."
+        );
+        let neither = protocol_result("initialize", false, false);
+        assert_eq!(
+            neither["instructions"],
+            json!(
+                "fastCRW reads public web pages. crw_scrape reads one URL as clean markdown, \
+                 crw_map lists the URLs a site publishes, and crw_crawl reads a bounded set of \
+                 pages under one URL (poll crw_check_crawl_status). Every result carries its \
+                 source URL."
+            )
+        );
     }
 
     // --- [mcp] default_max_length ---
@@ -3132,7 +3249,8 @@ mod tests {
             method: "ping".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, false, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, true, true)
         else {
             panic!("expected response");
         };
@@ -3151,7 +3269,8 @@ mod tests {
             method: "ping".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, false, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, true, true)
         else {
             panic!("expected response");
         };
@@ -3167,7 +3286,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true),
+            handle_protocol_method("crw", "0", &req, false, true, true),
             ProtocolResult::Notification
         ));
     }
@@ -3181,7 +3300,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true),
+            handle_protocol_method("crw", "0", &req, false, true, true),
             ProtocolResult::Notification
         ));
     }
@@ -3194,7 +3313,8 @@ mod tests {
             method: "ping".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, false, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, true, true)
         else {
             panic!("expected response");
         };
@@ -3211,7 +3331,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true),
+            handle_protocol_method("crw", "0", &req, false, true, true),
             ProtocolResult::NotHandled
         ));
     }
@@ -3225,7 +3345,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true),
+            handle_protocol_method("crw", "0", &req, false, true, true),
             ProtocolResult::NotHandled
         ));
     }
@@ -3239,7 +3359,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw-test-server", "9.9.9", &req, false, true)
+            handle_protocol_method("crw-test-server", "9.9.9", &req, false, true, true)
         else {
             panic!("expected response");
         };
@@ -3258,7 +3378,8 @@ mod tests {
             method: "initialize".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, false, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, true, true)
         else {
             panic!("expected response");
         };
@@ -3273,7 +3394,8 @@ mod tests {
             method: "tools/list".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, true, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, true, true, true)
         else {
             panic!("expected response");
         };
@@ -3299,7 +3421,8 @@ mod tests {
             method: "tools/list".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) = handle_protocol_method("crw", "0", &req, false, true)
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, false, true, true)
         else {
             panic!("expected response");
         };

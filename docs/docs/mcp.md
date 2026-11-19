@@ -177,9 +177,9 @@ This yields a ~4.2 MB binary (vs ~17 MB for the default embedded build) because 
 | `crw_crawl` | Start async crawl → returns job ID | `POST /v1/crawl` | All modes |
 | `crw_check_crawl_status` | Poll crawl status and get results | `GET /v1/crawl/:id` | All modes |
 | `crw_map` | Discover all URLs on a site | `POST /v1/map` | All modes |
-| `crw_extract` | Extract structured JSON from URLs → async job ID | `POST /v1/extract` | All modes |
-| `crw_check_extract_status` | Poll extract status and get results | `GET /v1/extract/:id` | All modes |
-| `crw_cancel_extract` | Idempotently cancel extract and return canonical status | `DELETE /v1/extract/:id` | All modes |
+| `crw_extract` | Extract structured JSON from URLs → async job ID | `POST /v1/extract` | All modes; embedded hides it when `[mcp] hide_extract_without_llm` is on and no `[extraction.llm]` is set |
+| `crw_check_extract_status` | Poll extract status and get results | `GET /v1/extract/:id` | All modes; embedded hides it when `[mcp] hide_extract_without_llm` is on and no `[extraction.llm]` is set |
+| `crw_cancel_extract` | Idempotently cancel extract and return canonical status | `DELETE /v1/extract/:id` | All modes; embedded hides it when `[mcp] hide_extract_without_llm` is on and no `[extraction.llm]` is set |
 | `crw_enrich` | Fill blank table cells (up to 3 rows) with sourced values | `POST /v1/enrich` | Embedded mode |
 | `crw_search` | Search the web → titles, URLs, descriptions | `POST /v1/search` | Always in proxy mode; embedded only when a search backend is configured |
 | `crw_parse_file` | Parse a local PDF (base64) → markdown | `POST /firecrawl/v2/parse` (multipart) | All modes |

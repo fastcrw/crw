@@ -93,6 +93,14 @@ pub struct McpConfig {
     /// pages). Default 15000 ([`crate::mcp::DEFAULT_MAX_LENGTH`]). A caller's
     /// explicit `maxLength` always wins.
     pub default_max_length: usize,
+    /// Leave `crw_extract`, `crw_check_extract_status` and `crw_cancel_extract`
+    /// out of `tools/list` and the server instructions, and refuse calls to
+    /// them, when no `[extraction.llm]` is configured. Default `false`: the
+    /// tools stay advertised, since a caller can still bring its own LLM key
+    /// (`llmApiKey`). When on, MCP calls to these tools are refused even if
+    /// the caller passes `llmApiKey`. Turn on when callers never carry a key,
+    /// so agents are not offered a tool that can only fail.
+    pub hide_extract_without_llm: bool,
 }
 
 impl Default for McpConfig {
@@ -100,6 +108,7 @@ impl Default for McpConfig {
         Self {
             hide_credits: false,
             default_max_length: crate::mcp::DEFAULT_MAX_LENGTH,
+            hide_extract_without_llm: false,
         }
     }
 }
@@ -2175,6 +2184,13 @@ fn non_empty_trimmed_env(name: &str) -> Option<String> {
 }
 
 impl AppConfig {
+    /// Whether the MCP surfaces advertise and serve the extract tools
+    /// ([`crate::mcp::EXTRACT_TOOLS`]): always, unless the operator set
+    /// `[mcp] hide_extract_without_llm` and no `[extraction.llm]` is configured.
+    pub fn mcp_extract_available(&self) -> bool {
+        !self.mcp.hide_extract_without_llm || self.extraction.llm.is_some()
+    }
+
     /// Load config from config.default.toml + per-user config + environment
     /// variable overrides.
     ///
@@ -4834,6 +4850,32 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(cfg.mcp.default_max_length, 0);
         let cfg: AppConfig = toml::from_str("[mcp]\ndefault_max_length = 40000").unwrap();
         assert_eq!(cfg.mcp.default_max_length, 40_000);
+    }
+
+    #[test]
+    fn mcp_extract_available_follows_the_llm_only_when_opted_in() {
+        let llm = "[extraction.llm]\nprovider = \"openai\"\napi_key = \"k\"\nmodel = \"m\"\n";
+        let cases = [
+            ("", true),
+            ("[mcp]\nhide_extract_without_llm = true", false),
+            (llm, true),
+        ];
+        for (toml_src, want) in cases {
+            let cfg: AppConfig = toml::from_str(toml_src).unwrap();
+            assert_eq!(cfg.mcp_extract_available(), want, "{toml_src:?}");
+        }
+        let both = format!("[mcp]\nhide_extract_without_llm = true\n{llm}");
+        let cfg: AppConfig = toml::from_str(&both).unwrap();
+        assert!(cfg.mcp_extract_available());
+    }
+
+    #[test]
+    fn env_var_mcp_hide_extract_without_llm() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::set_var("CRW_MCP__HIDE_EXTRACT_WITHOUT_LLM", "true") };
+        let cfg = AppConfig::load().unwrap();
+        unsafe { std::env::remove_var("CRW_MCP__HIDE_EXTRACT_WITHOUT_LLM") };
+        assert!(cfg.mcp.hide_extract_without_llm);
     }
 
     #[test]

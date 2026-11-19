@@ -172,6 +172,16 @@ impl Backend {
         }
     }
 
+    /// Whether the extract tools should be advertised. Proxy: yes (the remote
+    /// decides). Embedded: unless `[mcp] hide_extract_without_llm` hides them.
+    fn extract_available(&self) -> bool {
+        match self {
+            Backend::Proxy { .. } => true,
+            #[cfg(feature = "embedded")]
+            Backend::Embedded { state } => state.config.mcp_extract_available(),
+        }
+    }
+
     /// Whether to strip credit fields at this dispatch layer. Proxy mode only:
     /// the embedded backend strips inside `call_tool` (driven by server
     /// config), and re-stripping here would be a wasted no-op walk.
@@ -191,6 +201,7 @@ impl Backend {
             &req,
             self.is_proxy(),
             self.search_available(),
+            self.extract_available(),
         ) {
             ProtocolResult::Response(mut resp) => {
                 if !self.data_tools_listed() {

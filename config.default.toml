@@ -342,3 +342,8 @@ sandbox_memory_bytes = 536870912
 # `maxLength`. 0 = unbounded (whole pages). A caller's own `maxLength` always
 # wins.
 # default_max_length = 15000
+# Hide crw_extract / crw_check_extract_status / crw_cancel_extract (from
+# tools/list and the server instructions, and refuse calls to them) when no
+# [extraction.llm] is configured. Off by default. When on, MCP calls to these
+# tools are refused even if the caller passes its own key (`llmApiKey`).
+# hide_extract_without_llm = false
