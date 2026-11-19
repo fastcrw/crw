@@ -463,6 +463,7 @@ timeout_ms = 60000           # LLM budget for one JSON extraction; basis mode ge
 # [mcp]
 # hide_credits = false
 # default_max_length = 15000   # cap per content field when a call has no maxLength; 0 = whole pages
+# hide_extract_without_llm = false   # hide the extract tools while no [extraction.llm] is set
 
 [auth]
 # api_keys = [&quot;crw_live_key-1234&quot;]</code></pre>
@@ -627,6 +628,10 @@ CRW_CONFIG=config.stealth crw-server</code></pre>
 <tr>
 <td><code>mcp.default_max_length</code></td>
 <td><code>CRW_MCP__DEFAULT_MAX_LENGTH</code></td>
+</tr>
+<tr>
+<td><code>mcp.hide_extract_without_llm</code></td>
+<td><code>CRW_MCP__HIDE_EXTRACT_WITHOUT_LLM</code></td>
 </tr>
 <tr>
 <td><em>(boot guard)</em></td>

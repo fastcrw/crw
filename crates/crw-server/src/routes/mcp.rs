@@ -63,6 +63,15 @@ pub async fn call_tool(state: &AppState, tool_name: &str, args: Value) -> Result
 }
 
 async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Result<Value, String> {
+    // Hidden from `tools/list` by `[mcp] hide_extract_without_llm`: refuse the
+    // call with an error result, as a disabled `crw_search` is refused.
+    if crw_core::mcp::EXTRACT_TOOLS.contains(&tool_name) && !state.config.mcp_extract_available() {
+        return Err(
+            "Extraction is disabled. Set [extraction.llm] in config or define \
+                    CRW_EXTRACTION__LLM__API_KEY to enable the extract tools."
+                .into(),
+        );
+    }
     match tool_name {
         "crw_scrape" => {
             let mut req: ScrapeRequest =
@@ -271,13 +280,15 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
 
 pub async fn handle_request(state: &AppState, req: JsonRpcRequest) -> Option<JsonRpcResponse> {
     // Handle common protocol methods via shared logic. `crw_search` is advertised
-    // only when a SearXNG backend is configured.
+    // only when a SearXNG backend is configured, the extract tools unless
+    // `[mcp] hide_extract_without_llm` hides them.
     match handle_protocol_method(
         SERVER_NAME,
         SERVER_VERSION,
         &req,
         false,
         state.searxng.is_some(),
+        state.config.mcp_extract_available(),
     ) {
         ProtocolResult::Response(resp) => return Some(resp),
         ProtocolResult::Notification => return None,

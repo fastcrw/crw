@@ -560,19 +560,19 @@ yourself are never touched, only the engine&#39;s own bookkeeping, and
 <td><code>crw_extract</code></td>
 <td>Extract structured JSON from URLs → async job ID</td>
 <td><code>POST /v1/extract</code></td>
-<td>All modes</td>
+<td>All modes; embedded hides it when <code>[mcp] hide_extract_without_llm</code> is on and no <code>[extraction.llm]</code> is set</td>
 </tr>
 <tr>
 <td><code>crw_check_extract_status</code></td>
 <td>Poll extract status and get results</td>
 <td><code>GET /v1/extract/:id</code></td>
-<td>All modes</td>
+<td>All modes; embedded hides it when <code>[mcp] hide_extract_without_llm</code> is on and no <code>[extraction.llm]</code> is set</td>
 </tr>
 <tr>
 <td><code>crw_cancel_extract</code></td>
 <td>Idempotently cancel extract and return canonical status</td>
 <td><code>DELETE /v1/extract/:id</code></td>
-<td>All modes</td>
+<td>All modes; embedded hides it when <code>[mcp] hide_extract_without_llm</code> is on and no <code>[extraction.llm]</code> is set</td>
 </tr>
 <tr>
 <td><code>crw_enrich</code></td>

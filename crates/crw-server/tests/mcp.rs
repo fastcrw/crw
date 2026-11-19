@@ -913,3 +913,101 @@ async fn mcp_t12_real_serializer_validates_against_output_schema() {
         );
     }
 }
+
+/// `[mcp] hide_extract_without_llm` with no `[extraction.llm]`: the extract tools
+/// leave `tools/list` and the instructions, and a call to one is refused the way
+/// a disabled `crw_search` is (isError text, no structuredContent).
+#[tokio::test]
+async fn mcp_hide_extract_without_llm_hides_and_refuses_extract_tools() {
+    let config: AppConfig = toml::from_str("[mcp]\nhide_extract_without_llm = true").unwrap();
+    let server = TestServer::new(create_app(AppState::new(config).unwrap()));
+
+    let resp = server
+        .post("/mcp")
+        .content_type("application/json")
+        .json(&mcp_request("tools/list", json!(1), json!({})))
+        .await;
+    let json: Value = resp.json();
+    let names: Vec<&str> = json["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    for name in crw_core::mcp::EXTRACT_TOOLS {
+        assert!(!names.contains(name), "{name} hidden");
+    }
+    assert!(names.contains(&"crw_scrape"));
+
+    let resp = server
+        .post("/mcp")
+        .content_type("application/json")
+        .json(&mcp_request("initialize", json!(2), json!({})))
+        .await;
+    let json: Value = resp.json();
+    let instructions = json["result"]["instructions"].as_str().unwrap();
+    assert!(!instructions.contains("extract"), "{instructions}");
+
+    for (name, args) in [
+        (
+            "crw_extract",
+            json!({"urls": ["https://example.com"], "prompt": "title"}),
+        ),
+        (
+            "crw_check_extract_status",
+            json!({"id": Uuid::new_v4().to_string()}),
+        ),
+        (
+            "crw_cancel_extract",
+            json!({"id": Uuid::new_v4().to_string()}),
+        ),
+    ] {
+        let resp = server
+            .post("/mcp")
+            .content_type("application/json")
+            .json(&mcp_request(
+                "tools/call",
+                json!(3),
+                json!({"name": name, "arguments": args}),
+            ))
+            .await;
+        resp.assert_status_ok();
+        let json: Value = resp.json();
+        let result = &json["result"];
+        assert_eq!(result["isError"], true, "{name}");
+        assert!(
+            result["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("Extraction is disabled"),
+            "{name}: {result}"
+        );
+        assert!(result.get("structuredContent").is_none());
+    }
+}
+
+/// The opt-in is a no-op once an LLM is configured, and off by default.
+#[tokio::test]
+async fn mcp_extract_tools_listed_with_llm_or_by_default() {
+    let with_llm = "[mcp]\nhide_extract_without_llm = true\n[extraction.llm]\n\
+                    provider = \"openai\"\napi_key = \"k\"\nmodel = \"m\"\n";
+    for src in ["", with_llm] {
+        let config: AppConfig = toml::from_str(src).unwrap();
+        let server = TestServer::new(create_app(AppState::new(config).unwrap()));
+        let resp = server
+            .post("/mcp")
+            .content_type("application/json")
+            .json(&mcp_request("tools/list", json!(1), json!({})))
+            .await;
+        let json: Value = resp.json();
+        let names: Vec<&str> = json["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        for name in crw_core::mcp::EXTRACT_TOOLS {
+            assert!(names.contains(name), "{name} listed for {src:?}");
+        }
+    }
+}
