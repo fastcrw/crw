@@ -843,8 +843,10 @@ pub fn tool_result_response(
 
 // --- Output bounding (MCP-layer, context-footprint control) ---
 
-/// Default per-content-field char cap for scrape/parse/crawl-status results.
-/// ~15K chars ≈ ~3.5–4K tokens — well under the typical ~25K-token client cap.
+/// Default per-content-field char cap for scrape/parse/crawl-status/search
+/// results when the call has no `maxLength`. ~15K chars ≈ ~3.5–4K tokens — well
+/// under the typical ~25K-token client cap. Operators override it with
+/// `[mcp] default_max_length` (`0` = unbounded), passed to [`apply_bounds`].
 pub const DEFAULT_MAX_LENGTH: usize = 15_000;
 /// Default cap on the number of URLs `crw_map` returns to the model.
 pub const DEFAULT_MAP_LIMIT: usize = 100;
@@ -1059,11 +1061,23 @@ fn bound_search_results(value: &mut Value, max: usize) {
 
 /// Bound a tool result's size at the MCP layer, driven by the call's own
 /// `maxLength`/`limit` arguments (see [`resolve_bound`] for the `0 = unbounded`
-/// opt-out). **Non-mutating** w.r.t. any stored state: it transforms an owned
-/// `Value` produced by the dispatch and returns a new one. Shared by the embedded,
-/// proxy, and CLI paths, and handles BOTH the bare (embedded) and `ApiResponse`-
-/// enveloped (proxy) result shapes so the two behave identically.
-pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
+/// opt-out). `default_max_length` is the cap for a call that carries no
+/// `maxLength` (the deployment's `[mcp] default_max_length`, normally
+/// [`DEFAULT_MAX_LENGTH`]); `0` leaves such calls unbounded. **Non-mutating**
+/// w.r.t. any stored state: it transforms an owned `Value` produced by the
+/// dispatch and returns a new one. Shared by the embedded, proxy, and CLI paths,
+/// and handles BOTH the bare (embedded) and `ApiResponse`-enveloped (proxy)
+/// result shapes so the two behave identically.
+pub fn apply_bounds(
+    tool_name: &str,
+    args: &Value,
+    default_max_length: usize,
+    mut value: Value,
+) -> Value {
+    let max_length = |args: &Value| match resolve_bound(args, "maxLength", default_max_length) {
+        Some(0) => None,
+        bound => bound,
+    };
     match tool_name {
         "crw_scrape" | "crw_parse_file" => {
             // `startIndex` resumes a truncated scrape (issue #661). It is honoured
@@ -1075,7 +1089,7 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
             } else {
                 0
             };
-            let max = resolve_bound(args, "maxLength", DEFAULT_MAX_LENGTH);
+            let max = max_length(args);
             if let Some(target) = scrape_target_mut(&mut value) {
                 window_scrape_obj(target, start, max, resume);
             }
@@ -1083,7 +1097,7 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
         "crw_check_crawl_status" => {
             // CrawlState is returned bare (top-level `data` array) by both the
             // embedded backend and the REST `GET /v1/crawl/{id}` endpoint.
-            if let Some(max) = resolve_bound(args, "maxLength", DEFAULT_MAX_LENGTH)
+            if let Some(max) = max_length(args)
                 && let Some(pages) = value.get_mut("data").and_then(Value::as_array_mut)
             {
                 for page in pages.iter_mut() {
@@ -1097,7 +1111,7 @@ pub fn apply_bounds(tool_name: &str, args: &Value, mut value: Value) -> Value {
             }
         }
         "crw_search" => {
-            if let Some(max) = resolve_bound(args, "maxLength", DEFAULT_MAX_LENGTH) {
+            if let Some(max) = max_length(args) {
                 bound_search_results(&mut value, max);
             }
         }
@@ -1644,7 +1658,7 @@ mod tests {
     fn b1_scrape_truncates_to_default_max_length() {
         let value =
             json!({ "markdown": long_md(DEFAULT_MAX_LENGTH + 500), "url": "https://e.com" });
-        let out = apply_bounds("crw_scrape", &json!({}), value);
+        let out = apply_bounds("crw_scrape", &json!({}), DEFAULT_MAX_LENGTH, value);
         let md = out["markdown"].as_str().unwrap();
         assert!(
             md.chars().count() <= DEFAULT_MAX_LENGTH + 100,
@@ -1658,7 +1672,7 @@ mod tests {
     #[test]
     fn b2_scrape_short_content_untouched() {
         let value = json!({ "markdown": "hello", "url": "https://e.com" });
-        let out = apply_bounds("crw_scrape", &json!({}), value);
+        let out = apply_bounds("crw_scrape", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert_eq!(out["markdown"], json!("hello"));
         assert!(out.get("truncated").is_none());
     }
@@ -1668,7 +1682,12 @@ mod tests {
     fn b3_scrape_max_length_zero_is_unbounded() {
         let big = long_md(DEFAULT_MAX_LENGTH * 2);
         let value = json!({ "markdown": big.clone() });
-        let out = apply_bounds("crw_scrape", &json!({ "maxLength": 0 }), value);
+        let out = apply_bounds(
+            "crw_scrape",
+            &json!({ "maxLength": 0 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         assert_eq!(
             out["markdown"].as_str().unwrap().chars().count(),
             big.chars().count()
@@ -1680,7 +1699,12 @@ mod tests {
     #[test]
     fn b4_scrape_custom_max_length() {
         let value = json!({ "markdown": long_md(100) });
-        let out = apply_bounds("crw_scrape", &json!({ "maxLength": 10 }), value);
+        let out = apply_bounds(
+            "crw_scrape",
+            &json!({ "maxLength": 10 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         let md = out["markdown"].as_str().unwrap();
         assert!(md.starts_with(&"x".repeat(10)));
         assert!(md.contains("[truncated"));
@@ -1693,7 +1717,7 @@ mod tests {
             .map(|i| json!(format!("https://e.com/{i}")))
             .collect();
         let value = json!({ "success": true, "links": links });
-        let out = apply_bounds("crw_map", &json!({}), value);
+        let out = apply_bounds("crw_map", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert_eq!(out["links"].as_array().unwrap().len(), DEFAULT_MAP_LIMIT);
         assert_eq!(out["totalDiscovered"], json!(250));
         assert_eq!(out["truncated"], json!(true));
@@ -1711,7 +1735,7 @@ mod tests {
             "links": ["https://e.com/"],
             "sitemaps": sitemaps,
         });
-        let out = apply_bounds("crw_map", &json!({}), value);
+        let out = apply_bounds("crw_map", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert_eq!(out["sitemaps"].as_array().unwrap().len(), DEFAULT_MAP_LIMIT);
         assert_eq!(out["totalSitemaps"], json!(250));
         assert_eq!(out["truncated"], json!(true));
@@ -1727,7 +1751,7 @@ mod tests {
             .map(|i| json!(format!("https://e.com/{i}")))
             .collect();
         let value = json!({ "links": links });
-        let out = apply_bounds("crw_map", &json!({ "limit": 0 }), value);
+        let out = apply_bounds("crw_map", &json!({ "limit": 0 }), DEFAULT_MAX_LENGTH, value);
         assert_eq!(out["links"].as_array().unwrap().len(), 250);
         assert!(out.get("truncated").is_none());
     }
@@ -1742,7 +1766,12 @@ mod tests {
                 { "markdown": "short", "url": "https://e.com/2" }
             ]
         });
-        let out = apply_bounds("crw_check_crawl_status", &json!({}), value);
+        let out = apply_bounds(
+            "crw_check_crawl_status",
+            &json!({}),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         let pages = out["data"].as_array().unwrap();
         assert_eq!(pages[0]["truncated"], json!(true));
         assert!(
@@ -1759,7 +1788,12 @@ mod tests {
     #[test]
     fn b8_truncation_is_char_safe() {
         let value = json!({ "markdown": "é".repeat(100) });
-        let out = apply_bounds("crw_scrape", &json!({ "maxLength": 10 }), value);
+        let out = apply_bounds(
+            "crw_scrape",
+            &json!({ "maxLength": 10 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         // Must not panic and must keep exactly 10 'é' chars before the marker.
         assert!(
             out["markdown"]
@@ -1794,7 +1828,7 @@ mod tests {
     #[test]
     fn b10_unknown_tool_passthrough() {
         let value = json!({ "anything": [1, 2, 3] });
-        let out = apply_bounds("crw_crawl", &json!({}), value.clone());
+        let out = apply_bounds("crw_crawl", &json!({}), DEFAULT_MAX_LENGTH, value.clone());
         assert_eq!(out, value);
     }
 
@@ -1806,7 +1840,7 @@ mod tests {
             "success": true,
             "data": { "markdown": long_md(DEFAULT_MAX_LENGTH + 500), "url": "https://e.com" }
         });
-        let out = apply_bounds("crw_scrape", &json!({}), value);
+        let out = apply_bounds("crw_scrape", &json!({}), DEFAULT_MAX_LENGTH, value);
         let md = out["data"]["markdown"].as_str().unwrap();
         assert!(
             md.contains("[truncated"),
@@ -1823,7 +1857,7 @@ mod tests {
             .map(|i| json!(format!("https://e.com/{i}")))
             .collect();
         let value = json!({ "success": true, "data": { "links": links } });
-        let out = apply_bounds("crw_map", &json!({}), value);
+        let out = apply_bounds("crw_map", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert_eq!(
             out["data"]["links"].as_array().unwrap().len(),
             DEFAULT_MAP_LIMIT
@@ -1981,7 +2015,7 @@ mod tests {
                 { "url": "https://e.com/2", "description": "no scrape content" }
             ]}
         });
-        let out = apply_bounds("crw_search", &json!({}), flat);
+        let out = apply_bounds("crw_search", &json!({}), DEFAULT_MAX_LENGTH, flat);
         assert!(
             out["data"]["results"][0]["markdown"]
                 .as_str()
@@ -1999,7 +2033,7 @@ mod tests {
                 "news": [{ "url": "https://e.com/n", "description": "short" }]
             }}
         });
-        let out = apply_bounds("crw_search", &json!({}), grouped);
+        let out = apply_bounds("crw_search", &json!({}), DEFAULT_MAX_LENGTH, grouped);
         assert_eq!(out["data"]["results"]["web"][0]["truncated"], json!(true));
         assert!(out["data"]["results"]["news"][0].get("truncated").is_none());
     }
@@ -2167,7 +2201,7 @@ mod tests {
                 { "url": "https://e.com/2", "description": "no scrape content" }
             ]
         });
-        let out = apply_bounds("crw_search", &json!({}), flat);
+        let out = apply_bounds("crw_search", &json!({}), DEFAULT_MAX_LENGTH, flat);
         assert!(
             out["data"][0]["markdown"]
                 .as_str()
@@ -2185,7 +2219,7 @@ mod tests {
                 "news": [{ "url": "https://e.com/n", "description": "short" }]
             }
         });
-        let out = apply_bounds("crw_search", &json!({}), grouped);
+        let out = apply_bounds("crw_search", &json!({}), DEFAULT_MAX_LENGTH, grouped);
         assert_eq!(out["data"]["web"][0]["truncated"], json!(true));
         assert!(out["data"]["news"][0].get("truncated").is_none());
     }
@@ -2365,6 +2399,65 @@ mod tests {
     fn server_instructions_fn_picks_the_matching_variant() {
         assert_eq!(server_instructions(true), SERVER_INSTRUCTIONS);
         assert_eq!(server_instructions(false), SERVER_INSTRUCTIONS_NO_SEARCH);
+    }
+
+    // --- [mcp] default_max_length ---
+
+    /// A call without `maxLength` is capped at the deployment's default, not the const.
+    #[test]
+    fn default_max_length_comes_from_the_caller() {
+        let value = json!({ "markdown": long_md(DEFAULT_MAX_LENGTH + 500), "url": "u" });
+        let out = apply_bounds("crw_scrape", &json!({}), 100, value);
+        assert_eq!(out["truncated"], json!(true));
+        let md = out["markdown"].as_str().unwrap();
+        assert!(
+            md.chars().count() <= 100 + 100,
+            "capped at the passed default"
+        );
+
+        // An explicit maxLength still wins over the configured default.
+        let value = json!({ "markdown": long_md(500), "url": "u" });
+        let out = apply_bounds("crw_scrape", &json!({ "maxLength": 10 }), 0, value);
+        assert_eq!(out["truncated"], json!(true));
+    }
+
+    /// `default_max_length = 0` leaves every bounded tool whole when the call has
+    /// no `maxLength`.
+    #[test]
+    fn default_max_length_zero_is_unbounded() {
+        let big = long_md(DEFAULT_MAX_LENGTH * 4);
+        let scrape = apply_bounds(
+            "crw_scrape",
+            &json!({}),
+            0,
+            json!({ "markdown": big.clone(), "url": "u" }),
+        );
+        assert!(scrape.get("truncated").is_none());
+        assert_eq!(scrape["markdown"].as_str().unwrap(), big);
+
+        let parse = apply_bounds(
+            "crw_parse_file",
+            &json!({}),
+            0,
+            json!({ "markdown": big.clone() }),
+        );
+        assert_eq!(parse["markdown"].as_str().unwrap(), big);
+
+        let crawl = apply_bounds(
+            "crw_check_crawl_status",
+            &json!({}),
+            0,
+            json!({ "data": [{ "markdown": big.clone() }] }),
+        );
+        assert_eq!(crawl["data"][0]["markdown"].as_str().unwrap(), big);
+
+        let search = apply_bounds(
+            "crw_search",
+            &json!({}),
+            0,
+            json!({ "data": [{ "url": "u", "markdown": big.clone() }] }),
+        );
+        assert_eq!(search["data"][0]["markdown"].as_str().unwrap(), big);
     }
 
     // --- JsonRpcRequest deserialization ---
@@ -3359,7 +3452,12 @@ mod tests {
     fn scrape_start_index_resumes_where_the_marker_points() {
         let md = "one two three four five six seven eight nine ten";
         let args = json!({ "maxLength": 20 });
-        let first = apply_bounds("crw_scrape", &args, json!({ "markdown": md }));
+        let first = apply_bounds(
+            "crw_scrape",
+            &args,
+            DEFAULT_MAX_LENGTH,
+            json!({ "markdown": md }),
+        );
         let first = first["markdown"].as_str().unwrap();
         assert!(first.starts_with("one two three four\n…"), "{first}");
         assert!(
@@ -3367,7 +3465,12 @@ mod tests {
             "{first}"
         );
         let args = json!({ "maxLength": 20, "startIndex": 18 });
-        let next = apply_bounds("crw_scrape", &args, json!({ "markdown": md }));
+        let next = apply_bounds(
+            "crw_scrape",
+            &args,
+            DEFAULT_MAX_LENGTH,
+            json!({ "markdown": md }),
+        );
         let next = next["markdown"].as_str().unwrap();
         assert!(next.starts_with(" five six seven\n…"), "{next}");
         assert!(
@@ -3382,6 +3485,7 @@ mod tests {
         let out = apply_bounds(
             "crw_scrape",
             &args,
+            DEFAULT_MAX_LENGTH,
             json!({ "markdown": "one two", "summary": "s" }),
         );
         assert_eq!(out["markdown"], json!("two"));
@@ -3395,7 +3499,12 @@ mod tests {
         let mut seen = String::new();
         for _ in 0..3 {
             let args = json!({ "maxLength": 1, "startIndex": start });
-            let out = apply_bounds("crw_scrape", &args, json!({ "markdown": "a b" }));
+            let out = apply_bounds(
+                "crw_scrape",
+                &args,
+                DEFAULT_MAX_LENGTH,
+                json!({ "markdown": "a b" }),
+            );
             let md = out["markdown"].as_str().unwrap().to_string();
             seen.push_str(md.split("\n…").next().unwrap());
             match md.split("startIndex=").nth(1) {
@@ -3412,6 +3521,7 @@ mod tests {
         let out = apply_bounds(
             "crw_scrape",
             &args,
+            DEFAULT_MAX_LENGTH,
             json!({ "summary": "a long llm summary" }),
         );
         let s = out["summary"].as_str().unwrap();
@@ -3422,7 +3532,12 @@ mod tests {
     #[test]
     fn scrape_start_index_past_the_end_says_so() {
         let args = json!({ "startIndex": 99 });
-        let out = apply_bounds("crw_scrape", &args, json!({ "markdown": "short" }));
+        let out = apply_bounds(
+            "crw_scrape",
+            &args,
+            DEFAULT_MAX_LENGTH,
+            json!({ "markdown": "short" }),
+        );
         assert_eq!(
             out["markdown"],
             json!("…[crw-mcp startIndex 99 is past the end: 5 chars]")
@@ -3432,7 +3547,12 @@ mod tests {
     #[test]
     fn start_index_is_ignored_outside_crw_scrape_and_is_stripped() {
         let args = json!({ "maxLength": 0, "startIndex": 4 });
-        let out = apply_bounds("crw_parse_file", &args, json!({ "markdown": "one two" }));
+        let out = apply_bounds(
+            "crw_parse_file",
+            &args,
+            DEFAULT_MAX_LENGTH,
+            json!({ "markdown": "one two" }),
+        );
         assert_eq!(out["markdown"], json!("one two"));
         let stripped = strip_mcp_only_args("crw_scrape", json!({ "url": "u", "startIndex": 9 }));
         assert!(stripped.get("startIndex").is_none());
@@ -3653,7 +3773,7 @@ mod tests {
     #[test]
     fn apply_bounds_crw_parse_file_shares_the_scrape_truncation_path() {
         let value = json!({ "markdown": long_md(DEFAULT_MAX_LENGTH + 50) });
-        let out = apply_bounds("crw_parse_file", &json!({}), value);
+        let out = apply_bounds("crw_parse_file", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert!(out["markdown"].as_str().unwrap().contains("[truncated"));
         assert_eq!(out["truncated"], json!(true));
     }
@@ -3661,49 +3781,69 @@ mod tests {
     #[test]
     fn apply_bounds_crw_extract_is_untouched_passthrough() {
         let value = json!({ "id": "job-1", "status": "processing", "urls": 3 });
-        let out = apply_bounds("crw_extract", &json!({}), value.clone());
+        let out = apply_bounds("crw_extract", &json!({}), DEFAULT_MAX_LENGTH, value.clone());
         assert_eq!(out, value);
     }
 
     #[test]
     fn apply_bounds_crw_cancel_extract_is_untouched_passthrough() {
         let value = json!({ "id": "job-1", "status": "cancelling" });
-        let out = apply_bounds("crw_cancel_extract", &json!({}), value.clone());
+        let out = apply_bounds(
+            "crw_cancel_extract",
+            &json!({}),
+            DEFAULT_MAX_LENGTH,
+            value.clone(),
+        );
         assert_eq!(out, value);
     }
 
     #[test]
     fn apply_bounds_crw_check_extract_status_is_untouched_passthrough() {
         let value = json!({ "id": "job-1", "status": "completed", "results": [] });
-        let out = apply_bounds("crw_check_extract_status", &json!({}), value.clone());
+        let out = apply_bounds(
+            "crw_check_extract_status",
+            &json!({}),
+            DEFAULT_MAX_LENGTH,
+            value.clone(),
+        );
         assert_eq!(out, value);
     }
 
     #[test]
     fn apply_bounds_unrecognized_tool_name_is_untouched_passthrough() {
         let value = json!({ "anything": true });
-        let out = apply_bounds("not_a_real_tool", &json!({}), value.clone());
+        let out = apply_bounds(
+            "not_a_real_tool",
+            &json!({}),
+            DEFAULT_MAX_LENGTH,
+            value.clone(),
+        );
         assert_eq!(out, value);
     }
 
     #[test]
     fn apply_bounds_scrape_at_exactly_the_default_cap_is_untouched() {
         let value = json!({ "markdown": long_md(DEFAULT_MAX_LENGTH) });
-        let out = apply_bounds("crw_scrape", &json!({}), value);
+        let out = apply_bounds("crw_scrape", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert!(out.get("truncated").is_none());
     }
 
     #[test]
     fn apply_bounds_map_default_limit_zero_link_list_is_a_no_op() {
         let value = json!({ "links": [] });
-        let out = apply_bounds("crw_map", &json!({}), value);
+        let out = apply_bounds("crw_map", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert!(out.get("truncated").is_none());
     }
 
     #[test]
     fn apply_bounds_check_crawl_status_missing_data_field_is_a_no_op() {
         let value = json!({ "status": "processing" });
-        let out = apply_bounds("crw_check_crawl_status", &json!({}), value.clone());
+        let out = apply_bounds(
+            "crw_check_crawl_status",
+            &json!({}),
+            DEFAULT_MAX_LENGTH,
+            value.clone(),
+        );
         assert_eq!(out, value);
     }
 
@@ -3712,7 +3852,12 @@ mod tests {
         let value = json!({
             "data": [{ "markdown": long_md(DEFAULT_MAX_LENGTH * 2), "url": "https://e.com" }]
         });
-        let out = apply_bounds("crw_check_crawl_status", &json!({ "maxLength": 0 }), value);
+        let out = apply_bounds(
+            "crw_check_crawl_status",
+            &json!({ "maxLength": 0 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         assert!(out["data"][0].get("truncated").is_none());
     }
 
@@ -3991,7 +4136,7 @@ mod tests {
             .map(|i| json!(format!("u{i}")))
             .collect();
         let value = json!({ "links": links });
-        let out = apply_bounds("crw_map", &json!({}), value);
+        let out = apply_bounds("crw_map", &json!({}), DEFAULT_MAX_LENGTH, value);
         assert_eq!(out["links"].as_array().unwrap().len(), DEFAULT_MAP_LIMIT);
         assert!(out.get("truncated").is_none());
     }
@@ -4000,7 +4145,12 @@ mod tests {
     fn apply_bounds_search_max_length_zero_is_unbounded() {
         let big = long_md(DEFAULT_MAX_LENGTH * 2);
         let value = json!({ "data": { "results": [{ "url": "u", "markdown": big.clone() }] } });
-        let out = apply_bounds("crw_search", &json!({ "maxLength": 0 }), value);
+        let out = apply_bounds(
+            "crw_search",
+            &json!({ "maxLength": 0 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         assert_eq!(
             out["data"]["results"][0]["markdown"]
                 .as_str()
@@ -4017,14 +4167,24 @@ mod tests {
         // A negative maxLength cannot be represented as u64, so resolve_bound
         // treats it as absent and the default cap still applies.
         let value = json!({ "markdown": long_md(DEFAULT_MAX_LENGTH + 500) });
-        let out = apply_bounds("crw_scrape", &json!({ "maxLength": -1 }), value);
+        let out = apply_bounds(
+            "crw_scrape",
+            &json!({ "maxLength": -1 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         assert!(out["markdown"].as_str().unwrap().contains("[truncated"));
     }
 
     #[test]
     fn apply_bounds_check_crawl_status_empty_pages_array_is_untouched() {
         let value = json!({ "status": "completed", "data": [] });
-        let out = apply_bounds("crw_check_crawl_status", &json!({}), value.clone());
+        let out = apply_bounds(
+            "crw_check_crawl_status",
+            &json!({}),
+            DEFAULT_MAX_LENGTH,
+            value.clone(),
+        );
         assert_eq!(out, value);
     }
 
@@ -4033,7 +4193,12 @@ mod tests {
         let links: Vec<Value> = (0..150).map(|i| json!(format!("l{i}"))).collect();
         let sitemaps: Vec<Value> = (0..150).map(|i| json!(format!("s{i}"))).collect();
         let value = json!({ "links": links, "sitemaps": sitemaps });
-        let out = apply_bounds("crw_map", &json!({ "limit": 50 }), value);
+        let out = apply_bounds(
+            "crw_map",
+            &json!({ "limit": 50 }),
+            DEFAULT_MAX_LENGTH,
+            value,
+        );
         assert_eq!(out["links"].as_array().unwrap().len(), 50);
         assert_eq!(out["sitemaps"].as_array().unwrap().len(), 50);
         assert_eq!(out["totalDiscovered"], json!(150));
