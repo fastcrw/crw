@@ -8,6 +8,20 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.46.3](https://github.com/fastcrw/crw/compare/v0.46.2...v0.46.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **enrich:** skip app-store listings when reading pages ([61d3673](https://github.com/fastcrw/crw/commit/61d3673ba2339ba7c1a29a4396aaa32808df985c))
+* **renderer:** count every failed Cloudflare probe toward the host limit ([8b8c6e0](https://github.com/fastcrw/crw/commit/8b8c6e021327bdce97efa79b16714f8031512c6f))
+* **renderer:** give a PDF behind a non-.pdf URL the body budget ([0f75770](https://github.com/fastcrw/crw/commit/0f757705a25a2d29002760d2b1a8afd617b76ab0))
+* **renderer:** hold a host off the arm after its residential exit fails ([d3aebcb](https://github.com/fastcrw/crw/commit/d3aebcbd52fe467fda3bf0c3f08581fdb55cd3d7))
+* **renderer:** hold a host only when its residential exit itself fails ([4dafc85](https://github.com/fastcrw/crw/commit/4dafc85420c5034f7f04180483ea887c8ad08547))
+* **renderer:** keep the residential exit that served a host ([ffd092c](https://github.com/fastcrw/crw/commit/ffd092cadfce112bb94aadcbbc855a7971c7b01e))
+* **renderer:** probe a Cloudflare host on its second challenge only ([d17df56](https://github.com/fastcrw/crw/commit/d17df568c239bd4c251b5c561ed64e58d4fb945c))
+* **renderer:** remember hosts only the residential tier can serve ([834067e](https://github.com/fastcrw/crw/commit/834067e32015ab0e3a84bfe2c2b7d873351c1db7))
+
 ## [0.46.2](https://github.com/fastcrw/crw/compare/v0.46.1...v0.46.2) (2026-11-17)
 
 
