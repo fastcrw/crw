@@ -53,6 +53,9 @@ enum Backend {
         base_url: String,
         api_key: Option<String>,
         hide_credits: bool,
+        /// `[mcp] default_max_length` from the local config: bounds run
+        /// client-side in proxy mode, like the credit strip.
+        default_max_length: usize,
         /// State for `crw_find_data` / `crw_get_data` (manifest, pacing).
         data: Box<crw_core::connectors::DataToolContext>,
     },
@@ -90,6 +93,17 @@ impl Backend {
             Backend::Proxy { .. } => true,
             #[cfg(feature = "mcp-embedded")]
             Backend::Embedded { state } => state.searxng.is_some(),
+        }
+    }
+
+    /// The cap for a call with no `maxLength` (`[mcp] default_max_length`).
+    fn default_max_length(&self) -> usize {
+        match self {
+            Backend::Proxy {
+                default_max_length, ..
+            } => *default_max_length,
+            #[cfg(feature = "mcp-embedded")]
+            Backend::Embedded { state } => state.config.mcp.default_max_length,
         }
     }
 
@@ -138,8 +152,10 @@ impl Backend {
 
                 // Bound the result at the MCP layer before it reaches context.
                 let hide_credits = self.hide_credits();
+                let default_max_length = self.default_max_length();
                 let result = self.call_tool(tool_name, arguments.clone()).await.map(|v| {
-                    let mut v = crw_core::mcp::apply_bounds(tool_name, &arguments, v);
+                    let mut v =
+                        crw_core::mcp::apply_bounds(tool_name, &arguments, default_max_length, v);
                     if hide_credits {
                         crw_core::mcp::strip_tool_credit_fields(tool_name, &mut v);
                     }
@@ -437,11 +453,11 @@ pub async fn run(args: McpArgs) -> Result<(), CmdError> {
     if let Some(ref config_path) = args.config {
         unsafe { std::env::set_var("CRW_CONFIG", config_path) };
     }
-    let (resolved_api_url, resolved_api_key, config_hide_credits) =
+    let (resolved_api_url, resolved_api_key, config_mcp) =
         resolve_client_credentials(args.api_url, args.api_key);
     // Flag/env or the config file turns it on. Both are needed: proxy mode
     // never builds an `AppConfig`, and the flag never reaches `AppConfig::load`.
-    let hide_credits = flag_hide_credits || config_hide_credits;
+    let hide_credits = flag_hide_credits || config_mcp.hide_credits;
 
     let backend = if let Some(api_url) = resolved_api_url {
         tracing::info!("Starting {SERVER_NAME} v{SERVER_VERSION} (proxy mode)");
@@ -464,6 +480,7 @@ pub async fn run(args: McpArgs) -> Result<(), CmdError> {
             base_url: api_url,
             api_key: resolved_api_key,
             hide_credits,
+            default_max_length: config_mcp.default_max_length,
             data,
         }
     } else {
@@ -618,15 +635,16 @@ async fn run_stdio_loop(backend: Backend) {
 /// win; otherwise consult `client.{api_url,api_key}` from
 /// `~/.config/crw/config.toml`. This is what lets `crw setup --cloud` -> fresh
 /// shell -> `crw mcp` start in proxy mode without a manual `source ~/.zshrc`.
-/// Also returns `hide_credits`: the config file is read even when `--api-url`
-/// was passed, because `[mcp] hide_credits` is independent of where the backend
-/// lives and proxy mode builds no `AppConfig` of its own.
+/// Also returns the `[mcp]` config: the config file is read even when
+/// `--api-url` was passed, because `[mcp]` (`hide_credits`,
+/// `default_max_length`) is independent of where the backend lives and proxy
+/// mode builds no `AppConfig` of its own.
 fn resolve_client_credentials(
     cli_url: Option<String>,
     cli_key: Option<String>,
-) -> (Option<String>, Option<String>, bool) {
+) -> (Option<String>, Option<String>, crw_core::config::McpConfig) {
     let cfg = crw_core::config::AppConfig::load().ok();
-    let hide_credits = cfg.as_ref().is_some_and(|c| c.mcp.hide_credits);
+    let mcp = cfg.as_ref().map(|c| c.mcp.clone()).unwrap_or_default();
     // Same guard as the standalone `crw-mcp`, for the same reason: a
     // `client.api_url` left behind by `crw setup` would otherwise turn a run
     // the user asked to keep local into a billed cloud call. Behaviour and
@@ -636,17 +654,13 @@ fn resolve_client_credentials(
         if cli_url.is_some() || cfg.as_ref().is_some_and(|c| c.client.api_url.is_some()) {
             tracing::warn!("CRW_LOCAL is set: running embedded, ignoring the configured API URL");
         }
-        return (None, cli_key, hide_credits);
+        return (None, cli_key, mcp);
     }
     if cli_url.is_some() {
-        return (cli_url, cli_key, hide_credits);
+        return (cli_url, cli_key, mcp);
     }
     match cfg {
-        Some(cfg) => (
-            cfg.client.api_url,
-            cli_key.or(cfg.client.api_key),
-            hide_credits,
-        ),
-        None => (None, cli_key, hide_credits),
+        Some(cfg) => (cfg.client.api_url, cli_key.or(cfg.client.api_key), mcp),
+        None => (None, cli_key, mcp),
     }
 }

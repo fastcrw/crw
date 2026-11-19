@@ -305,10 +305,12 @@ pub async fn handle_request(state: &AppState, req: JsonRpcRequest) -> Option<Jso
             let arguments = req.params.get("arguments").cloned().unwrap_or(json!({}));
 
             // Bound the result at the MCP layer (driven by the call's own
-            // maxLength/limit args) before it reaches the model's context.
+            // maxLength/limit args, else `[mcp] default_max_length`) before it
+            // reaches the model's context.
+            let default_max_length = state.config.mcp.default_max_length;
             let result = call_tool(state, tool_name, arguments.clone())
                 .await
-                .map(|v| crw_core::mcp::apply_bounds(tool_name, &arguments, v));
+                .map(|v| crw_core::mcp::apply_bounds(tool_name, &arguments, default_max_length, v));
             Some(tool_result_response(id, tool_name, result))
         }
 

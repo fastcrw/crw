@@ -337,3 +337,8 @@ sandbox_memory_bytes = 536870912
 # fields, and fields you extracted yourself are never stripped. Default false
 # preserves the existing response shape.
 # hide_credits = false
+# Per-content-field character cap for crw_scrape, crw_parse_file,
+# crw_check_crawl_status and crw_search results when the call passes no
+# `maxLength`. 0 = unbounded (whole pages). A caller's own `maxLength` always
+# wins.
+# default_max_length = 15000

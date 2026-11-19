@@ -138,6 +138,7 @@ timeout_ms = 60000           # LLM budget for one JSON extraction; basis mode ge
 # API is unchanged.
 # [mcp]
 # hide_credits = false
+# default_max_length = 15000   # cap per content field when a call has no maxLength; 0 = whole pages
 
 [auth]
 # api_keys = ["crw_live_key-1234"]
@@ -212,6 +213,7 @@ Use the `CRW_` prefix with `__` as a nesting separator:
 | `extraction.llm.timeout_ms` | `CRW_EXTRACTION__LLM__TIMEOUT_MS` |
 | `extraction.llm.require_byok_header` | `CRW_EXTRACTION__LLM__REQUIRE_BYOK_HEADER` |
 | `mcp.hide_credits` | `CRW_MCP__HIDE_CREDITS` |
+| `mcp.default_max_length` | `CRW_MCP__DEFAULT_MAX_LENGTH` |
 | _(boot guard)_ | `CRW_DISABLE_SERVER_LLM_KEY` — when set to `1`, refuses to boot if `[extraction.llm].api_key` is also configured. Use behind a SaaS proxy that injects per-request LLM keys. |
 
 ## Renderer modes

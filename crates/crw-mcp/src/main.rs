@@ -105,6 +105,9 @@ enum Backend {
         base_url: String,
         api_key: Option<String>,
         hide_credits: bool,
+        /// `[mcp] default_max_length` from the local config: bounds run
+        /// client-side in proxy mode, like the credit strip.
+        default_max_length: usize,
         /// State for `crw_find_data` / `crw_get_data` (manifest, pacing).
         data: Box<crw_core::connectors::DataToolContext>,
         /// Whether the API serves data sources at all (see
@@ -155,6 +158,17 @@ impl Backend {
             Backend::Proxy { .. } => true,
             #[cfg(feature = "embedded")]
             Backend::Embedded { state } => state.searxng.is_some(),
+        }
+    }
+
+    /// The cap for a call with no `maxLength` (`[mcp] default_max_length`).
+    fn default_max_length(&self) -> usize {
+        match self {
+            Backend::Proxy {
+                default_max_length, ..
+            } => *default_max_length,
+            #[cfg(feature = "embedded")]
+            Backend::Embedded { state } => state.config.mcp.default_max_length,
         }
     }
 
@@ -213,8 +227,10 @@ impl Backend {
                 // Bound the result at the MCP layer before it reaches context.
                 // Works for both embedded and proxy backends.
                 let hide_credits = self.hide_credits();
+                let default_max_length = self.default_max_length();
                 let result = self.call_tool(tool_name, arguments.clone()).await.map(|v| {
-                    let mut v = crw_core::mcp::apply_bounds(tool_name, &arguments, v);
+                    let mut v =
+                        crw_core::mcp::apply_bounds(tool_name, &arguments, default_max_length, v);
                     if hide_credits {
                         crw_core::mcp::strip_tool_credit_fields(tool_name, &mut v);
                     }
@@ -622,7 +638,7 @@ async fn run() -> Result<(), CmdError> {
     //   1. CLI flag / env (already merged by clap)
     //   2. `client.api_url` / `client.api_key` in ~/.config/crw/config.toml
     //   3. None — falls through to embedded mode
-    let (resolved_api_url, resolved_api_key, config_hide_credits) =
+    let (resolved_api_url, resolved_api_key, config_mcp) =
         resolve_client_credentials(cli.api_url, cli.api_key);
     if let Some(Command::Connectors(args)) = cli.command {
         return crw_core::connectors::cli::run(args, resolved_api_url, resolved_api_key)
@@ -634,7 +650,7 @@ async fn run() -> Result<(), CmdError> {
     }
     // Flag/env or the config file turns it on. Both are needed: proxy mode
     // never builds an `AppConfig`, and the flag never reaches `AppConfig::load`.
-    let hide_credits = flag_hide_credits || config_hide_credits;
+    let hide_credits = flag_hide_credits || config_mcp.hide_credits;
 
     let backend = if let Some(api_url) = resolved_api_url {
         tracing::info!("Starting {SERVER_NAME} v{SERVER_VERSION} (proxy mode)");
@@ -666,6 +682,7 @@ async fn run() -> Result<(), CmdError> {
             base_url: api_url,
             api_key: resolved_api_key,
             hide_credits,
+            default_max_length: config_mcp.default_max_length,
             data,
             data_tools,
         }
@@ -832,16 +849,17 @@ async fn run_stdio_loop(backend: Backend) {
 /// `~/.config/crw/config.toml`. Mirrors the chain `crw mcp` uses, `CRW_LOCAL`
 /// guard included, so the standalone binary and the subcommand pick the same
 /// mode for the same environment.
-/// Returns `(api_url, api_key, hide_credits)`. The config file is read even
-/// when `--api-url` was passed: `[mcp] hide_credits` is independent of where
-/// the backend lives, and proxy mode builds no `AppConfig` of its own, so this
-/// is the only place the config knob can reach that backend.
+/// Returns `(api_url, api_key, [mcp] config)`. The config file is read even
+/// when `--api-url` was passed: `[mcp]` (`hide_credits`, `default_max_length`)
+/// is independent of where the backend lives, and proxy mode builds no
+/// `AppConfig` of its own, so this is the only place those knobs can reach
+/// that backend.
 fn resolve_client_credentials(
     cli_url: Option<String>,
     cli_key: Option<String>,
-) -> (Option<String>, Option<String>, bool) {
+) -> (Option<String>, Option<String>, crw_core::config::McpConfig) {
     let cfg = crw_core::config::AppConfig::load().ok();
-    let hide_credits = cfg.as_ref().is_some_and(|c| c.mcp.hide_credits);
+    let mcp = cfg.as_ref().map(|c| c.mcp.clone()).unwrap_or_default();
     // `CRW_LOCAL` is the SDKs' "run the engine here, no cloud" opt-in, and they
     // spawn this binary to carry it out. Only the SDK used to read it, so a
     // `client.api_url` left behind by `crw setup` still selected proxy mode:
@@ -862,18 +880,14 @@ fn resolve_client_credentials(
         if cli_url.is_some() || cfg.as_ref().is_some_and(|c| c.client.api_url.is_some()) {
             tracing::warn!("CRW_LOCAL is set: running embedded, ignoring the configured API URL");
         }
-        return (None, cli_key, hide_credits);
+        return (None, cli_key, mcp);
     }
     if cli_url.is_some() {
-        return (cli_url, cli_key, hide_credits);
+        return (cli_url, cli_key, mcp);
     }
     match cfg {
-        Some(cfg) => (
-            cfg.client.api_url,
-            cli_key.or(cfg.client.api_key),
-            hide_credits,
-        ),
-        None => (None, cli_key, hide_credits),
+        Some(cfg) => (cfg.client.api_url, cli_key.or(cfg.client.api_key), mcp),
+        None => (None, cli_key, mcp),
     }
 }
 
@@ -1032,6 +1046,7 @@ mod tests {
             base_url: "https://example.invalid".to_string(),
             api_key: None,
             hide_credits,
+            default_max_length: crw_core::mcp::DEFAULT_MAX_LENGTH,
             data: Box::new(crw_core::connectors::DataToolContext::new(
                 "https://example.invalid".to_string(),
                 None,
@@ -1165,6 +1180,7 @@ mod tests {
             base_url: server.uri(),
             api_key: None,
             hide_credits: false,
+            default_max_length: crw_core::mcp::DEFAULT_MAX_LENGTH,
             data: Box::new(crw_core::connectors::DataToolContext::new(
                 server.uri(),
                 None,
@@ -1210,6 +1226,7 @@ mod tests {
             base_url: "https://example.invalid".to_string(),
             api_key: None,
             hide_credits: false,
+            default_max_length: crw_core::mcp::DEFAULT_MAX_LENGTH,
             data: Box::new(crw_core::connectors::DataToolContext::new(
                 "https://example.invalid".to_string(),
                 None,
@@ -1379,6 +1396,7 @@ mod tests {
             std::env::remove_var("CRW_CLIENT__API_URL");
             std::env::remove_var("CRW_CLIENT__API_KEY");
             std::env::remove_var("CRW_MCP__HIDE_CREDITS");
+            std::env::remove_var("CRW_MCP__DEFAULT_MAX_LENGTH");
             std::env::remove_var("CRW_CONFIG");
             std::env::remove_var("CRW_LOCAL");
         }
@@ -1423,10 +1441,10 @@ mod tests {
         clear_crw_env();
         let _dir = ScratchConfigDir::new("no-config");
 
-        let (url, key, hide) = resolve_client_credentials(None, None);
+        let (url, key, mcp) = resolve_client_credentials(None, None);
         assert_eq!(url, None);
         assert_eq!(key, None);
-        assert!(!hide);
+        assert!(!mcp.hide_credits);
     }
 
     // --- CRW_LOCAL forces embedded mode ---
@@ -1511,9 +1529,9 @@ mod tests {
             std::env::set_var("CRW_LOCAL", "1");
         }
 
-        let (url, _key, hide) = resolve_client_credentials(None, None);
+        let (url, _key, mcp) = resolve_client_credentials(None, None);
         assert_eq!(url, None);
-        assert!(hide);
+        assert!(mcp.hide_credits);
         clear_crw_env();
     }
 
@@ -1585,10 +1603,10 @@ mod tests {
         clear_crw_env();
         let _dir = ScratchConfigDir::new("cli-key-only");
 
-        let (url, key, hide) = resolve_client_credentials(None, Some("k".to_string()));
+        let (url, key, mcp) = resolve_client_credentials(None, Some("k".to_string()));
         assert_eq!(url, None);
         assert_eq!(key, Some("k".to_string()));
-        assert!(!hide);
+        assert!(!mcp.hide_credits);
     }
 
     #[test]
@@ -1598,12 +1616,27 @@ mod tests {
         let dir = ScratchConfigDir::new("hide-credits-cfg");
         dir.write_config("[mcp]\nhide_credits = true\n");
 
-        let (_url, _key, hide) =
+        let (_url, _key, mcp) =
             resolve_client_credentials(Some("https://cli.example".to_string()), None);
         assert!(
-            hide,
+            mcp.hide_credits,
             "hide_credits is read from config independent of cli_url"
         );
+    }
+
+    /// Proxy mode builds no `AppConfig`, so `[mcp] default_max_length` reaches
+    /// the client-side bounding only through this function.
+    #[test]
+    fn resolve_credentials_default_max_length_from_config_applies_with_cli_url() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_crw_env();
+        let dir = ScratchConfigDir::new("default-max-length-cfg");
+        dir.write_config("[mcp]\ndefault_max_length = 0\n");
+
+        let (url, _key, mcp) =
+            resolve_client_credentials(Some("https://cli.example".to_string()), None);
+        assert_eq!(url.as_deref(), Some("https://cli.example"));
+        assert_eq!(mcp.default_max_length, 0);
     }
 
     #[test]
@@ -1627,8 +1660,8 @@ mod tests {
         let _dir = ScratchConfigDir::new("env-hide-credits");
         unsafe { std::env::set_var("CRW_MCP__HIDE_CREDITS", "true") };
 
-        let (_url, _key, hide) = resolve_client_credentials(None, None);
-        assert!(hide);
+        let (_url, _key, mcp) = resolve_client_credentials(None, None);
+        assert!(mcp.hide_credits);
 
         unsafe { std::env::remove_var("CRW_MCP__HIDE_CREDITS") };
     }
@@ -1640,11 +1673,11 @@ mod tests {
         let dir = ScratchConfigDir::new("malformed-config");
         dir.write_config("this is not valid toml [[[");
 
-        let (url, key, hide) = resolve_client_credentials(None, Some("k".to_string()));
+        let (url, key, mcp) = resolve_client_credentials(None, Some("k".to_string()));
         // AppConfig::load() fails -> .ok() -> None -> graceful fallback, cli_key kept.
         assert_eq!(url, None);
         assert_eq!(key, Some("k".to_string()));
-        assert!(!hide);
+        assert!(!mcp.hide_credits);
     }
 
     // --- Cli (clap) parsing / env precedence ---

@@ -71,7 +71,7 @@ pub fn env_truthy(value: Option<&str>) -> bool {
 
 /// `[mcp]` section — controls how the MCP surfaces shape tool responses.
 /// Honors the `CRW_MCP__*` env overrides (e.g. `CRW_MCP__HIDE_CREDITS=true`).
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct McpConfig {
     /// Strip credit-billing fields (`creditCost`, `creditsUsed`) from every
@@ -87,6 +87,21 @@ pub struct McpConfig {
     /// change. Caller-shaped extraction output is exempt from the strip — see
     /// [`crw_mcp_proto::strip_credit_fields`].
     pub hide_credits: bool,
+    /// Per-content-field character cap applied to `crw_scrape`,
+    /// `crw_parse_file`, `crw_check_crawl_status` and `crw_search` results when
+    /// the call carries no `maxLength` of its own. `0` = unbounded (whole
+    /// pages). Default 15000 ([`crate::mcp::DEFAULT_MAX_LENGTH`]). A caller's
+    /// explicit `maxLength` always wins.
+    pub default_max_length: usize,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            hide_credits: false,
+            default_max_length: crate::mcp::DEFAULT_MAX_LENGTH,
+        }
+    }
 }
 
 /// `[client]` — Cloud credentials populated by `crw setup` and read by CLI
@@ -2684,6 +2699,15 @@ mod tests {
         assert!(cfg.mcp.hide_credits);
     }
 
+    #[test]
+    fn env_var_mcp_default_max_length() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::set_var("CRW_MCP__DEFAULT_MAX_LENGTH", "0") };
+        let cfg = AppConfig::load().unwrap();
+        unsafe { std::env::remove_var("CRW_MCP__DEFAULT_MAX_LENGTH") };
+        assert_eq!(cfg.mcp.default_max_length, 0);
+    }
+
     /// The search backend URL was renamed from `searxng_url` to
     /// `search_backend_url`. Production sets the OLD env var *and* carries the
     /// old key in `config.docker.toml`, so two things must hold or live search
@@ -4791,6 +4815,26 @@ search_backend_url = "http://from-file:8080"
     // ==================================================================
     // McpConfig (extra coverage beyond the existing three tests)
     // ==================================================================
+
+    #[test]
+    fn mcp_default_max_length_defaults_to_the_proto_const() {
+        let cfg: AppConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.mcp.default_max_length, crate::mcp::DEFAULT_MAX_LENGTH);
+        let cfg: AppConfig = toml::from_str("[mcp]\nhide_credits = true").unwrap();
+        assert_eq!(cfg.mcp.default_max_length, crate::mcp::DEFAULT_MAX_LENGTH);
+        assert_eq!(
+            McpConfig::default().default_max_length,
+            crate::mcp::DEFAULT_MAX_LENGTH
+        );
+    }
+
+    #[test]
+    fn mcp_default_max_length_from_toml() {
+        let cfg: AppConfig = toml::from_str("[mcp]\ndefault_max_length = 0").unwrap();
+        assert_eq!(cfg.mcp.default_max_length, 0);
+        let cfg: AppConfig = toml::from_str("[mcp]\ndefault_max_length = 40000").unwrap();
+        assert_eq!(cfg.mcp.default_max_length, 40_000);
+    }
 
     #[test]
     fn mcp_config_explicit_false_stays_false() {
