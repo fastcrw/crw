@@ -8,6 +8,14 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.47.0](https://github.com/fastcrw/crw/compare/v0.46.3...v0.47.0) (2026-11-20)
+
+
+### Features
+
+* **mcp:** configurable default maxLength for MCP tool results ([f242168](https://github.com/fastcrw/crw/commit/f2421688c202cc0c815c74a67e5c4ccba2b91654))
+* **mcp:** opt-in hiding of the extract tools when no LLM is configured ([539ec54](https://github.com/fastcrw/crw/commit/539ec54c2d5f8132d10a6384180e5db92e2fd380))
+
 ## [0.46.3](https://github.com/fastcrw/crw/compare/v0.46.2...v0.46.3) (2026-11-18)
 
 
