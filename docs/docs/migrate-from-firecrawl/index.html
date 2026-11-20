@@ -341,6 +341,23 @@ crw search "renewable energy trends 2024" --json --fields title,url,snippet --li
 <li><code>Authorization: Bearer &lt;key&gt;</code> header</li>
 </ul>
 <hr>
+<h2 id="coming-from-firecrawl-local">Coming from Firecrawl Local?</h2>
+<p>Firecrawl Local serves the Firecrawl v2 API on <code>localhost:3002</code>. A self-hosted
+fastCRW serves the same v2 routes at its root (<code>/v2/scrape</code>, <code>/v2/crawl</code>,
+<code>/v2/map</code>, <code>/v2/batch/scrape</code>, plus <code>/v2/search</code>), so start it on the same
+port and your Firecrawl SDK code does not change:</p>
+<pre data-lang="bash"><code class="language-bash">curl -fsSL https://fastcrw.com/install | sh
+crw serve --host 127.0.0.1 --port 3002</code></pre>
+<pre data-lang="python"><code class="language-python">from firecrawl import Firecrawl
+
+app = Firecrawl(api_url=&quot;http://localhost:3002&quot;)
+print(app.scrape(&quot;https://example.com&quot;).markdown)</code></pre>
+<p>On the default port (<code>crw serve</code>, port 3000) the one change is <code>api_url</code>.
+Replace the <code>firecrawl-local mcp</code> entry in your MCP client with <code>crw mcp</code>,
+which is built into the binary and needs no Node.js. Search needs a backend
+you run (the Docker stack starts one) or a fastCRW Cloud key. The rest of this
+guide covers moving from Firecrawl Cloud.</p>
+<hr>
 <h2 id="step-1-swap-the-base-url">Step 1 — Swap the base URL</h2>
 <p>Every engine call goes to <code>https://api.fastcrw.com</code> instead of <code>https://api.firecrawl.dev</code>.</p>
 <div class="code-tabs">
