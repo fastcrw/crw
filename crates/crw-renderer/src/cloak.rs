@@ -392,6 +392,7 @@ impl PageFetcher for CloakRenderer {
                         screenshot: None,
                         block: None,
                         residential_bytes: metered,
+                        actions: None,
                     });
                 }
                 // The page's own budget ran out: another attempt has nothing

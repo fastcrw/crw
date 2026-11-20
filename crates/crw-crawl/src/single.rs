@@ -127,6 +127,13 @@ pub async fn scrape_url(
             .then_some(crw_renderer::ScreenshotReq {
                 full_page: req.screenshot_full_page,
             });
+    // `REQUEST_ACTIONS` carries the validated browser actions the same way, so
+    // the CDP tier runs them and the ladder keeps the request on a tier that
+    // can. Parsed here as well as in `validate_scrape_template` (which runs on
+    // every path, batch included) because the task-local needs the typed list.
+    let actions = crw_core::actions::parse_actions(req.actions.as_ref(), req.wait_for)?;
+    let actions_req: Option<std::sync::Arc<[crw_core::actions::ScrapeAction]>> =
+        (!actions.is_empty()).then(|| actions.into());
     // One cloak page per scrape: every cloak call below shares its sidecar
     // request id, byte ceiling and byte tally.
     let cloak_page = crw_renderer::CloakPage::new(req.cloak_max_bytes);
@@ -136,19 +143,23 @@ pub async fn scrape_url(
                 .scope(resolved_proxy, async move {
                     crw_renderer::REQUEST_SCREENSHOT
                         .scope(screenshot_req, async move {
-                            crw_renderer::REQUEST_CLOAK_PAGE
-                                .scope(cloak_page, async move {
-                                    scrape_url_inner(
-                                        req,
-                                        renderer,
-                                        llm_config,
-                                        extraction_cfg,
-                                        user_agent,
-                                        default_stealth,
-                                        render_js_default,
-                                        deadline,
-                                    )
-                                    .await
+                            crw_renderer::REQUEST_ACTIONS
+                                .scope(actions_req, async move {
+                                    crw_renderer::REQUEST_CLOAK_PAGE
+                                        .scope(cloak_page, async move {
+                                            scrape_url_inner(
+                                                req,
+                                                renderer,
+                                                llm_config,
+                                                extraction_cfg,
+                                                user_agent,
+                                                default_stealth,
+                                                render_js_default,
+                                                deadline,
+                                            )
+                                            .await
+                                        })
+                                        .await
                                 })
                                 .await
                         })
@@ -175,10 +186,23 @@ pub async fn scrape_url(
 /// template is one 400 on both surfaces rather than one placeholder document
 /// per URL labelled as a block.
 pub fn validate_scrape_template(req: &ScrapeRequest) -> CrwResult<()> {
-    if req.actions.is_some() {
-        return Err(crw_core::error::CrwError::InvalidRequest(
-            "The 'actions' parameter is not yet supported. Use cssSelector or xpath for element targeting.".into()
-        ));
+    let actions = crw_core::actions::parse_actions(req.actions.as_ref(), req.wait_for)?;
+    if !actions.is_empty() {
+        // Actions run on a live Chrome page; a request that rules one out is
+        // contradictory. Same rule as `renderJs:false` + screenshot below.
+        if req.render_js == Some(false) {
+            return Err(crw_core::error::CrwError::InvalidRequest(
+                "'actions' run in a browser; remove renderJs:false (or omit it)".into(),
+            ));
+        }
+        if let Some(name) = req.renderer.and_then(|r| r.pinned_name())
+            && !crw_renderer::renderer_can_screenshot(name)
+        {
+            return Err(crw_core::error::CrwError::InvalidRequest(format!(
+                "renderer '{name}' cannot run 'actions'; use chrome or chrome_proxy, or omit \
+                 'renderer'"
+            )));
+        }
     }
     // A screenshot is captured via CDP and cannot be produced on the HTTP-only
     // path. An explicit `renderJs:false` + `screenshot` is contradictory: reject
@@ -248,6 +272,8 @@ async fn scrape_url_inner(
     // screenshot (see FallbackRenderer::fetch), and the temp HTTP fetcher below
     // is skipped so the screenshot is never dropped.
     let wants_screenshot = req.formats.contains(&OutputFormat::Screenshot);
+    // Browser actions force the same CDP path (scoped by `scrape_url`).
+    let has_actions = crw_renderer::actions_requested();
 
     // Validate pinned renderer is available: fail fast with a 400 instead of
     // letting the request reach the dispatcher with a hard-pin to a missing
@@ -267,6 +293,18 @@ async fn scrape_url_inner(
                 available.join(", ")
             )));
         }
+    }
+
+    // Browser actions on an instance with no tier that can run them are a
+    // request this deployment cannot serve: a 400 naming the fix, before any
+    // fetch, rather than a 422 after one. Same predicate `/v1/capabilities`
+    // reports for screenshots.
+    if has_actions && !renderer.supports_screenshot() {
+        return Err(crw_core::error::CrwError::InvalidRequest(
+            "'actions' need a Chrome renderer tier (chrome or chrome_proxy), and none is \
+             configured on this server"
+                .into(),
+        ));
     }
 
     // Use a temporary fetcher ONLY when per-request stealth differs from the
@@ -292,6 +330,8 @@ async fn scrape_url_inner(
         // The capture belongs to the request that asked for it, and it forces
         // the CDP path.
         && !wants_screenshot
+        // A page the caller's actions shaped is not the page.
+        && !has_actions
         // Change tracking diffs a LIVE fetch against the caller's previous
         // snapshot. Replaying a page would report `unchanged` for a page that
         // did change: a silent wrong answer, so it is keyed on the format the
@@ -382,7 +422,11 @@ async fn scrape_url_inner(
                 // by the shared renderer's early pin arm, so it must not be diverted
                 // into this plain-HTTP temp fetcher either.
                 let is_impersonated_pin = !pin_implies_js && pinned.is_some();
-                if effective_render_js == Some(false) && !wants_screenshot && !is_impersonated_pin {
+                if effective_render_js == Some(false)
+                    && !wants_screenshot
+                    && !has_actions
+                    && !is_impersonated_pin
+                {
                     // HTTP-only temp fetcher with per-request stealth. Honor REQUEST_PROXY
                     // so a stealth-override request still egresses through the resolved
                     // proxy — fail-closed, a set proxy is never bypassed.
@@ -885,6 +929,9 @@ async fn scrape_url_inner(
                             // requested) lives on `js_fetch`, not the original low-tier
                             // `fetch_result`. Carry it over so it isn't dropped.
                             fetch_result.screenshot = js_fetch.screenshot.take();
+                            // Same for what the actions did: the swapped-in body is
+                            // the one they ran on.
+                            fetch_result.actions = js_fetch.actions.take();
                             // Same for the body: `classify_block` below reads
                             // `fetch_result.html`, and leaving the DISCARDED tier's
                             // shell there means a challenge we just solved still
@@ -978,6 +1025,32 @@ async fn scrape_url_inner(
         (None, carried) => carried,
     };
     data.unclearable_wall = fetch_result.block.is_some();
+
+    // ---- browser actions: verdict ----
+    //
+    // A wall or an origin error page is the truer answer and keeps its own
+    // verdict: the actions could not have meant anything on it. Otherwise the
+    // body must be one the actions actually ran on. A body with no outcome came
+    // from a path that never drove a page (a PDF, an HTTP fallback); returning
+    // it as success would hand back the first page the caller asked us to get
+    // past, which is exactly the silent partial result of issue #658.
+    if has_actions && data.block.is_none() && data.http_error().is_none() {
+        match fetch_result.actions.take() {
+            Some(outcome) => {
+                if let Some(failed) = outcome.failed {
+                    return Err(crw_core::error::CrwError::ActionFailed(failed));
+                }
+                data.warnings.extend(outcome.skipped);
+            }
+            None => {
+                return Err(crw_core::error::CrwError::ActionFailed(
+                    "the actions did not run: this page was not served by a browser tier \
+                     that can drive it"
+                        .into(),
+                ));
+            }
+        }
+    }
     // The URL actually read, for `/v2`'s Firecrawl-compatible `metadata.url`.
     // Stamped unconditionally, NOT gated on `redirect_is_material`: that gate
     // exists to decide whether a redirect is worth WARNING about (it ignores a
@@ -3223,6 +3296,7 @@ mod tests {
             screenshot: None,
             block: None,
             residential_bytes: None,
+            actions: None,
         }
     }
 

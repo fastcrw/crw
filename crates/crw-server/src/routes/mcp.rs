@@ -86,11 +86,10 @@ async fn call_tool_inner(state: &AppState, tool_name: &str, args: Value) -> Resu
             let user_agent = &state.config.crawler.user_agent;
             let default_stealth =
                 state.config.crawler.stealth.enabled && state.config.crawler.stealth.inject_headers;
-            let deadline = crw_core::Deadline::from_request_ms(
-                state
-                    .config
-                    .effective_deadline_ms(req.deadline_ms, req.wait_for),
-            );
+            let deadline = crw_core::Deadline::from_request_ms(state.config.effective_deadline_ms(
+                req.deadline_ms,
+                crw_core::actions::deadline_wait_for(req.actions.as_ref(), req.wait_for),
+            ));
             let data = scrape_url(
                 &req,
                 &state.renderer,

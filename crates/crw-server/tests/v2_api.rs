@@ -315,3 +315,85 @@ async fn v2_batch_cancel_flips_status_to_cancelled() {
     let r2 = s.delete(&format!("/v2/batch/scrape/{id}")).await;
     r2.assert_status(StatusCode::BAD_REQUEST);
 }
+
+// --- browser actions on the Firecrawl surface vs the frozen root alias ---
+// Both paths share one handler. A public IP literal passes URL validation
+// without DNS, and every request below is rejected before any fetch.
+
+#[tokio::test]
+async fn firecrawl_v2_scrape_runs_actions_validation() {
+    let s = test_app();
+    let r = s
+        .post("/firecrawl/v2/scrape")
+        .json(&json!({"url": "http://93.184.215.14/", "actions": [{"type": "hover"}]}))
+        .await;
+    r.assert_status(StatusCode::BAD_REQUEST);
+    let body: Value = r.json();
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("actions[0]")),
+        "got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn root_v2_scrape_still_ignores_actions() {
+    // The same invalid list, plus a contradiction the scrape itself rejects. If
+    // the alias read `actions`, its error would come first; it must not.
+    let s = test_app();
+    let r = s
+        .post("/v2/scrape")
+        .json(&json!({
+            "url": "http://93.184.215.14/",
+            "formats": ["screenshot"],
+            "renderJs": false,
+            "actions": [{"type": "hover"}]
+        }))
+        .await;
+    r.assert_status(StatusCode::BAD_REQUEST);
+    let body: Value = r.json();
+    let err = body["error"].as_str().unwrap_or_default();
+    assert!(
+        err.contains("screenshot") && !err.contains("actions"),
+        "got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn v1_scrape_rejects_actions_with_render_js_false() {
+    let s = test_app();
+    let r = s
+        .post("/v1/scrape")
+        .json(&json!({
+            "url": "http://93.184.215.14/",
+            "renderJs": false,
+            "actions": [{"type": "wait", "milliseconds": 100}]
+        }))
+        .await;
+    r.assert_status(StatusCode::BAD_REQUEST);
+    let body: Value = r.json();
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("run in a browser")),
+        "got: {body}"
+    );
+}
+
+#[tokio::test]
+async fn v1_scrape_names_the_supported_types_for_a_firecrawl_output_action() {
+    let s = test_app();
+    let r = s
+        .post("/v1/scrape")
+        .json(&json!({"url": "http://93.184.215.14/", "actions": [{"type": "screenshot"}]}))
+        .await;
+    r.assert_status(StatusCode::BAD_REQUEST);
+    let body: Value = r.json();
+    assert!(
+        body["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("not supported") && e.contains("formats")),
+        "got: {body}"
+    );
+}

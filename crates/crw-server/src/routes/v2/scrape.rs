@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use axum::Json;
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, State};
+use axum::extract::{MatchedPath, Path, State};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,7 +22,7 @@ use crate::error::AppError;
 use crate::state::{AppState, validate_renderer_pin};
 
 /// v2 `/v2/scrape` request. Lenient: unknown fields the SDK may send
-/// (`mobile`, `actions`, `blockAds`, `origin`, `integration`, …) are ignored by
+/// (`mobile`, `blockAds`, `origin`, `integration`, …) are ignored by
 /// serde. We must NOT `deny_unknown_fields` or a newer SDK build would 400.
 /// `maxAge` and `storeInCache` used to be on that list; they are honoured now.
 #[derive(Debug, Deserialize)]
@@ -94,6 +94,12 @@ pub struct V2ScrapeRequest {
     /// raw. See [`crw_core::types::ParserSpec`].
     #[serde(default)]
     pub parsers: Option<Vec<crw_core::types::ParserSpec>>,
+    /// Firecrawl `actions`. Honoured on `/firecrawl/v2/scrape` only; the root
+    /// `/v2` alias is frozen and ignores it as it always has (see [`scrape`]).
+    /// Kept as raw JSON so a shape the alias never read cannot start failing
+    /// there.
+    #[serde(default)]
+    pub actions: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -285,6 +291,12 @@ where
     })
 }
 
+/// Whether a matched route is on the `/firecrawl` drop-in surface rather than
+/// the root `/v2` alias.
+fn is_firecrawl_surface(matched: &str) -> bool {
+    matched.starts_with("/firecrawl/")
+}
+
 pub(crate) fn to_internal(
     v2: V2ScrapeRequest,
 ) -> Result<(ScrapeRequest, formats::DecomposedFormats, String), CrwError> {
@@ -361,9 +373,17 @@ pub(crate) fn to_internal(
 
 pub async fn scrape(
     State(state): State<AppState>,
+    matched: MatchedPath,
     body: Result<Json<V2ScrapeRequest>, JsonRejection>,
 ) -> Result<Json<V2ScrapeResponse>, V2Error> {
-    let Json(v2) = body.map_err(AppError::from)?;
+    let Json(mut v2) = body.map_err(AppError::from)?;
+    // The same handler serves `/firecrawl/v2/scrape` and the root `/v2/scrape`
+    // alias (`app.rs` nests one router under both). Only the Firecrawl surface
+    // runs `actions`; the alias's shape is frozen, so there they stay ignored.
+    let actions = v2
+        .actions
+        .take()
+        .filter(|_| is_firecrawl_surface(matched.as_str()));
 
     let parsed_url = url::Url::parse(&v2.url)
         .map_err(|e| CrwError::InvalidRequest(format!("Invalid URL: {e}")))?;
@@ -371,7 +391,8 @@ pub async fn scrape(
         .await
         .map_err(CrwError::InvalidRequest)?;
 
-    let (req, decomposed, tier) = to_internal(v2)?;
+    let (mut req, decomposed, tier) = to_internal(v2)?;
+    req.actions = actions;
     validate_renderer_pin(req.renderer, req.render_js, &state)?;
 
     let llm_config = state.config.extraction.llm.as_ref();
@@ -389,11 +410,10 @@ pub async fn scrape(
     let user_agent = &state.config.crawler.user_agent;
     let default_stealth =
         state.config.crawler.stealth.enabled && state.config.crawler.stealth.inject_headers;
-    let deadline = Deadline::from_request_ms(
-        state
-            .config
-            .effective_deadline_ms(req.deadline_ms, req.wait_for),
-    );
+    let deadline = Deadline::from_request_ms(state.config.effective_deadline_ms(
+        req.deadline_ms,
+        crw_core::actions::deadline_wait_for(req.actions.as_ref(), req.wait_for),
+    ));
 
     let data = scrape_url(
         &req,

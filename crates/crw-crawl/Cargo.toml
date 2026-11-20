@@ -37,6 +37,7 @@ libc = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+async-trait = "0.1"
 wiremock = { workspace = true }
 proptest = { workspace = true }
 # StaticTier + FallbackRenderer::with_js_tiers, to reach the ladder tail

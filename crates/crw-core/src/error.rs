@@ -34,6 +34,12 @@ pub enum CrwError {
     #[error("Response too large: {0}")]
     ResponseTooLarge(String),
 
+    /// A browser action (`actions` on a scrape) could not be carried out on
+    /// the page: its element never appeared, or the page threw. The caller's
+    /// list does not fit this page, so it is a 422 and never billed.
+    #[error("Action failed: {0}")]
+    ActionFailed(String),
+
     #[error("Crawl error: {0}")]
     CrawlError(String),
 
@@ -74,6 +80,7 @@ impl CrwError {
             CrwError::ExtractionError(_) => "extraction_error",
             CrwError::UnsupportedContentType(_) => "unsupported_content_type",
             CrwError::ResponseTooLarge(_) => "response_too_large",
+            CrwError::ActionFailed(_) => "action_failed",
             CrwError::CrawlError(_) => "crawl_error",
             CrwError::Timeout(_) => "timeout",
             CrwError::ConfigError(_) => "config_error",

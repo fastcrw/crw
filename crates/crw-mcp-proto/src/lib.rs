@@ -257,6 +257,11 @@ pub fn tool_definitions(proxy_mode: bool, default_max_length: usize) -> Value {
                         "type": "string",
                         "enum": ["auto", "lightpanda", "chrome", "playwright", "camoufox", "impersonated-http"],
                         "description": "Pin renderer; browser tiers imply renderJs:true (default auto). 'camoufox' needs the opt-in tier configured. 'impersonated-http' is JS-less Chrome-TLS impersonation, never renderJs."
+                    },
+                    "actions": {
+                        "type": "array",
+                        "items": { "type": "object" },
+                        "description": "Browser steps first, as {type:click,selector}: wait{milliseconds|selector} click{selector} write{text} press{key} scroll{direction}. optional:true skips missing elements"
                     }
                 },
                 "required": ["url"]
@@ -1374,6 +1379,19 @@ mod tests {
             est_tokens,
             TOOLS_LIST_TOKEN_CEILING
         );
+    }
+
+    #[test]
+    fn crw_scrape_schema_advertises_actions() {
+        let defs = tool_definitions(false);
+        let scrape = tool_by_name(&defs, "crw_scrape");
+        let actions = &scrape["inputSchema"]["properties"]["actions"];
+        assert_eq!(actions["type"], "array");
+        assert_eq!(actions["items"]["type"], "object");
+        let desc = actions["description"].as_str().unwrap();
+        for kind in ["wait", "click", "write", "press", "scroll", "optional"] {
+            assert!(desc.contains(kind), "{kind} missing from: {desc}");
+        }
     }
 
     #[test]

@@ -224,16 +224,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_batch_rejects_actions_before_any_url_work() {
+    async fn start_batch_rejects_invalid_actions_before_any_url_work() {
         let state = default_state();
         let err = call(
             &state,
-            json!({ "urls": ["https://example.com/"], "actions": [] }),
+            json!({ "urls": ["https://example.com/"], "actions": [{ "type": "hover" }] }),
         )
         .await
         .unwrap_err();
         assert!(
-            invalid_request_message(&err).contains("'actions'"),
+            invalid_request_message(&err).contains("actions[0]"),
             "got: {}",
             invalid_request_message(&err)
         );

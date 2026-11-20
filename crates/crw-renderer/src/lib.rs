@@ -40,6 +40,8 @@
 #[cfg(test)]
 pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+#[cfg(feature = "cdp")]
+pub mod actions;
 pub mod blocklist;
 pub mod breaker;
 #[cfg(feature = "auto-browser")]
@@ -137,6 +139,14 @@ tokio::task_local! {
     /// `Page.captureScreenshot` and in [`FallbackRenderer::fetch`] to force the
     /// vanilla-Chrome CDP path. `None` = no screenshot → existing behaviour.
     pub static REQUEST_SCREENSHOT: Option<ScreenshotReq>;
+}
+
+tokio::task_local! {
+    /// The current scrape's browser actions, already validated. Set by
+    /// [`crw_crawl::single::scrape_url`] when the request carries any; read in
+    /// `cdp.rs` to run them and by the routing below to keep the request on a
+    /// tier that can. `None` = no actions, existing behaviour.
+    pub static REQUEST_ACTIONS: Option<Arc<[crw_core::actions::ScrapeAction]>>;
 }
 
 /// What every cloak call of one scrape shares. The ladder can reach the cloak
@@ -262,6 +272,34 @@ pub fn screenshot_requested() -> bool {
     REQUEST_SCREENSHOT
         .try_with(|s| s.is_some())
         .unwrap_or(false)
+}
+
+/// Whether the current task carries browser actions (reads [`REQUEST_ACTIONS`]).
+pub fn actions_requested() -> bool {
+    REQUEST_ACTIONS.try_with(|a| a.is_some()).unwrap_or(false)
+}
+
+/// The current scrape's actions, if any.
+pub fn current_actions() -> Option<Arc<[crw_core::actions::ScrapeAction]>> {
+    REQUEST_ACTIONS.try_with(Clone::clone).ok().flatten()
+}
+
+/// Whether this request must be served by a tier that drives a full Chrome
+/// page ([`renderer_can_screenshot`]): a screenshot to capture or actions to
+/// run. Every ROUTING decision the screenshot format used to make reads this
+/// instead, so the two can never disagree about which tiers may serve them;
+/// capture-only decisions keep reading [`current_screenshot_req`].
+pub fn page_session_required() -> bool {
+    screenshot_requested() || actions_requested()
+}
+
+/// The start of a fail-closed message for [`page_session_required`].
+fn page_session_reason() -> &'static str {
+    if actions_requested() {
+        "browser actions were requested"
+    } else {
+        "a screenshot was requested"
+    }
 }
 
 /// The current scrape's [`CloakPage`], if one is in scope.
@@ -2458,7 +2496,7 @@ impl FallbackRenderer {
         // (`None`) branches below don't return an HTTP-only result that never
         // reaches `fetch_with_js` (where the capture occurs). The HTTP-only,
         // camoufox and lightpanda renderers are also filtered out downstream.
-        if effective != Some(true) && screenshot_requested() {
+        if effective != Some(true) && page_session_required() {
             effective = Some(true);
         }
         tracing::debug!(
@@ -2492,7 +2530,7 @@ impl FallbackRenderer {
                 // has no DOM to capture).
                 let cloak_first_eligible = force_cloak
                     && cloak_permitted
-                    && !screenshot_requested()
+                    && !page_session_required()
                     && effective != Some(false)
                     && !matches!(requested_renderer, Some(name) if name != "auto");
                 if cloak_first_eligible && let Some(arm) = &self.cloak_arm {
@@ -2845,12 +2883,12 @@ impl FallbackRenderer {
                     // A screenshot needs CDP — there is no HTTP fallback that can
                     // satisfy it. Fail closed rather than return a 200 with a null
                     // screenshot the caller explicitly asked for.
-                    if screenshot_requested() {
-                        return Err(CrwError::RendererError(
-                            "a screenshot was requested but no JS renderer is available; \
-                             configure a chrome/chrome_proxy tier"
-                                .into(),
-                        ));
+                    if page_session_required() {
+                        return Err(CrwError::RendererError(format!(
+                            "{} but no JS renderer is available; \
+                             configure a chrome/chrome_proxy tier",
+                            page_session_reason()
+                        )));
                     }
                     tracing::warn!(
                         url = %LogUrl(&url),
@@ -2897,7 +2935,7 @@ impl FallbackRenderer {
                     let js_outcome = demote_wall_to_ladder_failure(
                         js_outcome,
                         &http_result,
-                        !screenshot_requested() && !is_hard_pinned,
+                        !page_session_required() && !is_hard_pinned,
                     );
                     match js_outcome {
                         Ok(js_result) => Ok(js_result),
@@ -2919,7 +2957,7 @@ impl FallbackRenderer {
                         // breaker open), so the failure is ours and keeps its
                         // 504/500, visible to 5xx alerting, not `anti_bot`.
                         Err(e)
-                            if screenshot_requested()
+                            if page_session_required()
                                 || is_hard_pinned
                                 || detector::looks_like_generic_bot_wall(
                                     &http_result.html,
@@ -3858,15 +3896,15 @@ impl FallbackRenderer {
         // caller asked for (mirrors the proxy retain above). Applies even to a
         // hard pin: pinning camoufox/lightpanda + requesting a screenshot is
         // unsatisfiable.
-        if screenshot_requested() {
+        if page_session_required() {
             renderers.retain(|r| renderer_can_screenshot(r.name()));
             if renderers.is_empty() {
-                return Err(CrwError::RendererError(
-                    "a screenshot was requested but no CDP-capable Chrome renderer is \
-                     available; lightpanda and camoufox cannot capture screenshots — \
-                     configure a chrome/chrome_proxy tier"
-                        .into(),
-                ));
+                return Err(CrwError::RendererError(format!(
+                    "{} but no CDP-capable Chrome renderer is available; lightpanda \
+                     and camoufox cannot drive a full page, configure a chrome/chrome_proxy \
+                     tier",
+                    page_session_reason()
+                )));
             }
         }
         // Phase 2 (latency-qn): gated auto-egress. Pull chrome_proxy OUT of the
@@ -3885,10 +3923,16 @@ impl FallbackRenderer {
         // Keep it in-ladder for a capture (same as the already-proxied path) and
         // let the latency gating apply to the ordinary, screenshot-less traffic
         // it was measured on.
+        //
+        // Browser actions DO get the hold-out (with or without a screenshot) while
+        // another tier can run them: in-ladder, a merely thin Chrome result would
+        // replay the caller's list on the residential tier (a form submitted twice).
+        // Held out, chrome_proxy still recovers a genuine hard block.
         let auto_egress_arm: Option<Arc<dyn PageFetcher>> = if self.auto_egress_escalation
             && !is_user_pinned
             && !proxy_active
-            && !screenshot_requested()
+            && (!page_session_required()
+                || (actions_requested() && renderers.iter().any(|r| r.name() != "chrome_proxy")))
         {
             let arm = self
                 .js_renderers
@@ -3967,7 +4011,11 @@ impl FallbackRenderer {
         // real page, a thin page) is weighed against the ladder's keeper after
         // the ladder, exactly as the post-ladder arm's body would be.
         let mut residential_fallback: Option<FetchResult> = None;
+        // Not with browser actions: a residential body that missed the accept gate
+        // would be followed by the ladder running the same list again on Chrome.
+        // Their one recovery run is the post-ladder arm, on a wall Chrome skipped.
         if let Some(arm) = auto_egress_arm.as_ref()
+            && !actions_requested()
             && !cloak_attempted
             && !host.is_empty()
             && deadline.remaining() >= RESIDENTIAL_FIRST_MIN_BUDGET
@@ -4484,9 +4532,16 @@ impl FallbackRenderer {
                         // the body it returned. `SiteBlocked` was already ignored
                         // globally; a thin body that is NOT blocked was not, and
                         // that gap is what a single hard domain filled.
-                        self.breakers
-                            .record_scoped_outcome(&host, k, None, Some(outcome))
-                            .await;
+                        //
+                        // Not when the caller's actions shaped the body: a list
+                        // that empties the page is the caller's doing, and
+                        // recording it would turn Chrome off this host for every
+                        // other caller. A wall is still a verdict on the site.
+                        if site_blocked || !actions_requested() {
+                            self.breakers
+                                .record_scoped_outcome(&host, k, None, Some(outcome))
+                                .await;
+                        }
                         if k == RendererKind::Lightpanda
                             && let Some(target) =
                                 self.preferences.record_failure(&host, &err_kind).await
@@ -4997,7 +5052,14 @@ impl FallbackRenderer {
                 || (cf_seen_before
                     && deadline.remaining() >= Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS)
                     && !self.cf_walled_hosts.should_proxy(&host).await);
+            // Never a second run of the caller's actions: if Chrome's body is one they
+            // already ran on, replaying them on the residential exit could submit a
+            // form twice. A wall Chrome skipped them on (`actions: None`) still gets
+            // the arm, where they run once.
+            let actions_already_ran =
+                actions_requested() && thin_result.as_ref().is_some_and(|r| r.actions.is_some());
             let arm_wanted = saw_hard_block
+                && !actions_already_ran
                 && !chain.contains(&kind)
                 && !route_to_cloak
                 && wall_allows_arm
@@ -5262,7 +5324,10 @@ impl FallbackRenderer {
             && self.cloak_arm.is_some()
             && !cloak_attempted;
         #[cfg(feature = "cloak")]
+        // Never for browser actions: cloak replays the page over HTTP, so its body
+        // would come back with the caller's list silently not applied.
         if (route_to_cloak || cloak_after_egress_route)
+            && !actions_requested()
             && let Some(arm) = &self.cloak_arm
         {
             let kind = RendererKind::Cloak;
@@ -5668,6 +5733,7 @@ mod tests {
             screenshot: None,
             block: None,
             residential_bytes: None,
+            actions: None,
         }
     }
 
@@ -6291,6 +6357,7 @@ mod tests {
                 screenshot: None,
                 block: None,
                 residential_bytes: None,
+                actions: None,
             })
         }
 
@@ -6367,6 +6434,7 @@ mod tests {
                 screenshot: None,
                 block: None,
                 residential_bytes: None,
+                actions: None,
             })
         }
         fn name(&self) -> &str {
@@ -7208,6 +7276,7 @@ mod tests {
                 screenshot: None,
                 block: None,
                 residential_bytes: None,
+                actions: None,
             })
         }
         fn name(&self) -> &str {
@@ -8672,6 +8741,102 @@ mod tests {
             .await
             .expect_err("a screenshot request cannot be satisfied by an HTTP body");
         assert!(err.to_string().contains("Timeout"), "got {err:?}");
+    }
+
+    fn one_wait() -> Option<Arc<[crw_core::actions::ScrapeAction]>> {
+        Some(Arc::from(vec![crw_core::actions::ScrapeAction::Wait {
+            milliseconds: Some(10),
+            selector: None,
+            optional: false,
+        }]))
+    }
+
+    /// Browser actions have no HTTP substitute either: an HTTP body would come
+    /// back as the first page the caller asked us to get past (issue #658).
+    #[tokio::test]
+    async fn forced_js_failure_with_actions_fails_closed() {
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Err("Timeout after 1ms".into()),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![chrome]);
+        r.http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::Ok(rich_html("HTTP-")),
+        });
+        let err = REQUEST_ACTIONS
+            .scope(
+                one_wait(),
+                r.fetch(
+                    "https://example.com",
+                    &HashMap::new(),
+                    None,
+                    None,
+                    None,
+                    tdl(),
+                ),
+            )
+            .await
+            .expect_err("actions cannot be satisfied by an HTTP body");
+        assert!(err.to_string().contains("Timeout"), "got {err:?}");
+    }
+
+    /// LightPanda cannot drive a page the way actions need, so a request with
+    /// actions skips it and lands on Chrome, exactly like a screenshot.
+    #[tokio::test]
+    async fn actions_skip_lightpanda_for_chrome() {
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(rich_html("LP-")),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(rich_html("CHROME-")),
+        }) as Arc<dyn PageFetcher>;
+        let r = make_renderer_with_mocks(vec![lp, chrome]);
+        let res = REQUEST_ACTIONS
+            .scope(one_wait(), async {
+                r.fetch_with_js(
+                    "https://example.com",
+                    &HashMap::new(),
+                    None,
+                    None,
+                    false,
+                    true,
+                    crw_core::Deadline::from_request_ms(5000),
+                )
+                .await
+            })
+            .await
+            .unwrap();
+        assert_eq!(res.rendered_with.as_deref(), Some("chrome"));
+    }
+
+    /// With only LightPanda configured, actions fail closed with a message that
+    /// names them, not a screenshot.
+    #[tokio::test]
+    async fn actions_with_only_lightpanda_fail_closed() {
+        let lp = Arc::new(MockFetcher {
+            name: "lightpanda",
+            behavior: MockBehavior::Ok(rich_html("LP-")),
+        }) as Arc<dyn PageFetcher>;
+        let r = make_renderer_with_mocks(vec![lp]);
+        let err = REQUEST_ACTIONS
+            .scope(one_wait(), async {
+                r.fetch_with_js(
+                    "https://example.com",
+                    &HashMap::new(),
+                    None,
+                    None,
+                    false,
+                    true,
+                    crw_core::Deadline::from_request_ms(5000),
+                )
+                .await
+            })
+            .await
+            .expect_err("no tier can run the actions");
+        assert!(err.to_string().contains("browser actions"), "got {err:?}");
     }
 
     /// The real production failure is a deadline, and `MockBehavior::Err` can
@@ -10735,6 +10900,7 @@ mod tests {
                 screenshot: None,
                 block: None,
                 residential_bytes: None,
+                actions: None,
             })
         }
         fn name(&self) -> &str {
@@ -11067,6 +11233,7 @@ mod tests {
                 screenshot: None,
                 block: None,
                 residential_bytes: None,
+                actions: None,
             })
         }
         fn name(&self) -> &str {
@@ -12167,6 +12334,7 @@ mod tests {
             screenshot: None,
             block: None,
             residential_bytes: None,
+            actions: None,
         }
     }
 

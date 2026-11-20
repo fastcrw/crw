@@ -269,4 +269,4 @@ If you are debugging extraction quality, request both `markdown` and `json` for 
 
 - `screenshot` — needs a browser tier that can capture: Chrome (`chrome`, `chrome_proxy`) or Playwright. LightPanda and Camoufox cannot capture, so an instance configured with only those refuses a screenshot request instead of returning an empty one. Sending `renderJs: false` together with `screenshot` is a 400 (a screenshot requires JS rendering). Check `screenshot.supported` on `GET /v1/capabilities` before requesting it.
 - `json` and `summary` — need an LLM: either a server-side key or a per-request `llmApiKey`. `GET /v1/capabilities` lists them under `formats.llmRequired`.
-- `actions` — click/scroll/wait actions are not supported. Sending `actions` returns a 400 with a message suggesting `cssSelector` or `xpath` as alternatives.
+- `actions`: browser steps (`wait`, `click`, `write`, `press`, `scroll`) need a Chrome tier, like `screenshot`. See [Browser actions](/docs/scraping#browser-actions).
