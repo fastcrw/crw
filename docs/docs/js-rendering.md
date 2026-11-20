@@ -41,7 +41,7 @@ Override the rendering mode per request using `renderJs`:
 | `false` | HTTP only |
 
 :::note
-500 credits to start, up to 500 more from onboarding tasks, no card.
+1000 free credits, no card.
 <a href="https://fastcrw.com/register?ref=docs-js-rendering-inline" target="_blank" rel="noopener">Get your API key</a>
 :::
 

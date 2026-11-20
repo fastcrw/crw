@@ -28,10 +28,10 @@
 #   per-renderer prices in the two user-facing billing/reference pages.
 #
 # Guard 6: free-tier credit count
-#   Fails on a literal flat "1000 credits" / "1000 free" free-tier claim in
-#   docs/docs/*.md. The FREE plan grants 500 credits once, plus up to 500 more
-#   from onboarding tasks. Hand-maintained: this job has no checkout of
-#   crw-saas, so it cannot read `src/lib/plans-client.ts` to derive the number.
+#   Fails on the retired "500 credits to start" / "500 free credits" headline in
+#   docs/docs/*.md. The free tier is advertised as 1000 free credits (500 at
+#   signup plus up to 500 from onboarding tasks). Hand-maintained: this job has
+#   no checkout of crw-saas, so it cannot read its copy rules.
 #
 # Guard 7: data-source wording
 #   Fails on internal registry field names (the pattern in the guard below)
@@ -341,29 +341,27 @@ fi
 # Guard 6: free-tier credit count
 # ---------------------------------------------------------------------------
 #
-# The FREE plan grants 500 credits once, plus up to 500 more from onboarding
-# tasks, never a flat 1000. This mirrors crw-saas `src/lib/plans-client.ts`
-# BY HAND: this guard runs in the crw-opencore CI job, which does not have the
-# crw-saas repo checked out, so it cannot import or read that file at check
-# time. If the FREE grant changes there, update the literal below in the same
-# commit that fixes the docs; nothing here derives it automatically.
+# Public copy advertises the free tier as 1000 free credits: 500 at signup plus
+# up to 500 more from onboarding tasks. Reference pages may explain that split,
+# but the old "500 credits to start" / "500 free credits" headline must not come
+# back. Hand-maintained: this guard runs in the crw-opencore CI job, which does
+# not have the crw-saas repo checked out.
 
 echo "==> Guard 6: free-tier credit count"
 
 free_tier_hits=$(
-  grep -rniE --include="*.md" '1,?000 (credits|free)' docs/docs \
-    | grep -viE 'top-up|\$9' \
+  grep -rniE --include="*.md" '500 credits to start|500 free credits' docs/docs \
     || true
 )
 
 if [ -n "$free_tier_hits" ]; then
-  echo "FAIL: a doc claims a flat 1000-credit free tier. The FREE plan grants" >&2
-  echo "      500 credits once, plus up to 500 more from onboarding tasks." >&2
+  echo "FAIL: a doc uses the retired 500-credit free-tier headline. Advertise" >&2
+  echo "      the free tier as 1000 free credits." >&2
   echo >&2
   echo "$free_tier_hits" | sed 's/^/  /' >&2
   FAIL=1
 else
-  echo "ok: no flat 1000-credit free-tier claim"
+  echo "ok: free tier advertised as 1000 free credits"
 fi
 
 # ---------------------------------------------------------------------------

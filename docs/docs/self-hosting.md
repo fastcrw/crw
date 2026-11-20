@@ -19,7 +19,7 @@ curl -X POST http://localhost:3000/v1/scrape \
 ```
 
 :::note
-500 credits to start, up to 500 more from onboarding tasks, no card.
+1000 free credits, no card.
 <a href="https://fastcrw.com/register?ref=docs-self-hosting-inline" target="_blank" rel="noopener">Get your API key</a>
 :::
 

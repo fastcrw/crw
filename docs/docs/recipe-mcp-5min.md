@@ -24,7 +24,7 @@ Claude Code writes this into your project `.claude/mcp.json` automatically. You 
 
 ### Option B: Cloud mode (all 11 tools, including `crw_search`)
 
-Get a free API key at [fastcrw.com](https://fastcrw.com): 500 credits to start, and up to 500 more from onboarding tasks, no monthly reset.
+Get a free API key at [fastcrw.com](https://fastcrw.com): 1000 free credits, no monthly reset.
 
 ```bash
 claude mcp add crw \

@@ -118,7 +118,7 @@ curl -X POST https://api.fastcrw.com/v1/scrape \
 :::
 
 :::note
-500 credits to start, up to 500 more from onboarding tasks, no card.
+1000 free credits, no card.
 <a href="https://fastcrw.com/register?ref=docs-scraping-inline" target="_blank" rel="noopener">Get your API key</a>
 :::
 

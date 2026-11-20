@@ -45,7 +45,7 @@ Purchased top-up credits never expire and are not tied to your current billing c
 
 ## Free tier
 
-The FREE plan grants 500 credits **once, for the lifetime of the account**, not monthly, and it never resets, plus up to 500 more from onboarding tasks. No card is required to get them. Once they are spent, a FREE account either upgrades to a paid plan or stops.
+The FREE plan gives **1000 free credits once, for the lifetime of the account**, not monthly, and they never reset: 500 at signup and up to 500 more from onboarding tasks. No card is required to get them. Once they are spent, a FREE account either upgrades to a paid plan or stops.
 
 ## Why crawl billing looks different
 
