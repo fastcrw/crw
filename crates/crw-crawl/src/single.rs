@@ -2042,7 +2042,10 @@ fn accept_js_retry(r: JsRetry<'_>) -> bool {
         return !r.js_is_json_dump
             && (200..300).contains(&r.js_status)
             && r.js_md_len >= r.js_floor
-            && r.js_score > r.prior_text_score;
+            // A dump with no text around it scores the empty string (-0.3),
+            // which a logo-and-spinner shell clears. Floor it at 0.0 so the
+            // render has to carry readable text of its own.
+            && r.js_score > r.prior_text_score.max(0.0);
     }
     if r.js_md_len < r.js_floor {
         return false;
@@ -2116,13 +2119,41 @@ fn is_json_media_type(content_type: &str) -> bool {
 /// qualify.
 const JSON_DUMP_MIN_BYTES: usize = 1024;
 
-/// A trimmed markdown line that is a whole JSON object or array. Validated
-/// with [`serde::de::IgnoredAny`], which checks the syntax without building
-/// the tree (a dump line can be 1.5 MB).
+/// A trimmed markdown line that is a whole JSON object or array, either as it
+/// stands (a body that bypassed the HTML converter) or once the converter's
+/// escapes are undone. htmd escapes `\ * _ ` [ ]` in every text node, so a
+/// bootstrap blob a browser rendered as page text arrives as
+/// `{"feature\_gates":…}`, which is not JSON until [`unescape_markdown`] runs.
 fn is_json_line(line: &str) -> bool {
+    is_json_container(line) || (line.contains('\\') && is_json_container(&unescape_markdown(line)))
+}
+
+/// A whole JSON object or array. Validated with [`serde::de::IgnoredAny`],
+/// which checks the syntax without building the tree (a dump line can be
+/// 1.5 MB).
+fn is_json_container(line: &str) -> bool {
     let object = line.starts_with("{\"") && line.ends_with('}');
     let array = line.starts_with('[') && line.ends_with(']') && !line.starts_with("[!");
     (object || array) && serde_json::from_str::<serde::de::IgnoredAny>(line).is_ok()
+}
+
+/// Reverses htmd's text escapes (a backslash before `\ * _ ` [ ]`). Only used
+/// to recognise a JSON line; the markdown itself is never rewritten.
+fn unescape_markdown(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && matches!(next, '\\' | '*' | '_' | '`' | '[' | ']')
+        {
+            out.push(next);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Whether most of `markdown`'s text sits in lines that are each a whole JSON
@@ -4120,6 +4151,49 @@ mod tests {
         let dump = format!("{NOTION_TEXT}\n\n{}\n", bootstrap_blob(400));
         assert!(!accept_js_retry(dump_retry(&dump, 200)));
         assert!(!accept_js_retry(dump_retry("# Notion Official", 200)));
+    }
+
+    #[test]
+    fn a_json_dump_through_the_html_converter_is_detected() {
+        // A browser tier hands the blob over as page text, and htmd escapes
+        // the `_` (and any `[` `]`) in it, so the line is not JSON as it stands.
+        let html = format!(
+            "<html><body><h1>Notion Official</h1><div>{}</div></body></html>",
+            bootstrap_blob(400)
+        );
+        let md = crw_extract::markdown::html_to_markdown(&html);
+        assert!(md.contains("\\_"), "htmd no longer escapes `_`:\n{md:.200}");
+        assert!(markdown_is_json_dump(&md));
+        // A raw body that bypassed the converter, with escapes of its own in
+        // its strings, is still read as it stands.
+        let raw = format!(
+            "{{\"path\":\"C:\\\\a\\\\b\",\"blob\":{}}}",
+            bootstrap_blob(60)
+        );
+        assert!(markdown_is_json_dump(&raw));
+    }
+
+    #[test]
+    fn a_shell_does_not_replace_a_dump_with_no_text_around_it() {
+        let dump = format!("{}\n", bootstrap_blob(400));
+        let retry = |render: &str| JsRetry {
+            prior_renderer: Some("lightpanda"),
+            prior_was_thin: false,
+            prior_floor: 2000,
+            prior_is_json_dump: markdown_is_json_dump(&dump),
+            prior_text_score: md_score(&markdown_without_json_lines(&dump)),
+            before_score: md_score(&dump),
+            js_status: 200,
+            js_md_len: render.trim().len(),
+            js_floor: 100,
+            js_score: md_score(render),
+            js_is_json_dump: markdown_is_json_dump(render),
+        };
+        assert!(retry(NOTION_RENDER).prior_is_json_dump);
+        let spinner = "# Notion\n\nLoading...\n\n![](https://www.notion.so/images/logo-ios.png) \
+            ![](https://www.notion.so/images/loading-spinner.gif)";
+        assert!(!accept_js_retry(retry(spinner)));
+        assert!(accept_js_retry(retry(NOTION_RENDER)));
     }
 
     #[test]
