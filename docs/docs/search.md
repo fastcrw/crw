@@ -119,7 +119,7 @@ curl -X POST https://api.fastcrw.com/v1/search \
 :::
 
 :::note
-500 credits to start, up to 500 more from onboarding tasks, no card.
+1000 free credits, no card.
 <a href="https://fastcrw.com/register?ref=docs-search-inline" target="_blank" rel="noopener">Get your API key</a>
 :::
 

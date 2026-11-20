@@ -13,7 +13,7 @@ Available tags: `latest`, `0.16` (tracks the current minor), `0.16.0` (pinned).
 Use a pinned tag in production — `latest` rolls forward on every release.
 
 :::note
-500 credits to start, up to 500 more from onboarding tasks, no card.
+1000 free credits, no card.
 <a href="https://fastcrw.com/register?ref=docs-docker-inline" target="_blank" rel="noopener">Get your API key</a>
 :::
 

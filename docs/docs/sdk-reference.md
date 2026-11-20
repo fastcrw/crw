@@ -52,7 +52,7 @@ const crw = new CrwClient();
 const crw = new CrwClient({ apiKey: "crw_live_..." });
 ```
 
-Sign up for **500 free credits, and up to 500 more from onboarding tasks** (no payment card, no monthly reset) at
+Sign up for **1000 free credits** (no payment card, no monthly reset) at
 <https://fastcrw.com/dashboard> and then set `CRW_API_KEY` in your environment.
 
 ### Self-hosted HTTP server
