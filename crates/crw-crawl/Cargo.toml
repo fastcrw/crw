@@ -16,6 +16,7 @@ crw-renderer = { workspace = true }
 regex = { workspace = true }
 crw-extract = { workspace = true }
 reqwest = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 scraper = { workspace = true }
 moka = { workspace = true }
