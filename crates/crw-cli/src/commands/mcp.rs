@@ -136,6 +136,7 @@ impl Backend {
             self.is_proxy(),
             self.search_available(),
             self.extract_available(),
+            self.default_max_length(),
         ) {
             ProtocolResult::Response(resp) => return Some(resp),
             ProtocolResult::Notification => return None,

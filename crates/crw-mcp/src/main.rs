@@ -202,6 +202,7 @@ impl Backend {
             self.is_proxy(),
             self.search_available(),
             self.extract_available(),
+            self.default_max_length(),
         ) {
             ProtocolResult::Response(mut resp) => {
                 if !self.data_tools_listed() {

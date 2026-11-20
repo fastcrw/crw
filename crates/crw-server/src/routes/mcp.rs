@@ -289,6 +289,7 @@ pub async fn handle_request(state: &AppState, req: JsonRpcRequest) -> Option<Jso
         false,
         state.searxng.is_some(),
         state.config.mcp_extract_available(),
+        state.config.mcp.default_max_length,
     ) {
         ProtocolResult::Response(resp) => return Some(resp),
         ProtocolResult::Notification => return None,

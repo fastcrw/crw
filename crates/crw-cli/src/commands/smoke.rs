@@ -455,6 +455,7 @@ async fn mcp_surface_check(
         false,
         search_available,
         config.mcp_extract_available(),
+        config.mcp.default_max_length,
     ) {
         crw_core::mcp::ProtocolResult::Response(resp) => {
             let count = resp

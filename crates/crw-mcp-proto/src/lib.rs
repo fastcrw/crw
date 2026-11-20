@@ -181,7 +181,21 @@ fn extract_status_output_schema() -> Value {
     })
 }
 
-pub fn tool_definitions(proxy_mode: bool) -> Value {
+/// The default a `maxLength` description states: the deployment's
+/// `[mcp] default_max_length`, or `unbounded` when it is `0`. `approx` keeps the
+/// `~` that the `crw_check_crawl_status` and `crw_parse_file` descriptions carry.
+fn max_length_default_note(default_max_length: usize, approx: bool) -> String {
+    match default_max_length {
+        0 => "default: unbounded".to_string(),
+        n if approx => format!("default ~{n}"),
+        n => format!("default {n}"),
+    }
+}
+
+/// The MCP tool list. `default_max_length` is the deployment's
+/// `[mcp] default_max_length`, stated in each `maxLength` description so an
+/// agent reads the cap that actually applies to a call without `maxLength`.
+pub fn tool_definitions(proxy_mode: bool, default_max_length: usize) -> Value {
     let mut tools = vec![
         json!({
             "name": "crw_scrape",
@@ -230,7 +244,10 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                     "maxLength": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "Max chars per field; 0 = unbounded (default 15000)"
+                        "description": format!(
+                            "Max chars per field; 0 = unbounded ({})",
+                            max_length_default_note(default_max_length, false)
+                        )
                     },
                     "startIndex": {
                         "type": "integer",
@@ -314,7 +331,10 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                     "maxLength": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "Max chars per page content field; 0 = unbounded (default ~15000)"
+                        "description": format!(
+                            "Max chars per page content field; 0 = unbounded ({})",
+                            max_length_default_note(default_max_length, true)
+                        )
                     }
                 },
                 "required": ["id"]
@@ -574,7 +594,10 @@ pub fn tool_definitions(proxy_mode: bool) -> Value {
                 "maxLength": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "Max chars per content field; 0 = unbounded (default ~15000)"
+                    "description": format!(
+                        "Max chars per content field; 0 = unbounded ({})",
+                        max_length_default_note(default_max_length, true)
+                    )
                 }
             },
             "required": ["contentBase64"]
@@ -704,7 +727,7 @@ fn data_tool_definitions() -> Vec<Value> {
 
 /// Returns the ENGINE's declared `outputSchema` for a tool, if it declares one.
 ///
-/// Reads `tool_definitions(false)` deliberately, and that asymmetry is the point:
+/// Reads `tool_definitions(false, …)` deliberately, and that asymmetry is the point:
 /// it is the "does this tool have a structured shape at all" question, which drives
 /// `structuredContent` emission in [`tool_result_response`]. In proxy mode the schema
 /// is not *advertised* (we do not author the remote's body — see the strip in
@@ -719,7 +742,7 @@ fn data_tool_definitions() -> Vec<Value> {
 /// Recomputes `tool_definitions` per call — `tools/call` is not hot; memoize behind a
 /// `OnceLock` only if profiling ever demands it.
 pub fn tool_output_schema(tool_name: &str) -> Option<Value> {
-    let engine = tool_definitions(false);
+    let engine = tool_definitions(false, DEFAULT_MAX_LENGTH);
     engine["tools"]
         .as_array()?
         .iter()
@@ -735,7 +758,7 @@ pub fn tool_output_schema(tool_name: &str) -> Option<Value> {
 /// no search backend is configured — calling it then yields a clear runtime error).
 /// The data tools exist in proxy mode only, so `proxy_mode` decides those.
 pub fn is_known_tool(name: &str, proxy_mode: bool) -> bool {
-    tool_definitions(proxy_mode)["tools"]
+    tool_definitions(proxy_mode, DEFAULT_MAX_LENGTH)["tools"]
         .as_array()
         .is_some_and(|tools| tools.iter().any(|t| t["name"] == name))
 }
@@ -760,6 +783,10 @@ pub enum ProtocolResult {
 /// `extract_available` does the same for [`EXTRACT_TOOLS`]: embedded callers pass
 /// `false` only when the operator opted into `[mcp] hide_extract_without_llm` and
 /// no `[extraction.llm]` is configured; proxy callers pass `true`.
+///
+/// `default_max_length` is the deployment's `[mcp] default_max_length` (the same
+/// value passed to [`apply_bounds`]); `tools/list` states it in each `maxLength`
+/// description.
 pub fn handle_protocol_method(
     server_name: &str,
     server_version: &str,
@@ -767,6 +794,7 @@ pub fn handle_protocol_method(
     proxy_mode: bool,
     search_available: bool,
     extract_available: bool,
+    default_max_length: usize,
 ) -> ProtocolResult {
     if req.jsonrpc != "2.0" {
         let id = req.id.clone().unwrap_or(Value::Null);
@@ -807,7 +835,7 @@ pub fn handle_protocol_method(
 
         "tools/list" => {
             let id = req.id.clone().unwrap_or(Value::Null);
-            let mut defs = tool_definitions(proxy_mode);
+            let mut defs = tool_definitions(proxy_mode, default_max_length);
             if let Some(tools) = defs.get_mut("tools").and_then(Value::as_array_mut) {
                 tools.retain(|t| {
                     let name = t["name"].as_str().unwrap_or_default();
@@ -1336,7 +1364,7 @@ mod tests {
 
     #[test]
     fn tools_list_token_budget() {
-        let json = serde_json::to_string(&tool_definitions(false)).unwrap();
+        let json = serde_json::to_string(&tool_definitions(false, DEFAULT_MAX_LENGTH)).unwrap();
         let est_tokens = json.len().div_ceil(3);
         assert!(
             est_tokens <= TOOLS_LIST_TOKEN_CEILING,
@@ -1350,7 +1378,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_schema_advertises_render_js() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let props = &scrape["inputSchema"]["properties"];
         assert_eq!(
@@ -1365,7 +1393,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_schema_advertises_wait_for() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let props = &scrape["inputSchema"]["properties"];
         assert_eq!(props["waitFor"]["type"], "integer");
@@ -1373,7 +1401,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_schema_advertises_max_age_in_proxy_mode_only() {
-        let proxy_defs = tool_definitions(true);
+        let proxy_defs = tool_definitions(true, DEFAULT_MAX_LENGTH);
         let proxy = tool_by_name(&proxy_defs, "crw_scrape");
         let props = &proxy["inputSchema"]["properties"];
         assert_eq!(
@@ -1382,7 +1410,7 @@ mod tests {
         );
         assert_eq!(props["maxAge"]["minimum"], 0);
 
-        let embedded_defs = tool_definitions(false);
+        let embedded_defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let embedded = tool_by_name(&embedded_defs, "crw_scrape");
         assert!(
             embedded["inputSchema"]["properties"]
@@ -1394,7 +1422,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_schema_advertises_mode_in_proxy_mode_only() {
-        let proxy_defs = tool_definitions(true);
+        let proxy_defs = tool_definitions(true, DEFAULT_MAX_LENGTH);
         let proxy = tool_by_name(&proxy_defs, "crw_scrape");
         let props = &proxy["inputSchema"]["properties"];
         assert_eq!(props["mode"]["enum"], json!(["standard", "auto"]));
@@ -1409,7 +1437,7 @@ mod tests {
             }
         }
 
-        let embedded_defs = tool_definitions(false);
+        let embedded_defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let embedded = tool_by_name(&embedded_defs, "crw_scrape");
         let embedded_props = &embedded["inputSchema"]["properties"];
         assert!(
@@ -1420,7 +1448,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_render_js_not_required() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let required = scrape["inputSchema"]["required"]
             .as_array()
@@ -1437,7 +1465,7 @@ mod tests {
 
     #[test]
     fn crw_crawl_schema_advertises_render_js_and_wait_for() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let crawl = tool_by_name(&defs, "crw_crawl");
         let props = &crawl["inputSchema"]["properties"];
         assert_eq!(props["renderJs"]["type"], "boolean");
@@ -1446,7 +1474,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_schema_advertises_renderer() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let props = &scrape["inputSchema"]["properties"];
         assert_eq!(props["renderer"]["type"], "string");
@@ -1468,7 +1496,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_renderer_not_required() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let required = scrape["inputSchema"]["required"]
             .as_array()
@@ -1478,7 +1506,7 @@ mod tests {
 
     #[test]
     fn crw_crawl_schema_advertises_renderer() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let crawl = tool_by_name(&defs, "crw_crawl");
         let props = &crawl["inputSchema"]["properties"];
         assert_eq!(props["renderer"]["type"], "string");
@@ -1498,7 +1526,7 @@ mod tests {
     fn schemas_do_not_set_additional_properties_false() {
         // Deferred to a follow-up issue. Guard against accidentally enabling
         // this before the schemas are expanded to full ScrapeRequest parity.
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         for name in ["crw_scrape", "crw_crawl", "crw_map"] {
             let tool = tool_by_name(&defs, name);
             let ap = &tool["inputSchema"].get("additionalProperties");
@@ -1678,7 +1706,7 @@ mod tests {
     /// would make it falsely reject real responses).
     #[test]
     fn t6_output_schema_does_not_set_additional_properties_false() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         let ap = search["outputSchema"].get("additionalProperties");
         assert!(
@@ -1910,7 +1938,7 @@ mod tests {
     /// are non-idempotent, while cancel is destructive but idempotent.
     #[test]
     fn a1_tools_advertise_annotations_and_title() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         for t in defs["tools"].as_array().unwrap() {
             assert!(t["annotations"].is_object(), "{} annotations", t["name"]);
             assert!(t["title"].is_string(), "{} title", t["name"]);
@@ -1969,9 +1997,15 @@ mod tests {
                 method: "tools/list".into(),
                 params: json!({}),
             };
-            let ProtocolResult::Response(resp) =
-                handle_protocol_method("crw", "0", &req, false, search_available, true)
-            else {
+            let ProtocolResult::Response(resp) = handle_protocol_method(
+                "crw",
+                "0",
+                &req,
+                false,
+                search_available,
+                true,
+                DEFAULT_MAX_LENGTH,
+            ) else {
                 panic!("expected response");
             };
             resp.result.unwrap()["tools"]
@@ -2001,7 +2035,7 @@ mod tests {
             params: json!({}),
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, true, true)
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -2022,9 +2056,15 @@ mod tests {
             method: "initialize".into(),
             params: json!({}),
         };
-        let ProtocolResult::Response(resp2) =
-            handle_protocol_method("crw", "0", &no_search, false, false, true)
-        else {
+        let ProtocolResult::Response(resp2) = handle_protocol_method(
+            "crw",
+            "0",
+            &no_search,
+            false,
+            false,
+            true,
+            DEFAULT_MAX_LENGTH,
+        ) else {
             panic!("expected response");
         };
         let instructions2 = resp2.result.unwrap()["instructions"]
@@ -2038,7 +2078,10 @@ mod tests {
 
         // The advertised surface (descriptions + instructions) must never name the
         // search backend — locks the crw_search description SearXNG-leak fix.
-        let advertised = format!("{instructions} {}", tool_definitions(false));
+        let advertised = format!(
+            "{instructions} {}",
+            tool_definitions(false, DEFAULT_MAX_LENGTH)
+        );
         assert!(
             !advertised.to_lowercase().contains("searxng"),
             "search backend identity must not leak into the advertised MCP surface"
@@ -2107,7 +2150,7 @@ mod tests {
     /// every one it has. A remote we do not author must not be promised a shape.
     #[test]
     fn p1_proxy_mode_advertises_no_output_schema() {
-        let proxied = tool_definitions(true);
+        let proxied = tool_definitions(true, DEFAULT_MAX_LENGTH);
         for tool in proxied["tools"]
             .as_array()
             .expect("tools array")
@@ -2122,7 +2165,7 @@ mod tests {
             );
         }
 
-        let embedded = tool_definitions(false);
+        let embedded = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let declared: Vec<&str> = embedded["tools"]
             .as_array()
             .expect("tools array")
@@ -2148,7 +2191,7 @@ mod tests {
     /// with every other test still green. This is the guard against that refactor.
     #[test]
     fn p2_proxy_mode_still_emits_structured_content_without_a_schema() {
-        let proxied = tool_definitions(true);
+        let proxied = tool_definitions(true, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&proxied, "crw_search");
         assert!(search.get("outputSchema").is_none());
 
@@ -2205,7 +2248,7 @@ mod tests {
         // And therefore proxy mode must advertise neither.
         for tool in ["crw_search", "crw_extract"] {
             assert!(
-                tool_by_name(&tool_definitions(true), tool)
+                tool_by_name(&tool_definitions(true, DEFAULT_MAX_LENGTH), tool)
                     .get("outputSchema")
                     .is_none(),
                 "{tool}: proxy mode must not advertise a schema it cannot honour"
@@ -2418,9 +2461,15 @@ mod tests {
                 method: "initialize".into(),
                 params: Value::Null,
             };
-            let ProtocolResult::Response(resp) =
-                handle_protocol_method("crw", "0", &req, proxy_mode, true, true)
-            else {
+            let ProtocolResult::Response(resp) = handle_protocol_method(
+                "crw",
+                "0",
+                &req,
+                proxy_mode,
+                true,
+                true,
+                DEFAULT_MAX_LENGTH,
+            ) else {
                 panic!("expected response");
             };
             resp.result.unwrap()["instructions"]
@@ -2457,7 +2506,7 @@ mod tests {
             params: json!({}),
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, search, extract)
+            handle_protocol_method("crw", "0", &req, false, search, extract, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -2519,6 +2568,89 @@ mod tests {
     }
 
     // --- [mcp] default_max_length ---
+
+    /// The `maxLength` description of every tool that has one, from `tools/list`
+    /// as served with the given `default_max_length`, keyed by tool name.
+    fn max_length_descriptions(default_max_length: usize) -> Vec<(String, String)> {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(json!(1)),
+            method: "tools/list".into(),
+            params: json!({}),
+        };
+        let ProtocolResult::Response(resp) =
+            handle_protocol_method("crw", "0", &req, true, true, true, default_max_length)
+        else {
+            panic!("tools/list must produce a response");
+        };
+        resp.result.unwrap()["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| {
+                let desc = t["inputSchema"]["properties"]["maxLength"]["description"].as_str()?;
+                Some((t["name"].as_str().unwrap().to_string(), desc.to_string()))
+            })
+            .collect()
+    }
+
+    /// With the default config the descriptions are the ones shipped before the
+    /// default became configurable, byte for byte.
+    #[test]
+    fn max_length_descriptions_state_the_default() {
+        assert_eq!(
+            max_length_descriptions(DEFAULT_MAX_LENGTH),
+            vec![
+                (
+                    "crw_scrape".to_string(),
+                    "Max chars per field; 0 = unbounded (default 15000)".to_string()
+                ),
+                (
+                    "crw_check_crawl_status".to_string(),
+                    "Max chars per page content field; 0 = unbounded (default ~15000)".to_string()
+                ),
+                (
+                    "crw_parse_file".to_string(),
+                    "Max chars per content field; 0 = unbounded (default ~15000)".to_string()
+                ),
+            ]
+        );
+    }
+
+    /// `default_max_length = 0` is stated as an unbounded default, never as `0`.
+    #[test]
+    fn max_length_descriptions_state_an_unbounded_default() {
+        let descs = max_length_descriptions(0);
+        assert_eq!(descs.len(), 3);
+        for (name, desc) in descs {
+            assert!(
+                desc.ends_with("0 = unbounded (default: unbounded)"),
+                "{name}: {desc}"
+            );
+        }
+    }
+
+    /// A custom `default_max_length` is the number every description states.
+    #[test]
+    fn max_length_descriptions_state_a_custom_default() {
+        assert_eq!(
+            max_length_descriptions(40_000),
+            vec![
+                (
+                    "crw_scrape".to_string(),
+                    "Max chars per field; 0 = unbounded (default 40000)".to_string()
+                ),
+                (
+                    "crw_check_crawl_status".to_string(),
+                    "Max chars per page content field; 0 = unbounded (default ~40000)".to_string()
+                ),
+                (
+                    "crw_parse_file".to_string(),
+                    "Max chars per content field; 0 = unbounded (default ~40000)".to_string()
+                ),
+            ]
+        );
+    }
 
     /// A call without `maxLength` is capped at the deployment's default, not the const.
     #[test]
@@ -2731,11 +2863,17 @@ mod tests {
     #[test]
     fn tool_definitions_has_10_engine_tools_and_11_proxy_tools() {
         assert_eq!(
-            tool_definitions(false)["tools"].as_array().unwrap().len(),
+            tool_definitions(false, DEFAULT_MAX_LENGTH)["tools"]
+                .as_array()
+                .unwrap()
+                .len(),
             10
         );
         assert_eq!(
-            tool_definitions(true)["tools"].as_array().unwrap().len(),
+            tool_definitions(true, DEFAULT_MAX_LENGTH)["tools"]
+                .as_array()
+                .unwrap()
+                .len(),
             11
         );
     }
@@ -2766,7 +2904,7 @@ mod tests {
 
     #[test]
     fn data_tools_are_proxy_only_and_keep_their_output_schema() {
-        let proxied = tool_definitions(true);
+        let proxied = tool_definitions(true, DEFAULT_MAX_LENGTH);
         for name in ["crw_find_data", "crw_get_data"] {
             assert!(is_known_tool(name, true), "{name} known in proxy mode");
             assert!(!is_known_tool(name, false), "{name} unknown to the engine");
@@ -2791,7 +2929,7 @@ mod tests {
 
     #[test]
     fn tool_definitions_names_are_unique() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let names: Vec<&str> = defs["tools"]
             .as_array()
             .unwrap()
@@ -2813,7 +2951,7 @@ mod tests {
     /// that would make the schema permanently unsatisfiable.
     #[test]
     fn every_tool_required_field_exists_in_properties() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         for t in defs["tools"].as_array().unwrap() {
             let props = t["inputSchema"]["properties"]
                 .as_object()
@@ -2836,7 +2974,7 @@ mod tests {
         ($fn_name:ident, $tool:expr, $expected:expr) => {
             #[test]
             fn $fn_name() {
-                let defs = tool_definitions(false);
+                let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
                 let tool = tool_by_name(&defs, $tool);
                 let required: Vec<&str> = tool["inputSchema"]["required"]
                     .as_array()
@@ -2886,7 +3024,7 @@ mod tests {
     #[test]
     fn crw_scrape_formats_enum_advertises_plain_text_in_both_modes() {
         for proxy_mode in [false, true] {
-            let defs = tool_definitions(proxy_mode);
+            let defs = tool_definitions(proxy_mode, DEFAULT_MAX_LENGTH);
             let scrape = tool_by_name(&defs, "crw_scrape");
             let enum_vals = scrape["inputSchema"]["properties"]["formats"]["items"]["enum"]
                 .as_array()
@@ -2907,7 +3045,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_max_length_has_minimum_zero() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         assert_eq!(
             scrape["inputSchema"]["properties"]["maxLength"]["minimum"],
@@ -2917,7 +3055,7 @@ mod tests {
 
     #[test]
     fn crw_crawl_json_schema_field_allows_additional_properties() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let crawl = tool_by_name(&defs, "crw_crawl");
         assert_eq!(
             crawl["inputSchema"]["properties"]["jsonSchema"]["additionalProperties"],
@@ -2927,7 +3065,7 @@ mod tests {
 
     #[test]
     fn crw_map_boolean_flags_are_typed_boolean() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let map = tool_by_name(&defs, "crw_map");
         let props = &map["inputSchema"]["properties"];
         assert_eq!(props["useSitemap"]["type"], "boolean");
@@ -2938,7 +3076,7 @@ mod tests {
 
     #[test]
     fn crw_extract_optional_byok_fields_are_strings() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let extract = tool_by_name(&defs, "crw_extract");
         let props = &extract["inputSchema"]["properties"];
         for key in ["llmApiKey", "llmProvider", "llmModel"] {
@@ -2950,7 +3088,7 @@ mod tests {
 
     #[test]
     fn crw_search_tbs_enum_has_the_five_time_windows() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         let enum_vals = search["inputSchema"]["properties"]["tbs"]["enum"]
             .as_array()
@@ -2969,7 +3107,7 @@ mod tests {
 
     #[test]
     fn crw_search_sources_enum_has_web_news_images() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         let enum_vals = search["inputSchema"]["properties"]["sources"]["items"]["enum"]
             .as_array()
@@ -2982,7 +3120,7 @@ mod tests {
 
     #[test]
     fn crw_search_scrape_options_formats_include_raw_html() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         let formats = search["inputSchema"]["properties"]["scrapeOptions"]["properties"]["formats"]
             ["items"]["enum"]
@@ -2994,7 +3132,7 @@ mod tests {
 
     #[test]
     fn crw_parse_file_formats_enum_includes_json_and_summary() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let parse = tool_by_name(&defs, "crw_parse_file");
         let enum_vals = parse["inputSchema"]["properties"]["formats"]["items"]["enum"]
             .as_array()
@@ -3006,7 +3144,7 @@ mod tests {
 
     #[test]
     fn crw_parse_file_parsers_enum_is_pdf_only() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let parse = tool_by_name(&defs, "crw_parse_file");
         let enum_vals = parse["inputSchema"]["properties"]["parsers"]["items"]["enum"]
             .as_array()
@@ -3016,7 +3154,7 @@ mod tests {
 
     #[test]
     fn crw_parse_file_json_schema_field_is_free_form_object() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let parse = tool_by_name(&defs, "crw_parse_file");
         assert_eq!(
             parse["inputSchema"]["properties"]["jsonSchema"]["additionalProperties"],
@@ -3028,7 +3166,7 @@ mod tests {
     fn additional_properties_false_absent_from_extra_tools_input_schemas() {
         // schemas_do_not_set_additional_properties_false above only covers
         // scrape/crawl/map; extend the same guard to the remaining tools.
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         for name in [
             "crw_extract",
             "crw_check_extract_status",
@@ -3049,7 +3187,7 @@ mod tests {
 
     #[test]
     fn crw_map_and_check_crawl_status_annotations_are_read_only_idempotent() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         for name in [
             "crw_map",
             "crw_check_crawl_status",
@@ -3064,7 +3202,7 @@ mod tests {
 
     #[test]
     fn crw_search_annotations_are_read_only_idempotent_open_world() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         assert_eq!(search["annotations"]["readOnlyHint"], json!(true));
         assert_eq!(search["annotations"]["idempotentHint"], json!(true));
@@ -3171,7 +3309,7 @@ mod tests {
     fn crw_extract_and_check_status_share_the_same_output_schema_shape() {
         // Both crw_check_extract_status and crw_cancel_extract advertise
         // extract_status_output_schema(); they must be byte-identical.
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let check = tool_by_name(&defs, "crw_check_extract_status");
         let cancel = tool_by_name(&defs, "crw_cancel_extract");
         assert_eq!(check["outputSchema"], cancel["outputSchema"]);
@@ -3250,7 +3388,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, true, true)
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -3270,7 +3408,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, true, true)
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -3286,7 +3424,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true, true),
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH),
             ProtocolResult::Notification
         ));
     }
@@ -3300,7 +3438,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true, true),
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH),
             ProtocolResult::Notification
         ));
     }
@@ -3314,7 +3452,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, true, true)
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -3331,7 +3469,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true, true),
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH),
             ProtocolResult::NotHandled
         ));
     }
@@ -3345,7 +3483,7 @@ mod tests {
             params: Value::Null,
         };
         assert!(matches!(
-            handle_protocol_method("crw", "0", &req, false, true, true),
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH),
             ProtocolResult::NotHandled
         ));
     }
@@ -3358,9 +3496,15 @@ mod tests {
             method: "initialize".into(),
             params: Value::Null,
         };
-        let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw-test-server", "9.9.9", &req, false, true, true)
-        else {
+        let ProtocolResult::Response(resp) = handle_protocol_method(
+            "crw-test-server",
+            "9.9.9",
+            &req,
+            false,
+            true,
+            true,
+            DEFAULT_MAX_LENGTH,
+        ) else {
             panic!("expected response");
         };
         let result = resp.result.unwrap();
@@ -3379,7 +3523,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, true, true)
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -3395,7 +3539,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, true, true, true)
+            handle_protocol_method("crw", "0", &req, true, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -3422,7 +3566,7 @@ mod tests {
             params: Value::Null,
         };
         let ProtocolResult::Response(resp) =
-            handle_protocol_method("crw", "0", &req, false, true, true)
+            handle_protocol_method("crw", "0", &req, false, true, true, DEFAULT_MAX_LENGTH)
         else {
             panic!("expected response");
         };
@@ -4137,7 +4281,7 @@ mod tests {
 
     #[test]
     fn crw_crawl_max_depth_and_max_pages_are_integers() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let crawl = tool_by_name(&defs, "crw_crawl");
         let props = &crawl["inputSchema"]["properties"];
         assert_eq!(props["maxDepth"]["type"], "integer");
@@ -4146,7 +4290,7 @@ mod tests {
 
     #[test]
     fn crw_extract_schema_property_is_object_type() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let extract = tool_by_name(&defs, "crw_extract");
         assert_eq!(
             extract["inputSchema"]["properties"]["schema"]["type"],
@@ -4160,7 +4304,7 @@ mod tests {
 
     #[test]
     fn crw_check_crawl_status_max_length_has_minimum_zero() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let status = tool_by_name(&defs, "crw_check_crawl_status");
         assert_eq!(
             status["inputSchema"]["properties"]["maxLength"]["minimum"],
@@ -4170,7 +4314,7 @@ mod tests {
 
     #[test]
     fn crw_search_scrape_options_nested_field_types() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         let opts = &search["inputSchema"]["properties"]["scrapeOptions"]["properties"];
         assert_eq!(opts["onlyMainContent"]["type"], "boolean");
@@ -4179,7 +4323,7 @@ mod tests {
 
     #[test]
     fn crw_parse_file_max_length_has_minimum_zero() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let parse = tool_by_name(&defs, "crw_parse_file");
         assert_eq!(
             parse["inputSchema"]["properties"]["maxLength"]["minimum"],
@@ -4189,14 +4333,14 @@ mod tests {
 
     #[test]
     fn crw_map_url_property_is_a_string() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let map = tool_by_name(&defs, "crw_map");
         assert_eq!(map["inputSchema"]["properties"]["url"]["type"], "string");
     }
 
     #[test]
     fn crw_scrape_include_and_exclude_tags_are_string_arrays() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let props = &scrape["inputSchema"]["properties"];
         assert_eq!(props["includeTags"]["type"], "array");
@@ -4207,7 +4351,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_only_main_content_is_boolean() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         assert_eq!(
             scrape["inputSchema"]["properties"]["onlyMainContent"]["type"],
@@ -4219,12 +4363,18 @@ mod tests {
 
     #[test]
     fn tool_definitions_false_is_deterministic_across_calls() {
-        assert_eq!(tool_definitions(false), tool_definitions(false));
+        assert_eq!(
+            tool_definitions(false, DEFAULT_MAX_LENGTH),
+            tool_definitions(false, DEFAULT_MAX_LENGTH)
+        );
     }
 
     #[test]
     fn tool_definitions_true_is_deterministic_across_calls() {
-        assert_eq!(tool_definitions(true), tool_definitions(true));
+        assert_eq!(
+            tool_definitions(true, DEFAULT_MAX_LENGTH),
+            tool_definitions(true, DEFAULT_MAX_LENGTH)
+        );
     }
 
     // --- is_known_tool: one assertion per real tool name (isolated failure attribution) ---
@@ -4466,17 +4616,17 @@ mod tests {
                 .collect()
         };
         // `crw_enrich` is engine-only until the hosted route ships.
-        let mut expected: Vec<String> = names(&tool_definitions(false))
+        let mut expected: Vec<String> = names(&tool_definitions(false, DEFAULT_MAX_LENGTH))
             .into_iter()
             .filter(|n| n != "crw_enrich")
             .collect();
         expected.extend(["crw_find_data".to_string(), "crw_get_data".to_string()]);
-        assert_eq!(names(&tool_definitions(true)), expected);
+        assert_eq!(names(&tool_definitions(true, DEFAULT_MAX_LENGTH)), expected);
     }
 
     #[test]
     fn crw_search_limit_property_is_an_integer() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         assert_eq!(
             search["inputSchema"]["properties"]["limit"]["type"],
@@ -4486,7 +4636,7 @@ mod tests {
 
     #[test]
     fn crw_search_lang_and_query_are_strings() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let search = tool_by_name(&defs, "crw_search");
         let props = &search["inputSchema"]["properties"];
         assert_eq!(props["lang"]["type"], "string");
