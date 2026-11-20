@@ -122,7 +122,7 @@ Key parameters:
   deadlineMs      number    opt       End-to-end deadline ms, range (0, 60000] (default: 8000)
   debug           boolean   opt       Include debugExtraction trace in response
   parsers         object[]  opt       PDF parser config (omit=auto, []=disable)
-  actions         any       REJECTED  Not supported; use cssSelector or xpath instead
+  actions         object[]  opt       Browser steps before reading: wait, click, write, press, scroll
 
 Success response:
   {
@@ -385,7 +385,12 @@ screenshot requirements: capture runs over CDP Page.captureScreenshot, so it nee
 json / summary requirements: both need an LLM — a server-side key or a per-request
   llmApiKey. GET /v1/capabilities lists them under formats.llmRequired.
 
-Not supported (returns 400): "actions" — use cssSelector or xpath instead
+actions: ordered browser steps run in Chrome after load, before the page is read.
+  wait {milliseconds | selector}, click {selector, all}, write {text}, press {key},
+  scroll {direction: up|down, selector}. optional:true on wait-selector, click and
+  scroll skips a missing element (listed in warnings) instead of failing.
+  Max 50 steps; waitFor + wait.milliseconds <= 60000. A failed step is HTTP 422
+  errorCode "action_failed" (not billed). Load more: click + wait, repeated.
 
 Format selection guide:
   markdown       — default; best for RAG, search, LLM prompts

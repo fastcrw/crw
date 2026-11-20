@@ -28,7 +28,7 @@ You need both to debug real scraping failures.
 | 400 | Invalid request parameters (bad URL, invalid JSON body, invalid selector) |
 | 401 | Invalid or missing API key |
 | 404 | Endpoint not found |
-| 422 | Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (`unsupported_content_type`) or is over the size cap (`response_too_large`) |
+| 422 | Validation failed (unknown format, invalid schema, extraction error), or the origin returned a body that is not a page (`unsupported_content_type`) or is over the size cap (`response_too_large`), or a browser action could not be carried out (`action_failed`) |
 | 402 | Cloud only: the credit balance cannot cover the request (`errorCode: "insufficient_credits"`), or a managed-LLM feature was requested on the FREE plan (`errorCode: "llm_not_available"`) |
 | 429 | Request-rate or concurrency limit exceeded (on the legacy `/v2` surface, also an exhausted credit balance) |
 | 502 | Engine internal error |
@@ -44,6 +44,7 @@ You need both to debug real scraping failures.
 | HTTP `422` | The request shape is valid JSON but semantically invalid | Check format names, schema, or extraction config |
 | `unsupported_content_type` | The origin served an office document, image or archive rather than a page | Fetch the file yourself, or point the request at a PDF or an HTML page |
 | `response_too_large` | The origin's body is over the 50 MB response cap (a very large PDF, most often) | Do not retry; the same document is too large every time. Fetch the file yourself |
+| `action_failed` | A browser action could not be carried out: its element never appeared, or the page threw. The message names the step | Fix the selector, mark the step `optional: true`, or add a `wait` before it. Not billed |
 | HTTP `402` | Out of credits (`insufficient_credits`) or a paid-plan feature on the FREE plan (`llm_not_available`) | Do not retry; top up, upgrade or enable auto-recharge |
 | HTTP `429` | Request-rate or concurrency limit hit | Back off and honor `Retry-After` |
 | HTTP `502` / `504` | Upstream or timeout issue | Retry with backoff |

@@ -176,7 +176,7 @@ That is the default CRW success shape: requested content plus a compact metadata
 | `deadlineMs` | number | `8000` | End-to-end request deadline in milliseconds. Must be in `(0, 60000]`. Requests above 8 000 ms land in a separate slow-path histogram and are excluded from the standard SLO p95 metric. |
 | `debug` | boolean | `false` | When `true`, includes a `debugExtraction` field in the response with a trace of every extraction candidate considered and why one was selected. |
 | `parsers` | object[] | PDF auto-parsed | Firecrawl-compatible document parser directives. Omit for the default (PDFs auto-converted to markdown). Pass `[]` to disable PDF parsing. Pass `[{"type":"pdf","maxPages":10}]` to cap pages. Accepted fields: `type` (`"pdf"`), `mode` (`"auto"` \| `"fast"` \| `"ocr"`), `maxPages`. |
-| `actions` | any | -- | Rejected with a clear error; use `cssSelector` or `xpath` instead |
+| `actions` | object[] | -- | Browser steps run on the page before it is read: `wait`, `click`, `write`, `press`, `scroll`. See [Browser actions](#browser-actions) |
 | `mode` | string | `standard` | Cloud only. `standard`, `auto` or `max`. `auto` and `max` get through anti-bot walls and are billed by the traffic the page used. See [Auto and max mode](#auto-and-max-mode) |
 | `maxCredits` | number | -- | Cloud only, with `mode: "auto"` or `"max"`. The most this page may cost in credits, from 2 to 1000. A page that would cost more is stopped and not charged |
 
@@ -289,6 +289,54 @@ Keep the first request simple:
 
 If you turn on every targeting knob at once, debugging gets harder immediately.
 
+## Browser actions
+
+Some pages only show part of their content until you interact with them: a product list behind a "Load more" button, a feed that grows as you scroll, a search box you have to type into. `actions` is an ordered list of steps that run in a real browser after the page loads and before it is read, so the markdown you get back is the page after those steps.
+
+```bash
+curl -X POST https://fastcrw.com/api/v1/scrape \
+  -H "Authorization: Bearer $CRW_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.jbhifi.com.au/collections/tvs/cheap-tvs",
+    "actions": [
+      { "type": "wait", "selector": "button.load-more-button" },
+      { "type": "click", "selector": "button.load-more-button", "optional": true },
+      { "type": "wait", "milliseconds": 2500 },
+      { "type": "click", "selector": "button.load-more-button", "optional": true },
+      { "type": "wait", "milliseconds": 2500 }
+    ]
+  }'
+```
+
+| Type | Fields | What it does |
+|------|--------|--------------|
+| `wait` | `milliseconds` or `selector` (exactly one) | Sleep, or wait up to 10 s for an element matching `selector` |
+| `click` | `selector`, `all` (default `false`) | Click the first match, or every match with `all: true`. Waits up to 5 s for the element |
+| `write` | `text` | Type into the focused element. Click the field first |
+| `press` | `key` | Press one key: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `Space`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `PageUp`, `PageDown`, `Home`, `End`, or a single character. Key combinations are not supported |
+| `scroll` | `direction` (`up` or `down`, default `down`), `selector` | Scroll the page, or the element matching `selector`, by one screen |
+
+`wait` with a `selector`, `click` and `scroll` with a `selector` also take `optional: true`. An optional step whose element never appears is skipped and reported in `warnings` instead of failing the scrape. That is what makes "click Load more up to N times" work when you do not know how many pages the list has.
+
+Rules:
+
+- At most 50 steps. `waitFor` plus every `wait.milliseconds` may add up to 60 000 ms.
+- Actions need a Chrome tier: they force JS rendering, and `renderJs: false` or a `renderer` pin that cannot drive a page (`lightpanda`, `camoufox`, `impersonated-http`) is a 400.
+- A step that cannot be carried out (its element never appears and it is not optional, or the page throws) fails the scrape with HTTP 422 and `errorCode: "action_failed"`, naming the step. A failed scrape is not billed. A page that turns out to be an anti-bot wall keeps its usual blocked answer instead.
+- Typing into a password field, or into an embedded frame that cannot be checked, is refused.
+- The result is never served from a cache, and billing is unchanged: 1 credit per page.
+- A `wait` that would run past the request deadline fails the scrape instead of returning the page early.
+- Long lists need time. On the cloud a request with actions gets a 60 s deadline unless you pass `deadlineMs` (or `timeout`) yourself.
+- Only `wait`, `click`, `write`, `press` and `scroll` run. Firecrawl's `screenshot`, `scrape`, `executeJavascript` and `pdf` action types are a 400; add `screenshot` to `formats` to capture the final page.
+
+Where actions run:
+
+- **Cloud:** `/v1/scrape`, `/firecrawl/v1/scrape` and the `crw_scrape` MCP tool. Every other route (including `/firecrawl/v2/scrape`, batch scrape and crawl `scrapeOptions`) answers a request carrying `actions` with a 400.
+- **Self-hosted:** the same, plus `/firecrawl/v2/scrape` (the Firecrawl shape, unknown fields ignored) and `POST /v1/batch/scrape` (run per URL).
+- The deprecated root `/v2/scrape` alias never runs actions. Firecrawl's Python SDK v2 always calls that root path, so use the native `/v1/scrape` for actions.
+- After a click that loads a new page, the next step looks for its element on the new page. A `wait` with a selector from that page makes the hand-off explicit.
+
 ## Auto and max mode
 
 :::note
@@ -344,7 +392,7 @@ When a `standard` scrape on the cloud stops at a challenge that `auto` can get t
 - Requesting too many formats at once in production
 - Combining `cssSelector`, `xpath`, `includeTags`, and `excludeTags` in the first attempt
 - Sending `formats: ["json"]` without a `jsonSchema`
-- Assuming `actions` is supported because Firecrawl accepts it
+- Sending Firecrawl's `screenshot`, `scrape`, `executeJavascript` or `pdf` action types: only `wait`, `click`, `write`, `press` and `scroll` run; for a capture of the final page, add `screenshot` to `formats`
 
 ## When to use something else
 

@@ -17,8 +17,8 @@
           "a": "waitFor is the number of milliseconds CRW waits after JavaScript rendering finishes before snapshotting the DOM. It only takes effect when JS rendering is on. Use it for pages that fetch content asynchronously after first paint; leave it unset for static or HTTP-only requests."
         },
         {
-          "q": "Why is the actions field rejected with an error?",
-          "a": "CRW does not implement Firecrawl's actions DSL (click, scroll, type). Sending an actions payload returns a clear error rather than silently ignoring it. Use cssSelector or xpath to narrow extraction, or run JS rendering with waitFor for async content."
+          "q": "Can a scrape click, scroll or type before reading the page?",
+          "a": "Yes. Send actions: an ordered list of wait, click, write, press and scroll steps that run in a real browser after the page loads and before it is read. Mark a click optional to repeat a Load more button until it is gone. A step that cannot be carried out fails with HTTP 422 action_failed and is not billed; a successful scrape is still 1 credit per page."
         }
       ]
     },
@@ -132,7 +132,7 @@
         },
         {
           "q": "Can I reuse my existing Firecrawl client to call CRW?",
-          "a": "Yes for the request shapes that CRW implements (scrape, crawl, map, search, and scrape-mode extract). The endpoints are Firecrawl-compatible at the HTTP level. Features Firecrawl has that CRW does not — like the actions DSL — are rejected with a clear error rather than silently ignored."
+          "a": "Yes for the request shapes that CRW implements (scrape, crawl, map, search, and scrape-mode extract). The endpoints are Firecrawl-compatible at the HTTP level. Browser actions (wait, click, write, press, scroll) are supported; Firecrawl's output-producing action types (screenshot, scrape, executeJavascript, pdf) are rejected with a clear error rather than silently ignored."
         },
         {
           "q": "Which languages are shown in the SDK examples page?",

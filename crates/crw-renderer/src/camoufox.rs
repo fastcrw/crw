@@ -905,6 +905,7 @@ impl PageFetcher for CamoufoxRenderer {
             screenshot: None,
             block: None,
             residential_bytes: None,
+            actions: None,
         })
     }
 

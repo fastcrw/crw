@@ -1090,6 +1090,7 @@ dependencies = [
 name = "crw-crawl"
 version = "0.47.1"
 dependencies = [
+ "async-trait",
  "crw-core",
  "crw-diff",
  "crw-extract",

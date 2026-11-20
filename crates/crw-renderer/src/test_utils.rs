@@ -59,6 +59,7 @@ impl PageFetcher for StaticTier {
             screenshot: None,
             block: None,
             residential_bytes: None,
+            actions: None,
         })
     }
 

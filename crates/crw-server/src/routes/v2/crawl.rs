@@ -314,10 +314,11 @@ mod tests {
     async fn get_errors_reports_the_per_url_failures_of_a_batch() {
         let config: crw_core::config::AppConfig = toml::from_str("").unwrap();
         let state = AppState::new(config).unwrap();
-        // `actions` is rejected per URL inside the scrape, which is the shortest
-        // deterministic way to make one URL fail without touching the network.
+        // An invalid `actions` list is rejected per URL inside the scrape, which
+        // is the shortest deterministic way to make one URL fail without touching
+        // the network.
         let template = crw_core::types::ScrapeRequest {
-            actions: Some(serde_json::json!([])),
+            actions: Some(serde_json::json!([{ "type": "hover" }])),
             ..Default::default()
         };
         let url = "https://example.com/error";

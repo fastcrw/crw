@@ -2272,8 +2272,19 @@ impl PageFetcher for CdpRenderer {
         } else {
             Duration::ZERO
         };
-        let internal_timeout =
-            self.page_timeout + wait_dur + challenge_budget + stability_budget + FETCH_OVERHEAD;
+        // Browser actions run after the page is ready and outside the nav budget
+        // (see `fetch_inner`), so the tier's own ceiling makes room for them.
+        let actions_budget = Duration::from_millis(
+            crate::current_actions()
+                .map(|a| crw_core::actions::actions_budget_ms(&a))
+                .unwrap_or(0),
+        );
+        let internal_timeout = self.page_timeout
+            + wait_dur
+            + challenge_budget
+            + stability_budget
+            + actions_budget
+            + FETCH_OVERHEAD;
         // Clamp internal timeout against the caller's remaining budget so the
         // CDP fetch never exceeds the end-to-end deadline. Snapshot remaining
         // once so the diagnostic log and the actual timeout can't disagree
@@ -2576,6 +2587,7 @@ impl CdpRenderer {
             captured_responses,
             screenshot,
             _tid,
+            actions,
         ) = res?;
 
         if html.is_empty() {
@@ -2620,6 +2632,7 @@ impl CdpRenderer {
             screenshot,
             block: None,
             residential_bytes: None,
+            actions,
         })
     }
 
@@ -2671,8 +2684,11 @@ impl CdpRenderer {
         // Per-request proxy: create a dedicated browser context whose egress is
         // routed through `proxyServer` (credentials, if any, are supplied by the
         // `Fetch.authRequired` pump in `fetch_inner`). Disposed after the target
-        // closes. `None` keeps the prior browser-level behaviour unchanged.
-        let proxy_ctx: Option<String> =
+        // closes. Browser actions get a context of their own too, proxy or not:
+        // a `write` + `press Enter` can log in, and in the default context that
+        // session's cookies would ride along on the next caller's render of the
+        // same host. `None` keeps the prior browser-level behaviour unchanged.
+        let ctx_proxy: Option<Option<String>> =
             match crate::REQUEST_PROXY.try_with(|p| p.clone()).ok().flatten() {
                 Some(entry) => {
                     // Chrome cannot authenticate SOCKS proxies (no Fetch.authRequired
@@ -2686,27 +2702,34 @@ impl CdpRenderer {
                                 .into(),
                         ));
                     }
-                    let v = conn
-                        .send_recv(
-                            "Target.createBrowserContext",
-                            crate::cdp_conn::browser_ctx_params(Some(entry.chrome_proxy_server())),
-                            None,
-                            Duration::from_secs(2),
-                        )
-                        .await?;
-                    let ctx = v
-                        .get("browserContextId")
-                        .and_then(|x| x.as_str())
-                        .ok_or_else(|| {
-                            CrwError::RendererError(
-                                "createBrowserContext: missing browserContextId".into(),
-                            )
-                        })?
-                        .to_string();
-                    Some(ctx)
+                    Some(Some(entry.chrome_proxy_server().to_string()))
                 }
+                None if crate::actions_requested() => Some(None),
                 None => None,
             };
+        let proxy_ctx: Option<String> = match ctx_proxy {
+            Some(proxy_server) => {
+                let v = conn
+                    .send_recv(
+                        "Target.createBrowserContext",
+                        crate::cdp_conn::browser_ctx_params(proxy_server.as_deref()),
+                        None,
+                        Duration::from_secs(2),
+                    )
+                    .await?;
+                let ctx = v
+                    .get("browserContextId")
+                    .and_then(|x| x.as_str())
+                    .ok_or_else(|| {
+                        CrwError::RendererError(
+                            "createBrowserContext: missing browserContextId".into(),
+                        )
+                    })?
+                    .to_string();
+                Some(ctx)
+            }
+            None => None,
+        };
 
         // Legacy path: `tid_slot` is the SOLE authoritative source for target
         // close on both Ok and Err branches. fetch_inner no longer closes
@@ -2778,6 +2801,7 @@ impl CdpRenderer {
             captured_responses,
             screenshot,
             _tid_ignored,
+            actions,
         ) = result?;
 
         if html.is_empty() {
@@ -2823,6 +2847,7 @@ impl CdpRenderer {
             screenshot,
             block: None,
             residential_bytes: None,
+            actions,
         })
     }
 
@@ -3053,6 +3078,16 @@ impl CdpRenderer {
             }
             Err(e) => tracing::debug!("CMP dismiss eval failed: {e}"),
         }
+    }
+
+    /// A body that is an anti-bot wall rather than the site, by the ladder's own
+    /// size-independent checks (`is_challenge_page` alone misses Cloudflare's
+    /// managed challenges, which run 100-300 KB). Browser actions skip it.
+    fn is_wall(html: &str, truncated: bool) -> bool {
+        is_challenge_page(html)
+            || crate::detector::looks_like_cloudflare_challenge(html)
+            || crate::detector::looks_like_generic_bot_wall(html, truncated)
+            || crate::detector::looks_like_vendor_block(html).is_some()
     }
 
     async fn eval_html(
@@ -3311,6 +3346,7 @@ impl CdpRenderer {
         Vec<CapturedNetworkResponse>,
         Option<String>,
         String,
+        Option<crw_core::actions::ActionsOutcome>,
     )> {
         // 1. Create a blank target so navigation events can be observed reliably.
         // When `browser_context_id` is Some, the target is bound to that
@@ -3870,6 +3906,40 @@ impl CdpRenderer {
                     (html, true, settled)
                 }
             };
+            // Browser actions run on the loaded page, outside the nav-budget race
+            // for the same reason the screenshot below is: the budget would cut a
+            // long list short. They are sized into this tier's outer timeout
+            // (`fetch`) instead. A challenge page is left alone: its elements are
+            // not the site's, and the ladder escalates it to a tier that clears
+            // it, which runs the list again on the real page.
+            let (html, actions) = match crate::current_actions() {
+                Some(list) if !html.is_empty() && !Self::is_wall(&html, truncated) => {
+                    let mut outcome = crate::actions::run(conn, &session_id, &list, deadline).await;
+                    // Read the page the actions produced. A click may have
+                    // started a navigation, so one retry after a beat. If both
+                    // reads fail, the pre-action HTML is not what the caller asked
+                    // for, so the outcome says the actions did not land.
+                    let mut after = Self::eval_html(conn, &session_id, Duration::from_secs(5))
+                        .await
+                        .unwrap_or_default();
+                    if after.is_empty() && !deadline.remaining().is_zero() {
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        after = Self::eval_html(conn, &session_id, Duration::from_secs(5))
+                            .await
+                            .unwrap_or_default();
+                    }
+                    let html = if after.is_empty() {
+                        outcome.failed.get_or_insert_with(|| {
+                            "the page could not be read after the actions ran".into()
+                        });
+                        html
+                    } else {
+                        after
+                    };
+                    (html, Some(outcome))
+                }
+                _ => (html, None),
+            };
             // The status above is the first document's. An anti-bot challenge
             // (Cloudflare's answers 403, AWS WAF's 202) reloads into the real
             // page once it clears, and that page is the HTML read here, so
@@ -3916,7 +3986,7 @@ impl CdpRenderer {
                 }
                 None => None,
             };
-            Ok::<_, CrwError>((html, status_code, truncated, settled, screenshot))
+            Ok::<_, CrwError>((html, status_code, truncated, settled, screenshot, actions))
         };
 
         // Always-on XHR/fetch capture. Cheap when no JSON XHRs fire (events
@@ -4127,7 +4197,7 @@ impl CdpRenderer {
         // it via the recorded target_id; legacy fetch_with_ws closes after
         // fetch_inner returns via its Cell-captured id).
 
-        let (html, status_code, truncated, settled, screenshot) = outcome?;
+        let (html, status_code, truncated, settled, screenshot, actions) = outcome?;
 
         if html.is_empty() && truncated {
             return Err(CrwError::Timeout(nav_budget.as_millis() as u64));
@@ -4150,6 +4220,7 @@ impl CdpRenderer {
             captured_drained,
             screenshot,
             target_id,
+            actions,
         ))
     }
 
@@ -4246,7 +4317,10 @@ impl CdpRenderer {
             || html.contains("data-src=")
             || html.contains("infinite-scroll")
             || html.contains("lazy-load");
+        // - skip when the caller sent browser actions: the list is in charge of
+        //   the page, and a pass of our own would run before it unasked
         if wait_for_ms.is_none()
+            && crate::current_actions().is_none()
             && has_lazy_markers
             && html.len() < AUTO_SCROLL_HTML_SIZE_LIMIT
             && !is_challenge_page(&html)
@@ -4278,7 +4352,11 @@ impl CdpRenderer {
                     || lower.contains(">show full<")
                     || lower.contains(">view all<")
             };
+        // Not with browser actions either: an automatic click before the
+        // caller's own would load a page they did not ask for, or close an
+        // accordion their list then opens again.
         if wait_for_ms.is_none()
+            && crate::current_actions().is_none()
             && has_reveal_markers
             && html.len() < AUTO_SCROLL_HTML_SIZE_LIMIT
             && !is_challenge_page(&html)

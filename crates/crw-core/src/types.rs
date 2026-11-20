@@ -5318,6 +5318,10 @@ pub struct FetchResult {
     /// sidecar for the attempt that served it. `None` on every other tier and
     /// whenever the sidecar does not meter. Never set on a cache hit.
     pub residential_bytes: Option<u64>,
+    /// What the request's browser `actions` did on THIS body. Set only by a
+    /// CDP tier that ran them; `None` everywhere else, which is how the scrape
+    /// choke tells a body the actions never touched from one they did.
+    pub actions: Option<crate::actions::ActionsOutcome>,
 }
 
 /// A single XHR/fetch response captured via CDP Network domain.

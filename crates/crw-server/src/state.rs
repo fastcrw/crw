@@ -637,7 +637,10 @@ impl AppState {
             let default_stealth =
                 config.crawler.stealth.enabled && config.crawler.stealth.inject_headers;
             let render_js_default = config.renderer.render_js_default;
-            let deadline_ms = config.effective_deadline_ms(template.deadline_ms, template.wait_for);
+            let deadline_ms = config.effective_deadline_ms(
+                template.deadline_ms,
+                crw_core::actions::deadline_wait_for(template.actions.as_ref(), template.wait_for),
+            );
 
             let reqs: Vec<ScrapeRequest> = urls
                 .into_iter()
@@ -823,8 +826,13 @@ impl AppState {
                     let default_stealth =
                         config.crawler.stealth.enabled && config.crawler.stealth.inject_headers;
                     let render_js_default = config.renderer.render_js_default;
-                    let deadline_ms =
-                        config.effective_deadline_ms(template.deadline_ms, template.wait_for);
+                    let deadline_ms = config.effective_deadline_ms(
+                        template.deadline_ms,
+                        crw_core::actions::deadline_wait_for(
+                            template.actions.as_ref(),
+                            template.wait_for,
+                        ),
+                    );
 
                     for (index, entry) in entries.into_iter().enumerate() {
                         // Preflight failures were persisted at admission and
@@ -1580,7 +1588,7 @@ mod tests {
         let config: AppConfig = toml::from_str("").unwrap();
         let state = AppState::new(config).unwrap();
         let template = ScrapeRequest {
-            actions: Some(serde_json::json!([])),
+            actions: Some(serde_json::json!([{ "type": "hover" }])),
             ..Default::default()
         };
         let url = "https://example.com/error";

@@ -1480,6 +1480,7 @@ pub(crate) fn build_http_fetch_result(
         screenshot: None,
         block: None,
         residential_bytes: None,
+        actions: None,
     })
 }
 

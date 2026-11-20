@@ -81,6 +81,8 @@ fn firecrawl_code(e: &CrwError) -> Option<&'static str> {
         // Firecrawl validates with zod and returns a 400 without a code; its
         // taxonomy carries BAD_REQUEST for the hand-rolled cases.
         CrwError::InvalidRequest(_) | CrwError::UrlParseError(_) => Some("BAD_REQUEST"),
+        // scrapeURL/error.ts: ActionError ("Action(s) failed to complete").
+        CrwError::ActionFailed(_) => Some("SCRAPE_ACTION_ERROR"),
         // No `code` on the wire for these.
         CrwError::NotFound(_) | CrwError::RateLimited => None,
         _ => Some("UNKNOWN_ERROR"),
@@ -118,6 +120,9 @@ fn firecrawl_status(e: &CrwError) -> StatusCode {
         // says Firecrawl's own parse controller answers differently — moving it
         // would be a guess that breaks a deliberate, tested behaviour.
         CrwError::ExtractionError(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        // The caller's action list does not fit the page: a client-side fault,
+        // answered like the native surface rather than as a server failure.
+        CrwError::ActionFailed(_) => StatusCode::UNPROCESSABLE_ENTITY,
         // Everything else, including the unsupported-file and all-engines-failed
         // cases that `AppError` reports as 422/502, lands on Firecrawl's
         // catch-all 500.
@@ -166,6 +171,17 @@ mod tests {
         assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(body["success"], false);
         assert_eq!(body["code"], "SCRAPE_SITE_ERROR");
+    }
+
+    /// A failed browser action is the caller's list not fitting the page: 422 with
+    /// Firecrawl's `SCRAPE_ACTION_ERROR` (scrapeURL/error.ts ActionError), never
+    /// the catch-all 500 that 5xx alerting would page on.
+    #[tokio::test]
+    async fn failed_action_is_422_scrape_action_error() {
+        let (st, body) = wire(CrwError::ActionFailed("action 2 (click \"a\")".into())).await;
+        assert_eq!(st, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "SCRAPE_ACTION_ERROR");
+        assert_eq!(body["errorCode"], "action_failed");
     }
 
     #[tokio::test]

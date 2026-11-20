@@ -426,7 +426,10 @@ pub async fn run(mut args: ScrapeArgs) -> Result<(), CmdError> {
             },
             ..Default::default()
         };
-        let deadline_ms = cli_app_config.effective_deadline_ms(req.deadline_ms, req.wait_for);
+        let deadline_ms = cli_app_config.effective_deadline_ms(
+            req.deadline_ms,
+            crw_core::actions::deadline_wait_for(req.actions.as_ref(), req.wait_for),
+        );
         let cli_deadline = crw_core::Deadline::from_request_ms(deadline_ms);
 
         match scrape_url(
