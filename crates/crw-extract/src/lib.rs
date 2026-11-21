@@ -400,6 +400,11 @@ static TRAILING_LIST_ITEM: once_cell::sync::Lazy<regex::Regex> = once_cell::sync
 });
 
 /// High-level extraction: given raw HTML + options, produce ScrapeData.
+/// Warning on a result whose explicit selector (`cssSelector`, `xpath`,
+/// `includeTags`) matched nothing in the main content and was answered from
+/// the page's chrome (header, nav, footer, ...) instead.
+pub const SELECTOR_OUTSIDE_MAIN_CONTENT: &str = "selector_matched_outside_main_content";
+
 pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
     let ExtractOptions {
         raw_html,
@@ -461,29 +466,70 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
     // Steps 2-4 (clean / selector / readability narrowing) only make sense on
     // real markup. For a non-HTML body, `raw_html` already IS the content —
     // none of the markup-aware selection below has anything to select against.
+    // Set when the caller's selector was answered from the page with its chrome
+    // kept (see below). The later onlyMainContent steps (readability, the
+    // re-clean, the nav-line dedupe) would strip that same chrome again, so
+    // they are skipped for it.
+    let mut widened = false;
     let (content_html, cleaned_ref, had_selection, include_tags_no_match) = if treat_as_plain {
         (raw_html.to_string(), None, false, false)
     } else {
-        // Step 2: Clean HTML (remove boilerplate, nav, ads, etc.).
-        // `include_tags` narrowing happens inside clean_html; when it matches
-        // nothing, clean_html empties the output and pushes `selector_no_match`.
-        // Capture that here (via the warning delta this call produced) so the rest
-        // of the pipeline can treat it exactly like an unmatched css/xpath selector.
-        let warns_before = warnings.len();
-        let cleaned = clean::clean_html_with_warnings(
+        // Steps 2-3: clean the HTML (boilerplate, nav, ads, ...), then apply the
+        // CSS/XPath selector if one was given.
+        let narrowed = narrow(
             raw_html,
-            only_main_content,
+            clean::depth_for(only_main_content),
             include_tags,
             exclude_tags,
-            &mut warnings,
-        )
-        .unwrap_or_else(|_| raw_html.to_string());
-        let include_tags_no_match = warnings[warns_before..]
-            .iter()
-            .any(|w| w == "selector_no_match");
-
-        // Step 3: Apply CSS/XPath selector if provided (narrows to a specific element).
-        let selected_html = apply_selector(&cleaned, css_selector, xpath)?;
+            css_selector,
+            xpath,
+        )?;
+        // The onlyMainContent cleanup runs BEFORE selection and strips site
+        // chrome (a top-level <header>, div.page-header, nav, ...), so an
+        // element the caller explicitly asked for could not be selected when it
+        // sits inside that chrome: `cssSelector: "h1"` answered
+        // selector_no_match on pages whose h1 lives in the header. When the
+        // caller's own narrowing misses the main-content view, look for it once
+        // more on the visible page with its chrome kept (scripts, styles,
+        // frames and display:none markup still removed). The result carries
+        // SELECTOR_OUTSIDE_MAIN_CONTENT so the caller can tell, and so the
+        // crawl layer still escalates a low-tier fetch to a browser, whose
+        // main content may hold the real match.
+        //
+        // A narrowing that matches today keeps exactly the old result. Not
+        // widened: a selector that matches only some elements on the
+        // main-content view, an xpath scalar (`count(..)` answers on the first
+        // pass), and a host default selector (not from the caller), whose
+        // no-match still shows the page. The second pass only runs on a miss.
+        let caller_narrowed = user_selected || !include_tags.is_empty();
+        let narrowed = if only_main_content && caller_narrowed && narrowed.missed(user_selected) {
+            let wide = narrow(
+                raw_html,
+                clean::CleanDepth::Visible,
+                include_tags,
+                exclude_tags,
+                css_selector,
+                xpath,
+            )?;
+            if wide.missed(user_selected) {
+                narrowed
+            } else {
+                widened = true;
+                let mut wide = wide;
+                wide.warnings
+                    .push(SELECTOR_OUTSIDE_MAIN_CONTENT.to_string());
+                wide
+            }
+        } else {
+            narrowed
+        };
+        warnings.extend(narrowed.warnings);
+        let Narrowed {
+            cleaned,
+            include_tags_no_match,
+            selected: selected_html,
+            ..
+        } = narrowed;
         // A user-requested narrowing that matched nothing must NOT fall back to the
         // whole page (a silent context-bloat footgun: an unmatched `--css`/`--xpath`
         // or `includeTags` previously returned the entire document). Treat it as an
@@ -508,7 +554,8 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
         let after_selection = selected_html.as_deref().unwrap_or(&cleaned);
 
         // Step 4: If only_main_content, try to narrow further with readability scoring.
-        let (content_html, cleaned_ref) = if only_main_content && selected_html.is_none() {
+        let readability_narrows = only_main_content && !widened && selected_html.is_none();
+        let (content_html, cleaned_ref) = if readability_narrows {
             match readability::extract_main_content_with_provenance(after_selection) {
                 readability::ReadabilityOutcome::Selected { html: main, .. } => {
                     // Re-clean: readability may have selected a broad container
@@ -730,7 +777,7 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
         if treat_as_plain {
             return m;
         }
-        if only_main_content {
+        if only_main_content && !widened {
             let m = markdown::drop_repeated_nav_lines(&m);
             // `drop_repeated_nav_lines` only catches a menu that a responsive
             // template rendered more than once. A menu rendered once survives
@@ -1065,6 +1112,50 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
         // Copied post-extract from FetchResult.truncated, same as content_type.
         unclearable_wall: false,
         truncated: false,
+    })
+}
+
+/// One clean + select pass of [`extract`] at a given clean depth.
+struct Narrowed {
+    cleaned: String,
+    /// `include_tags` matched nothing (`cleaned` is then empty).
+    include_tags_no_match: bool,
+    /// What the css/xpath selector picked, `None` when it picked nothing or
+    /// none was given.
+    selected: Option<String>,
+    /// Warnings this pass produced, kept apart so a discarded pass leaves none.
+    warnings: Vec<String>,
+}
+
+impl Narrowed {
+    /// The caller's narrowing found nothing on this pass.
+    fn missed(&self, user_selected: bool) -> bool {
+        self.include_tags_no_match || (user_selected && self.selected.is_none())
+    }
+}
+
+fn narrow(
+    raw_html: &str,
+    depth: clean::CleanDepth,
+    include_tags: &[String],
+    exclude_tags: &[String],
+    css: Option<&str>,
+    xpath: Option<&str>,
+) -> CrwResult<Narrowed> {
+    // `include_tags` narrowing happens inside clean_html; when it matches
+    // nothing, clean_html empties the output and pushes `selector_no_match`.
+    // Capture that here so the rest of the pipeline can treat it exactly like
+    // an unmatched css/xpath selector.
+    let mut warnings = Vec::new();
+    let cleaned = clean::clean_html_at(raw_html, depth, include_tags, exclude_tags, &mut warnings)
+        .unwrap_or_else(|_| raw_html.to_string());
+    let include_tags_no_match = warnings.iter().any(|w| w == "selector_no_match");
+    let selected = apply_selector(&cleaned, css, xpath)?;
+    Ok(Narrowed {
+        cleaned,
+        include_tags_no_match,
+        selected,
+        warnings,
     })
 }
 

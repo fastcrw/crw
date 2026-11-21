@@ -52,7 +52,7 @@ pub fn clean_html(
     )
 }
 
-fn depth_for(only_main_content: bool) -> CleanDepth {
+pub(crate) fn depth_for(only_main_content: bool) -> CleanDepth {
     if only_main_content {
         CleanDepth::Full
     } else {
