@@ -462,6 +462,9 @@ async fn select_passage_indices(
         listing.push_str(&format!("[{i}] {head}\n"));
     }
     let mut leg = cfg.clone();
+    // A helper leg keeps its fixed budget; only the answer itself follows the
+    // request deadline.
+    leg.deadline = None;
     leg.max_tokens = leg.max_tokens.min(256);
     let r = llm::chat(&leg, SYS, &listing).await.ok()?;
     let start = r.content.find('[')?;
