@@ -1383,7 +1383,7 @@ mod tests {
 
     #[test]
     fn crw_scrape_schema_advertises_actions() {
-        let defs = tool_definitions(false);
+        let defs = tool_definitions(false, DEFAULT_MAX_LENGTH);
         let scrape = tool_by_name(&defs, "crw_scrape");
         let actions = &scrape["inputSchema"]["properties"]["actions"];
         assert_eq!(actions["type"], "array");
