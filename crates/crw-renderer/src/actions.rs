@@ -2,8 +2,9 @@
 //!
 //! Called by the Chrome-family CDP tiers once the page has loaded, before the
 //! HTML is read (`cdp.rs`). The techniques are the ones `crw-browse` settled on
-//! for the same jobs: a click is `scrollIntoView` + `focus()` + `click()` on a
-//! JS handle rather than synthesised mouse coordinates, an element lookup polls
+//! for the same jobs: a click is `focus()` + `click()` on a JS handle rather
+//! than synthesised mouse coordinates (so the element need not be on screen,
+//! and the page is not scrolled for it), an element lookup polls
 //! `document.querySelector`, and a key press is an `Input.dispatchKeyEvent`
 //! sequence. Only Chrome tiers reach this (the ladder filter in `lib.rs`), so
 //! `Input.insertText` is safe for `write`.
@@ -22,9 +23,10 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// Cap on one CDP round trip of a step.
 const CALL_TIMEOUT: Duration = Duration::from_secs(5);
 /// Kept back from the request deadline for what follows the list: the
-/// post-action HTML read and a screenshot. Without it the last step would run
-/// to the deadline and the tier's outer timeout would drop the whole render.
-const READ_RESERVE: Duration = Duration::from_secs(3);
+/// post-action HTML read (up to two bounded reads), the status re-read and a
+/// screenshot. Without it the last step would run to the deadline and the
+/// tier's outer timeout would cancel the whole render, leaving the page alive.
+const READ_RESERVE: Duration = Duration::from_secs(6);
 /// Non-zero when typing would land in a password input: 1 for one, 2 when
 /// focus sits in a frame the page cannot see into (cross-origin), which is
 /// refused too because it cannot be checked. Follows focus through open
@@ -309,8 +311,9 @@ fn js_str(s: &str) -> String {
     Value::String(s.to_string()).to_string()
 }
 
-/// Scrolls each match into view and focuses it now, and clicks it on the next
-/// task. Deferring the click is what makes a navigation gap unambiguous: the
+/// Focuses each match now and clicks it on the next task. No `scrollIntoView`:
+/// a JS click does not need the element on screen, and leaving the page where
+/// it is avoids repainting a long page in the software-GL Chrome per click. Deferring the click is what makes a navigation gap unambiguous: the
 /// evaluate always answers before any navigation the click starts, so a
 /// document that vanished under it means the click has not run and polling
 /// again is safe. Focus stays synchronous so a following `write` finds it.
@@ -324,7 +327,6 @@ fn click_expression(selector: &str, all: bool) -> String {
     format!(
         "(() => {{ const els = {pick}; \
          for (const el of els) {{ \
-           try {{ el.scrollIntoView({{block: 'center'}}); }} catch (e) {{}} \
            try {{ el.focus({{preventScroll: true}}); }} catch (e) {{}} \
          }} \
          if (els.length) setTimeout(() => {{ for (const el of els) el.click(); }}, 0); \
@@ -428,6 +430,8 @@ mod tests {
         assert!(one.contains("el.click()") && one.contains("return els.length"));
         let all = click_expression("a", true);
         assert!(all.contains(r#"document.querySelectorAll("a")"#));
+        // The page is not scrolled for a click.
+        assert!(!one.contains("scrollIntoView") && !all.contains("scrollIntoView"));
     }
 
     #[test]

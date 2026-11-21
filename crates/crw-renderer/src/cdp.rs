@@ -3912,19 +3912,37 @@ impl CdpRenderer {
             // (`fetch`) instead. A challenge page is left alone: its elements are
             // not the site's, and the ladder escalates it to a tier that clears
             // it, which runs the list again on the real page.
+            //
+            // An EMPTY snapshot is not a dead page when the nav budget fired: the
+            // partial read after `Page.stopLoading` has 2 s and loses that race on
+            // a heavy page that is fully alive (seen on the #658 page: content
+            // filled, then an empty snapshot and a Timeout). The page is still
+            // there, so the list runs on it and the read after it decides; only an
+            // empty page that was NOT cut by the budget is skipped.
             let (html, actions) = match crate::current_actions() {
-                Some(list) if !html.is_empty() && !Self::is_wall(&html, truncated) => {
+                Some(list)
+                    if (!html.is_empty() || truncated) && !Self::is_wall(&html, truncated) =>
+                {
                     let mut outcome = crate::actions::run(conn, &session_id, &list, deadline).await;
                     // Read the page the actions produced. A click may have
                     // started a navigation, so one retry after a beat. If both
                     // reads fail, the pre-action HTML is not what the caller asked
                     // for, so the outcome says the actions did not land.
-                    let mut after = Self::eval_html(conn, &session_id, Duration::from_secs(5))
+                    // Every read is bounded by what is left of the request, never a
+                    // fixed window: a read that outlives the deadline lets the tier's
+                    // outer timeout cancel the whole render, page and all.
+                    let read_window = || {
+                        deadline
+                            .remaining()
+                            .saturating_sub(Duration::from_millis(500))
+                            .min(Duration::from_millis(2_500))
+                    };
+                    let mut after = Self::eval_html(conn, &session_id, read_window())
                         .await
                         .unwrap_or_default();
-                    if after.is_empty() && !deadline.remaining().is_zero() {
+                    if after.is_empty() && deadline.remaining() > Duration::from_millis(1_500) {
                         tokio::time::sleep(Duration::from_millis(500)).await;
-                        after = Self::eval_html(conn, &session_id, Duration::from_secs(5))
+                        after = Self::eval_html(conn, &session_id, read_window())
                             .await
                             .unwrap_or_default();
                     }
@@ -3986,6 +4004,26 @@ impl CdpRenderer {
                 }
                 None => None,
             };
+            // A page the caller's actions drove is left busy: the clicks loaded
+            // more, and its scripts and WebGL keep running. On the software-GL
+            // Chrome we run, that work held the GPU process at full load and
+            // the browser deaf to CDP for up to a minute after the request had
+            // answered (seen on the #658 page). Everything is read by now, so
+            // freeze the page (timers, rAF and tasks stop) and stop its loads;
+            // the target then closes at once. Best effort, short timeouts.
+            if actions.is_some() {
+                for (method, params) in [
+                    ("Page.stopLoading", serde_json::json!({})),
+                    (
+                        "Page.setWebLifecycleState",
+                        serde_json::json!({ "state": "frozen" }),
+                    ),
+                ] {
+                    let _ = conn
+                        .send_recv(method, params, Some(&session_id), Duration::from_secs(1))
+                        .await;
+                }
+            }
             Ok::<_, CrwError>((html, status_code, truncated, settled, screenshot, actions))
         };
 
