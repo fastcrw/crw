@@ -405,6 +405,10 @@ static TRAILING_LIST_ITEM: once_cell::sync::Lazy<regex::Regex> = once_cell::sync
 /// the page's chrome (header, nav, footer, ...) instead.
 pub const SELECTOR_OUTSIDE_MAIN_CONTENT: &str = "selector_matched_outside_main_content";
 
+/// Warning on a result whose explicit selector (`cssSelector`, `xpath`,
+/// `includeTags`) matched nothing; the output is then empty.
+pub const SELECTOR_NO_MATCH: &str = "selector_no_match";
+
 pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
     let ExtractOptions {
         raw_html,
@@ -546,7 +550,7 @@ pub fn extract(opts: ExtractOptions<'_>) -> CrwResult<ScrapeData> {
             // `selector_no_match` warning, so don't push it again.
             Some(String::new())
         } else if user_selected && selected_html.is_none() {
-            warnings.push("selector_no_match".to_string());
+            warnings.push(SELECTOR_NO_MATCH.to_string());
             Some(String::new())
         } else {
             selected_html
@@ -1149,7 +1153,7 @@ fn narrow(
     let mut warnings = Vec::new();
     let cleaned = clean::clean_html_at(raw_html, depth, include_tags, exclude_tags, &mut warnings)
         .unwrap_or_else(|_| raw_html.to_string());
-    let include_tags_no_match = warnings.iter().any(|w| w == "selector_no_match");
+    let include_tags_no_match = warnings.iter().any(|w| w == SELECTOR_NO_MATCH);
     let selected = apply_selector(&cleaned, css, xpath)?;
     Ok(Narrowed {
         cleaned,

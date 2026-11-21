@@ -1364,6 +1364,16 @@ async fn scrape_url_inner(
                 "render budget expired on a wall with no extractable content; reporting the wall",
             );
             data.unclearable_wall = true;
+        } else if selector_explains_empty_render(
+            fetch_result.budget_settled,
+            !crw_renderer::detector::looks_like_thin_html(&fetch_result.html),
+            &data.warnings,
+        ) {
+            tracing::info!(
+                url = %LogUrl(&req.url),
+                elapsed_ms = fetch_result.elapsed_ms,
+                "selector matched nothing on a settled render; answering the miss, not a timeout",
+            );
         } else {
             tracing::warn!(
                 url = %LogUrl(&req.url),
@@ -1673,6 +1683,29 @@ fn is_empty_truncated_render(
     truncated
         && formats.contains(&OutputFormat::Markdown)
         && markdown.map(|m| m.trim().is_empty()).unwrap_or(true)
+}
+
+/// The empty markdown of a truncated render is the caller's selector answering
+/// "not on this page", not a page that ran out of time: the navigation budget
+/// fired after the page had settled, the snapshot carries real visible text
+/// (not thin by the renderer's own measure, which ignores script and style), and
+/// the selector matched nothing in it. Reporting that as a timeout told the
+/// caller to raise `timeout`, which cannot help, and named the whole request
+/// budget (137 s with the ladder extension) as if it had been spent. It goes out
+/// as the miss it is, `selector_no_match`.
+///
+/// Kept as a timeout: an unsettled render (the element may still have been on
+/// its way), and a settled one with no text, an app shell that never rendered,
+/// where a selector miss says nothing about the selector. A wall is decided
+/// before this and is unaffected.
+fn selector_explains_empty_render(
+    budget_settled: bool,
+    has_rendered_text: bool,
+    warnings: &[String],
+) -> bool {
+    budget_settled
+        && has_rendered_text
+        && warnings.iter().any(|w| w == crw_extract::SELECTOR_NO_MATCH)
 }
 
 pub(crate) fn derive_target_warning(fetch_result: &FetchResult) -> Option<String> {
@@ -3420,6 +3453,36 @@ mod tests {
             &[OutputFormat::RawHtml],
             None
         ));
+    }
+
+    #[test]
+    fn a_selector_miss_on_a_settled_render_is_not_a_timeout() {
+        let miss = vec![crw_extract::SELECTOR_NO_MATCH.to_string()];
+        // Settled snapshot with text, selector matched nothing: the miss explains it.
+        assert!(selector_explains_empty_render(true, true, &miss));
+        // Unsettled: the element may still have been loading, keep the timeout.
+        assert!(!selector_explains_empty_render(false, true, &miss));
+        // Settled but no text: a shell that never rendered, keep the timeout.
+        assert!(!selector_explains_empty_render(true, false, &miss));
+        // No selector miss: an empty settled render stays a timeout as before.
+        assert!(!selector_explains_empty_render(true, true, &[]));
+        assert!(!selector_explains_empty_render(
+            true,
+            true,
+            &["redirected_to: https://example.org/".to_string()]
+        ));
+        // The guard's input: an unhydrated shell is thin even with a bootstrap
+        // blob in the body, while a rendered page with prose is not.
+        let shell = format!(
+            r#"<html><body><div id="root"></div><script id="__NEXT_DATA__">{}</script></body></html>"#,
+            "{\"props\":1}".repeat(200)
+        );
+        assert!(crw_renderer::detector::looks_like_thin_html(&shell));
+        let page = format!(
+            "<html><body><p>{}</p></body></html>",
+            "This domain is for use in documentation examples. ".repeat(8)
+        );
+        assert!(!crw_renderer::detector::looks_like_thin_html(&page));
     }
 
     #[test]
