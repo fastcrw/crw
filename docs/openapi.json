@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CRW REST API",
-    "version": "0.47.1",
+    "version": "0.48.0",
     "description": "Firecrawl-compatible web scraping, crawling, mapping, search, and extraction API. Hosted at https://api.fastcrw.com; self-host with `docker run -p 3000:3000 ghcr.io/fastcrw/crw:latest`.",
     "license": {
       "name": "AGPL-3.0",
@@ -1453,16 +1453,59 @@
             "description": "Browser steps run in order on the rendered page before it is read (Chrome tiers only). A step that cannot be carried out fails the scrape with HTTP 422 `action_failed`; an optional step whose element is missing is skipped and listed in `warnings`. Total wait (waitFor plus every wait.milliseconds) is at most 60000 ms.",
             "items": {
               "type": "object",
-              "required": ["type"],
+              "required": [
+                "type"
+              ],
               "properties": {
-                "type": { "type": "string", "enum": ["wait", "click", "write", "press", "scroll"] },
-                "milliseconds": { "type": "integer", "minimum": 1, "maximum": 60000, "description": "wait: sleep this long. Exactly one of milliseconds or selector." },
-                "selector": { "type": "string", "maxLength": 1000, "description": "CSS selector. wait: wait up to 10 s for a match. click: the element to click (required). scroll: the element to scroll instead of the page." },
-                "all": { "type": "boolean", "default": false, "description": "click: click every match, not just the first." },
-                "optional": { "type": "boolean", "default": false, "description": "wait with selector, click, scroll: skip the step when no element matches instead of failing." },
-                "text": { "type": "string", "maxLength": 10000, "description": "write: text typed into the focused element." },
-                "key": { "type": "string", "description": "press: a named key (Enter, Tab, Escape, ArrowDown, ...) or one character." },
-                "direction": { "type": "string", "enum": ["up", "down"], "default": "down", "description": "scroll: direction, by one screen." }
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "wait",
+                    "click",
+                    "write",
+                    "press",
+                    "scroll"
+                  ]
+                },
+                "milliseconds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 60000,
+                  "description": "wait: sleep this long. Exactly one of milliseconds or selector."
+                },
+                "selector": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "description": "CSS selector. wait: wait up to 10 s for a match. click: the element to click (required). scroll: the element to scroll instead of the page."
+                },
+                "all": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "click: click every match, not just the first."
+                },
+                "optional": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "wait with selector, click, scroll: skip the step when no element matches instead of failing."
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 10000,
+                  "description": "write: text typed into the focused element."
+                },
+                "key": {
+                  "type": "string",
+                  "description": "press: a named key (Enter, Tab, Escape, ArrowDown, ...) or one character."
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "up",
+                    "down"
+                  ],
+                  "default": "down",
+                  "description": "scroll: direction, by one screen."
+                }
               }
             }
           },
