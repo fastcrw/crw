@@ -777,7 +777,15 @@ impl<C: ChromeConnOps> PoolGuard<C> {
         }
         let fresh_ctx = match create_res {
             Ok(Ok(id)) => id,
-            Ok(Err(_)) | Err(_) => {
+            failed => {
+                // The retry is the last word on this slot, so say why it failed:
+                // a timeout (the browser still deaf) and a protocol error (the
+                // connection itself gone) need different follow-ups.
+                let why = match failed {
+                    Ok(Err(e)) => e.to_string(),
+                    _ => format!("timed out after {CREATE_CTX_RETRY_TIMEOUT:?}"),
+                };
+                tracing::warn!(error = %why, "pool: createBrowserContext retry failed; closing slot");
                 metrics
                     .chrome_pool_recycle_failures_total
                     .with_label_values(&["create_ctx_fail"])
