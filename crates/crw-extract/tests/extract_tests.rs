@@ -951,3 +951,162 @@ fn include_tags_list_page_keeps_links_in_markdown() {
         "include_tags must still narrow: {md:?}"
     );
 }
+
+// ── explicit selectors reach elements inside stripped site chrome ─────────
+//
+// The onlyMainContent cleanup strips site chrome before selection. An element
+// the caller explicitly asked for must still be found when it lives inside
+// that chrome (books.toscrape.com keeps its h1 in div.page-header,
+// kernel.org in a top-level <header>).
+
+const CHROME_PAGE: &str = r#"<html><head><title>Shop</title></head><body>
+<header><h1>Site Name</h1><nav><a href="/">Home</a></nav></header>
+<div style="display:none"><h1>Hidden dialog</h1></div>
+<div class="page-header"><h2>All products</h2></div>
+<main><article><p>Main body paragraph with enough words to read as content here.</p>
+<h3>Body heading</h3></article></main>
+<footer><p>Footer text</p></footer>
+</body></html>"#;
+
+fn extract_chrome_page(
+    only_main_content: bool,
+    include_tags: &[String],
+    css_selector: Option<&str>,
+    xpath: Option<&str>,
+    domain_selectors: Option<&std::collections::HashMap<String, String>>,
+) -> crw_core::types::ScrapeData {
+    crw_extract::extract(ExtractOptions {
+        raw_html: CHROME_PAGE,
+        content_type: None,
+        source_url: "https://shop.example.com/",
+        status_code: 200,
+        rendered_with: None,
+        elapsed_ms: 100,
+        render_decision: None,
+        credit_cost: 0,
+        warnings: Vec::new(),
+        formats: &[OutputFormat::Markdown],
+        only_main_content,
+        include_tags,
+        exclude_tags: &[],
+        css_selector,
+        xpath,
+        chunk_strategy: None,
+        query: None,
+        filter_mode: None,
+        top_k: None,
+        domain_selectors,
+        captured_responses: &[],
+        llm_fallback: None,
+        debug: false,
+        debug_sink: None,
+        normalize_tables: false,
+    })
+    .unwrap()
+}
+
+#[test]
+fn css_selector_finds_h1_inside_top_level_header() {
+    // The hidden h1 stays out: the second pass keeps chrome, not hidden markup.
+    let data = extract_chrome_page(true, &[], Some("h1"), None, None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert_eq!(md.trim(), "# Site Name", "warnings: {:?}", data.warnings);
+    assert_eq!(no_match_warning_count(&data), 0, "{:?}", data.warnings);
+    assert!(
+        data.warnings
+            .iter()
+            .any(|w| w == crw_extract::SELECTOR_OUTSIDE_MAIN_CONTENT),
+        "{:?}",
+        data.warnings
+    );
+}
+
+#[test]
+fn selector_with_main_content_off_is_unchanged() {
+    // onlyMainContent:false already keeps chrome; nothing is widened or flagged.
+    let data = extract_chrome_page(false, &[], Some("h1"), None, None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert!(md.contains("Site Name"), "got: {md:?}");
+    assert!(
+        !data
+            .warnings
+            .iter()
+            .any(|w| w == crw_extract::SELECTOR_OUTSIDE_MAIN_CONTENT),
+        "{:?}",
+        data.warnings
+    );
+}
+
+#[test]
+fn css_selector_finds_element_inside_class_stripped_chrome() {
+    let data = extract_chrome_page(true, &[], Some(".page-header h2"), None, None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert_eq!(
+        md.trim(),
+        "## All products",
+        "warnings: {:?}",
+        data.warnings
+    );
+}
+
+#[test]
+fn xpath_finds_h1_inside_top_level_header() {
+    let data = extract_chrome_page(true, &[], None, Some("//header/h1"), None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert_eq!(md.trim(), "Site Name", "warnings: {:?}", data.warnings);
+    assert_eq!(no_match_warning_count(&data), 0, "{:?}", data.warnings);
+}
+
+#[test]
+fn include_tags_finds_footer_and_drops_the_first_pass_warning() {
+    let data = extract_chrome_page(true, &["footer".to_string()], None, None, None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert!(md.contains("Footer text"), "got: {md:?}");
+    assert!(
+        !md.contains("Main body"),
+        "include_tags must still narrow: {md:?}"
+    );
+    assert_eq!(no_match_warning_count(&data), 0, "{:?}", data.warnings);
+}
+
+#[test]
+fn selector_matching_main_content_is_unchanged() {
+    // h3 survives the main-content cleanup, so the first pass answers and the
+    // chrome h1 is not pulled in.
+    let data = extract_chrome_page(true, &[], Some("h1, h3"), None, None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert_eq!(md.trim(), "### Body heading", "got: {md:?}");
+    assert!(
+        !data
+            .warnings
+            .iter()
+            .any(|w| w == crw_extract::SELECTOR_OUTSIDE_MAIN_CONTENT),
+        "{:?}",
+        data.warnings
+    );
+}
+
+#[test]
+fn selector_absent_from_the_page_is_still_a_miss() {
+    let data = extract_chrome_page(true, &[], Some("h6"), None, None);
+    let md = data.markdown.clone().unwrap_or_default();
+    assert!(
+        md.trim().is_empty(),
+        "a miss must not fall back to the page: {md:?}"
+    );
+    assert_eq!(no_match_warning_count(&data), 1, "{:?}", data.warnings);
+}
+
+#[test]
+fn domain_default_selector_is_not_widened_into_chrome() {
+    // A host default that only matches chrome must not replace the page.
+    let map = std::collections::HashMap::from([(
+        "shop.example.com".to_string(),
+        "header h1".to_string(),
+    )]);
+    let data = extract_chrome_page(true, &[], None, None, Some(&map));
+    let md = data.markdown.clone().unwrap_or_default();
+    assert!(md.contains("Main body paragraph"), "got: {md:?}");
+    assert!(!md.contains("Site Name"), "got: {md:?}");
+    assert_eq!(no_match_warning_count(&data), 0, "{:?}", data.warnings);
+}

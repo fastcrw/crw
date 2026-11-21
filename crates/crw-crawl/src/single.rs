@@ -603,7 +603,17 @@ async fn scrape_url_inner(
             .as_deref()
             .map(|s| s.trim().len())
             .unwrap_or(0);
-        let md_is_byte_thin = md_bytes < retry_threshold;
+        // The caller's selector found nothing in the main content and was
+        // answered from the page's chrome instead (a brand h1 in the header,
+        // a footer paragraph). On a tier that runs no JS that is no better
+        // than a miss: the real match may be client-rendered into the main
+        // content, so it escalates like a thin body, is never stored, and a
+        // render whose main content matches replaces it (`accept_js_retry`).
+        let selector_outside_main = data
+            .warnings
+            .iter()
+            .any(|w| w == crw_extract::SELECTOR_OUTSIDE_MAIN_CONTENT);
+        let md_is_byte_thin = md_bytes < retry_threshold || selector_outside_main;
         let md_quality = data
             .markdown
             .as_deref()
@@ -828,6 +838,11 @@ async fn scrape_url_inner(
                         };
                         let accept = accept_js_retry(JsRetry {
                             prior_renderer,
+                            prior_outside_main: selector_outside_main,
+                            js_outside_main: js_data
+                                .warnings
+                                .iter()
+                                .any(|w| w == crw_extract::SELECTOR_OUTSIDE_MAIN_CONTENT),
                             prior_was_thin: http_was_thin,
                             prior_floor: retry_threshold,
                             prior_is_json_dump: md_is_json_dump,
@@ -894,7 +909,7 @@ async fn scrape_url_inner(
                                 quality_score_after = js_score,
                                 "JS escalation recovered content",
                             );
-                        } else if !http_was_thin {
+                        } else if !http_was_thin || selector_outside_main {
                             // Logged even when the JS body is under its floor:
                             // that rejection used to be silent, which hid every
                             // short-but-better browser render.
@@ -2004,6 +2019,11 @@ struct JsRetry<'a> {
     js_score: f32,
     /// The JS body is itself a JSON blob.
     js_is_json_dump: bool,
+    /// The prior body answered the caller's selector from page chrome
+    /// ([`crw_extract::SELECTOR_OUTSIDE_MAIN_CONTENT`]).
+    prior_outside_main: bool,
+    /// The JS body did too.
+    js_outside_main: bool,
 }
 
 /// Quality margin a re-render has to clear (or stay within) to change hands.
@@ -2035,6 +2055,12 @@ const JS_RETRY_SCORE_MARGIN: f32 = 0.05;
 /// rendered the page in under 1 KB; a 403 body, a cookie wall or an "enable
 /// JavaScript" shell keeps the data the caller asked for.
 fn accept_js_retry(r: JsRetry<'_>) -> bool {
+    if r.prior_outside_main {
+        // The selector match came from chrome. A render that finds it in the
+        // main content wins however short it is (one h1 is a few bytes); one
+        // that also only finds chrome, or nothing, leaves the prior in place.
+        return !r.js_outside_main && r.js_md_len > 0 && (200..300).contains(&r.js_status);
+    }
     if r.prior_was_thin {
         return r.js_md_len >= r.prior_floor;
     }
@@ -3979,6 +4005,8 @@ mod tests {
             prior_text_score: before,
             js_status: 200,
             js_is_json_dump: false,
+            prior_outside_main: false,
+            js_outside_main: false,
         }
     }
 
@@ -4025,6 +4053,8 @@ mod tests {
             js_floor: 100,
             js_score: md_score(render),
             js_is_json_dump: markdown_is_json_dump(render),
+            prior_outside_main: false,
+            js_outside_main: false,
         }
     }
 
@@ -4188,6 +4218,8 @@ mod tests {
             js_floor: 100,
             js_score: md_score(render),
             js_is_json_dump: markdown_is_json_dump(render),
+            prior_outside_main: false,
+            js_outside_main: false,
         };
         assert!(retry(NOTION_RENDER).prior_is_json_dump);
         let spinner = "# Notion\n\nLoading...\n\n![](https://www.notion.so/images/logo-ios.png) \
@@ -4232,6 +4264,26 @@ mod tests {
         };
         assert!(!accept_js_retry(thin(1500)));
         assert!(accept_js_retry(thin(2000)));
+    }
+
+    #[test]
+    fn a_main_content_selector_match_replaces_one_from_chrome() {
+        let from_chrome = |js_len, js_outside_main| JsRetry {
+            prior_was_thin: true,
+            prior_outside_main: true,
+            js_outside_main,
+            ..js_retry("http", 0.5, js_len, 0.0)
+        };
+        // A short h1 found in the rendered main content wins.
+        assert!(accept_js_retry(from_chrome(16, false)));
+        // The render also only found chrome, or found nothing: keep HTTP.
+        assert!(!accept_js_retry(from_chrome(3000, true)));
+        assert!(!accept_js_retry(from_chrome(0, false)));
+        // A short main-content match on an error page does not win.
+        assert!(!accept_js_retry(JsRetry {
+            js_status: 404,
+            ..from_chrome(16, false)
+        }));
     }
 
     // ── escalate_for_quality (additional) ────────────────────────────────────
