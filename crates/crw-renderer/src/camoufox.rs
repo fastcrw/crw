@@ -11,26 +11,57 @@
 //! reached over the sidecar's HTTP API instead of the [`crate::cdp`] path. The
 //! renderer is a plain [`reqwest::Client`] — it never touches `cdp.rs`.
 //!
-//! ## Sequence (per request, fresh session — no cookie carry-over)
+//! ## Sequence
 //! 1. `POST {base}/tabs` `{userId, sessionKey, url}` → `{tabId, url, httpStatus}`
 //!    (the `url` body navigates the new tab as it is created).
 //! 2. `POST {base}/tabs/{tabId}/evaluate` `{userId, expression}` with
 //!    `expression = "document.documentElement.outerHTML"` → `{ok, result}`.
 //!    `result` is the fully JS-rendered DOM string — exactly what CRW's
 //!    post-render pipeline (`only_main_content`, tag filters, markdown) needs.
-//! 3. `DELETE {base}/sessions/{userId}` — ALWAYS, even on error, so the sidecar
-//!    never leaks a server-side session.
+//! 3. Cleanup, ALWAYS, even on error (see below).
 //!
 //! The endpoint contract above is from the camofox-browser `openapi.json`.
+//!
+//! ## One session per host
+//! A sidecar session is one browser context, so it holds the cookies a solved
+//! Cloudflare challenge leaves behind (`cf_clearance`). Requests to the same
+//! host share a session (`userId` = `crw_` + a sha256 prefix of the
+//! [`ClearanceCache::key`] scope), so the next page of that site skips the
+//! challenge instead of solving it again. The key is hashed rather than
+//! embedded because it can carry proxy credentials, and the `userId` ends up in
+//! logs and in the sidecar's profile directory. Its proxy part only partitions
+//! sessions: the sidecar's own proxy setting decides the egress.
+//!
+//! Each request has its own `sessionKey`, i.e. its own tab group, and cleanup
+//! closes only that group (`DELETE /tabs/group/{sessionKey}`) while other
+//! requests to the host are still in flight. The last request out deletes the
+//! session (`DELETE /sessions/{userId}`, as before) unless the host needed a
+//! challenge solve, in which case the session is left for the next page. The
+//! sidecar closes an empty session within a minute; its persistence plugin
+//! (on by default) saves the cookies on close and restores them for the same
+//! `userId`, so clearance outlives the live context.
+//!
+//! A request runs on a one-off session, the old per-request behaviour, when
+//! the host already has [`SHARED_SESSION_MAX_IN_FLIGHT`] requests in flight,
+//! while the host's session is being torn down, or when the URL has no host.
+//! A bot wall moves the host to a fresh `userId`, so a flagged cookie cannot
+//! stick to it through the persisted profile.
+//!
+//! The first request to a host that is not known to be clear holds
+//! [`clearance_cache`]'s single-flight lock, so a burst of pages waits for one
+//! challenge solve instead of all hitting the challenge at once.
 
 use async_trait::async_trait;
 use crw_core::Deadline;
 use crw_core::config::CAMOUFOX_DEFAULT_CHALLENGE_WAIT_MS;
 use crw_core::error::{CrwError, CrwResult};
 use crw_core::types::FetchResult;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::clearance::{ClearanceCache, clearance_cache};
 use crate::traits::PageFetcher;
 
 /// JS expression evaluated to retrieve the post-render DOM.
@@ -63,6 +94,216 @@ const SETTLE_MAX: Duration = Duration::from_secs(6);
 pub(crate) const POLL_HANDOFF_MS: u64 =
     MIN_POLL_EVALUATE_BUDGET.as_millis() as u64 + CLEANUP_TIMEOUT.as_millis() as u64;
 
+/// Most requests that share one host session at a time. It is the sidecar's
+/// default `MAX_CONCURRENT_PER_USER`: past it, the sidecar queues a session's
+/// evaluate calls for up to 30s and then fails them. An operator who lowers
+/// that setting gets queueing, not failures, because a request evaluates one
+/// call at a time.
+const SHARED_SESSION_MAX_IN_FLIGHT: u32 = 3;
+/// How long a host counts as clear after a success, and how long a solved
+/// challenge keeps its session alive. Cloudflare's `cf_clearance` lives about
+/// 30 minutes; this is the same margin [`ClearanceCache`] uses.
+const HOST_WARM_TTL: Duration = Duration::from_secs(25 * 60);
+/// The user agent component of the session key. The sidecar owns its
+/// fingerprint and ignores caller headers, so there is only one.
+const SESSION_UA: &str = "camoufox";
+/// Start of the error this tier raises for a bot wall or a challenge that did
+/// not clear. Shared with [`Outcome`] so a wall is told apart from a timeout.
+const WALL_ERROR_PREFIX: &str = "camoufox: bot ";
+/// Allowance for a tab create, which commits the first navigation. Not a bound:
+/// a create is capped only by the deadline.
+const CREATE_ALLOWANCE: Duration = Duration::from_secs(5);
+/// What one attempt spends before its challenge poll starts, given how long it
+/// waits for the page (the caller's `waitFor`, or the settle wait): the
+/// create, that wait, the read, and one poll evaluate.
+fn before_poll(wait_for: Option<Duration>) -> Duration {
+    CREATE_ALLOWANCE
+        + wait_for.map_or(SETTLE_MAX, |w| w.max(SETTLE_MAX))
+        + WAIT_FOR_READ_RESERVE
+        + MIN_POLL_EVALUATE_BUDGET
+}
+
+/// How long a request may wait for another request's challenge solve. It must
+/// still reach its own poll with more than the reserve left: below the reserve
+/// the poll takes the whole remainder (see `run_sequence`), and with it the
+/// floor a recovery arm after this tier needs.
+fn lock_wait_budget(
+    remaining: Duration,
+    reserve: Duration,
+    wait_for: Option<Duration>,
+) -> Duration {
+    remaining
+        .saturating_sub(reserve)
+        .saturating_sub(before_poll(wait_for))
+}
+
+/// What this process knows about one host's shared session.
+#[derive(Debug, Default)]
+struct HostSession {
+    /// Requests currently running on the shared session.
+    in_flight: u32,
+    /// The last request out is deleting the session. Joiners go one-off until
+    /// the delete returns, so it cannot close their tab.
+    closing: bool,
+    /// Bumped by a bot wall, so the next request gets a fresh `userId`. It is
+    /// kept in memory only, like the rest of this entry: after a restart, or
+    /// once the host has been idle past [`HOST_WARM_TTL`], the host starts at 0
+    /// again, and a wall that is still there bumps it on the first page.
+    generation: u32,
+    /// Last success on this host.
+    ok_at: Option<Instant>,
+    /// Last success that had to get through a challenge first.
+    solved_at: Option<Instant>,
+    /// Last bot wall, which keeps the bumped generation around.
+    walled_at: Option<Instant>,
+}
+
+impl HostSession {
+    fn is_clear(&self, now: Instant) -> bool {
+        fresh(self.ok_at, now)
+    }
+
+    fn worth_keeping(&self, now: Instant) -> bool {
+        fresh(self.solved_at, now)
+    }
+
+    fn in_use(&self, now: Instant) -> bool {
+        self.in_flight > 0
+            || self.is_clear(now)
+            || self.worth_keeping(now)
+            || fresh(self.walled_at, now)
+    }
+}
+
+fn fresh(at: Option<Instant>, now: Instant) -> bool {
+    at.is_some_and(|t| now.saturating_duration_since(t) < HOST_WARM_TTL)
+}
+
+/// How a fetch ended, as far as the host's session is concerned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Outcome {
+    ok: bool,
+    /// The page was reached through a challenge.
+    solved: bool,
+    /// The page stayed behind a bot wall or an uncleared challenge.
+    wall: bool,
+}
+
+/// What the request's own cleanup has to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Cleanup {
+    /// Close this request's tab group; the session stays.
+    Group,
+    /// Delete the whole session.
+    Session,
+}
+
+/// The sidecar `userId` a request runs under.
+enum Lease<'a> {
+    /// The host's shared session. The slot is released when this drops.
+    Shared(Slot<'a>),
+    /// A session of its own, deleted at the end.
+    OneOff(String),
+}
+
+impl Lease<'_> {
+    fn user_id(&self) -> &str {
+        match self {
+            Lease::Shared(slot) => &slot.user_id,
+            Lease::OneOff(id) => id,
+        }
+    }
+}
+
+/// One request's place in a host's shared session. Dropping it, including
+/// when the fetch future is cancelled, gives the place back, so a host can
+/// never stay stuck at the share cap.
+struct Slot<'a> {
+    hosts: &'a Mutex<HashMap<String, HostSession>>,
+    key: String,
+    user_id: String,
+    /// Set when this request is the last one out and is deleting the session.
+    closing: bool,
+    released: bool,
+}
+
+impl Slot<'_> {
+    /// Record the outcome and decide the cleanup. A [`Cleanup::Group`] gives
+    /// the place back at once; a [`Cleanup::Session`] keeps it, with the host
+    /// marked closing, until the slot drops after the delete.
+    fn finish(&mut self, outcome: Outcome, now: Instant) -> Cleanup {
+        let mut hosts = lock(self.hosts);
+        let host = hosts.entry(self.key.clone()).or_default();
+        if outcome.ok {
+            host.ok_at = Some(now);
+            if outcome.solved {
+                host.solved_at = Some(now);
+            }
+        } else {
+            host.ok_at = None;
+        }
+        if outcome.wall {
+            host.solved_at = None;
+            host.walled_at = Some(now);
+            host.generation = host.generation.wrapping_add(1);
+        }
+        if host.in_flight <= 1 && !host.worth_keeping(now) {
+            host.closing = true;
+            self.closing = true;
+            return Cleanup::Session;
+        }
+        host.in_flight = host.in_flight.saturating_sub(1);
+        self.released = true;
+        Cleanup::Group
+    }
+}
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        let mut hosts = lock(self.hosts);
+        if let Some(host) = hosts.get_mut(&self.key) {
+            host.in_flight = host.in_flight.saturating_sub(1);
+            if self.closing {
+                host.closing = false;
+            }
+        }
+    }
+}
+
+/// The host map is only ever held for a lookup, never across an `.await`, so a
+/// poisoned lock can only mean a panic between two plain assignments.
+fn lock(
+    hosts: &Mutex<HashMap<String, HostSession>>,
+) -> MutexGuard<'_, HashMap<String, HostSession>> {
+    hosts.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The sidecar `userId` for a session key: `crw_` and the first 32 hex chars
+/// of its sha256. Generation 0 hashes the key alone.
+fn session_user_id(key: &str, generation: u32) -> String {
+    let digest = if generation == 0 {
+        Sha256::digest(key.as_bytes())
+    } else {
+        Sha256::digest(format!("{key}#{generation}").as_bytes())
+    };
+    format!("crw_{}", &hex::encode(digest)[..32])
+}
+
+/// The session key for `url`: [`ClearanceCache::key`] over its host, the
+/// request's proxy (or `-`) and [`SESSION_UA`]. `None` when there is no host.
+fn session_key(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    let proxy = crate::REQUEST_PROXY
+        .try_with(|p| p.as_ref().map(|e| e.raw().to_string()))
+        .ok()
+        .flatten();
+    Some(ClearanceCache::key(host, proxy.as_deref(), SESSION_UA))
+}
+
 /// Opt-in Camoufox stealth renderer. Construct via [`CamoufoxRenderer::new`].
 pub struct CamoufoxRenderer {
     name: String,
@@ -80,6 +321,8 @@ pub struct CamoufoxRenderer {
     /// `CLOAK_ARM_FLOOR_MS`) still finds its floor. Zero when nothing runs
     /// after this tier.
     challenge_reserve: Duration,
+    /// Shared session state per host session key.
+    hosts: Mutex<HashMap<String, HostSession>>,
     client: reqwest::Client,
 }
 
@@ -92,6 +335,7 @@ impl CamoufoxRenderer {
             timeout: Duration::from_millis(timeout_ms),
             challenge_wait: Duration::from_millis(CAMOUFOX_DEFAULT_CHALLENGE_WAIT_MS),
             challenge_reserve: Duration::ZERO,
+            hosts: Mutex::new(HashMap::new()),
             client: reqwest::Client::new(),
         }
     }
@@ -121,11 +365,66 @@ impl CamoufoxRenderer {
         }
     }
 
-    /// Random opaque identifier (`<prefix>` + 32 hex chars). Fresh per request
-    /// so sessions never share cookies — safer for stealth.
+    /// Random opaque identifier (`<prefix>` + 32 hex chars), for a request's
+    /// tab group and for a one-off session.
     fn rand_id(prefix: &str) -> String {
         let n: u128 = rand::random();
         format!("{prefix}{n:032x}")
+    }
+
+    /// Place the request on its host's shared session, or on a one-off session
+    /// when the host is at the share cap, is being torn down, or `url` has no
+    /// host. Prunes hosts nobody has used within [`HOST_WARM_TTL`].
+    fn join(&self, url: &str, now: Instant) -> Lease<'_> {
+        let Some(key) = session_key(url) else {
+            return Lease::OneOff(Self::rand_id("crw_"));
+        };
+        let mut hosts = lock(&self.hosts);
+        hosts.retain(|_, h| h.in_use(now));
+        let host = hosts.entry(key.clone()).or_default();
+        if host.closing || host.in_flight >= SHARED_SESSION_MAX_IN_FLIGHT {
+            return Lease::OneOff(Self::rand_id("crw_"));
+        }
+        host.in_flight += 1;
+        let user_id = session_user_id(&key, host.generation);
+        Lease::Shared(Slot {
+            hosts: &self.hosts,
+            key,
+            user_id,
+            closing: false,
+            released: false,
+        })
+    }
+
+    fn host_is_clear(&self, key: &str) -> bool {
+        lock(&self.hosts)
+            .get(key)
+            .is_some_and(|h| h.is_clear(Instant::now()))
+    }
+
+    /// Single flight for a host not known to be clear: the first request holds
+    /// the host's solve lock across its fetch, so a burst of pages waits for
+    /// one challenge solve. A waiter that finds the host clear once it gets the
+    /// lock lets it go and runs in parallel. The wait leaves the challenge
+    /// reserve alone, and a waiter that runs out of it goes ahead without the
+    /// lock, as before, rather than failing with a timeout.
+    async fn solve_turn(
+        &self,
+        key: &str,
+        deadline: &Deadline,
+        wait_for: Option<Duration>,
+    ) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        if self.host_is_clear(key) {
+            return None;
+        }
+        let room = lock_wait_budget(deadline.remaining(), self.challenge_reserve, wait_for);
+        if room.is_zero() {
+            return None;
+        }
+        let guard = tokio::time::timeout(room, clearance_cache().solve_lock(key).lock_owned())
+            .await
+            .ok()?;
+        (!self.host_is_clear(key)).then_some(guard)
     }
 
     /// Remaining budget for the next REST call: the smaller of the request
@@ -277,10 +576,36 @@ impl CamoufoxRenderer {
         }
     }
 
-    /// Full create → evaluate sequence with GUARANTEED cleanup. The inner
-    /// result is bound first, then `destroy_session` runs at statement level so
-    /// it fires on both the Ok and Err paths, and only afterward is the result
-    /// returned.
+    /// Best-effort close of one request's tab group, leaving the session (and
+    /// its cookies) for the next request to the host. It also closes the tab
+    /// of a create whose `tabId` never reached us, once that create got as far
+    /// as navigating; one still building its page registers the tab later and
+    /// is left to the sidecar's tab reaper. Same fixed budget and error
+    /// handling as [`Self::destroy_session`].
+    async fn close_group(&self, user_id: &str, session_key: &str) {
+        // Both ids are a prefix and hex, so neither needs escaping.
+        let url = format!(
+            "{}/tabs/group/{}?userId={}",
+            self.base_url, session_key, user_id
+        );
+        let fut = self.auth(self.client.delete(&url)).send();
+        match tokio::time::timeout(CLEANUP_TIMEOUT, fut).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(
+                renderer = %self.name, user_id, "camoufox tab cleanup failed: {e}"
+            ),
+            Err(_) => tracing::warn!(
+                renderer = %self.name,
+                user_id,
+                "camoufox tab cleanup timed out after {}s (leaked server-side tab)",
+                CLEANUP_TIMEOUT.as_secs()
+            ),
+        }
+    }
+
+    /// Create → evaluate. Returns the status, the DOM, where the page landed,
+    /// and whether it was reached through a challenge. Cleanup is the caller's
+    /// ([`PageFetcher::fetch`]), which runs it on every path.
     async fn run_sequence(
         &self,
         url: &str,
@@ -288,22 +613,7 @@ impl CamoufoxRenderer {
         session_key: &str,
         wait_for: Option<Duration>,
         deadline: &Deadline,
-    ) -> CrwResult<(u16, String, String)> {
-        let inner = self
-            .run_sequence_inner(url, user_id, session_key, wait_for, deadline)
-            .await;
-        self.destroy_session(user_id).await;
-        inner
-    }
-
-    async fn run_sequence_inner(
-        &self,
-        url: &str,
-        user_id: &str,
-        session_key: &str,
-        wait_for: Option<Duration>,
-        deadline: &Deadline,
-    ) -> CrwResult<(u16, String, String)> {
+    ) -> CrwResult<(u16, String, String, bool)> {
         let (tab_id, nav_status) = self.create_tab(url, user_id, session_key, deadline).await?;
         // The tab would otherwise be read as soon as navigation returns,
         // before most page scripts have run. The caller's `waitFor` is
@@ -429,7 +739,7 @@ impl CamoufoxRenderer {
         }
         if let Some(kind) = looks_like_wall(&html) {
             return Err(CrwError::RendererError(format!(
-                "camoufox: bot {kind} detected in rendered HTML"
+                "{WALL_ERROR_PREFIX}{kind} detected in rendered HTML"
             )));
         }
         // The sidecar reports the status of the tab's first navigation, not of
@@ -448,7 +758,10 @@ impl CamoufoxRenderer {
         let landed = self
             .evaluate_string(&tab_id, user_id, "window.location.href", &href_deadline)
             .await?;
-        Ok((status, html, landed))
+        // A challenge can also clear during the settle wait, before the first
+        // read, and then only the navigation status shows it was there.
+        let solved = challenged || nav_status.is_some_and(|s| matches!(s, 403 | 429 | 503));
+        Ok((status, html, landed, solved))
     }
 }
 
@@ -536,17 +849,38 @@ impl PageFetcher for CamoufoxRenderer {
             return Err(CrwError::Timeout(deadline.requested_ms()));
         }
         let start = Instant::now();
-        let user_id = Self::rand_id("crw_");
         let session_key = Self::rand_id("task_");
-        let (status, html, landed) = self
-            .run_sequence(
-                url,
-                &user_id,
-                &session_key,
-                wait_for_ms.map(Duration::from_millis),
-                &deadline,
-            )
-            .await?;
+        let wait_for = wait_for_ms.map(Duration::from_millis);
+        let mut lease = self.join(url, start);
+        let solver = match &lease {
+            Lease::Shared(slot) => self.solve_turn(&slot.key, &deadline, wait_for).await,
+            Lease::OneOff(_) => None,
+        };
+        let result = self
+            .run_sequence(url, lease.user_id(), &session_key, wait_for, &deadline)
+            .await;
+        // Bound first, then cleaned up at statement level, so cleanup runs on
+        // the Ok and the Err path alike before the result is returned.
+        let cleanup = match &mut lease {
+            Lease::Shared(slot) => slot.finish(
+                Outcome {
+                    ok: result.is_ok(),
+                    solved: matches!(result, Ok((_, _, _, true))),
+                    wall: matches!(&result, Err(CrwError::RendererError(m)) if m.starts_with(WALL_ERROR_PREFIX)),
+                },
+                Instant::now(),
+            ),
+            Lease::OneOff(_) => Cleanup::Session,
+        };
+        // Waiters re-check once the lock is free, and the outcome is recorded
+        // by now, so they see a host that just cleared.
+        drop(solver);
+        match cleanup {
+            Cleanup::Group => self.close_group(lease.user_id(), &session_key).await,
+            Cleanup::Session => self.destroy_session(lease.user_id()).await,
+        }
+        drop(lease);
+        let (status, html, landed, _) = result?;
         let final_url = Some(landed).filter(|h| h != url && url::Url::parse(h).is_ok());
         crate::check_landing(url, final_url.as_deref(), &deadline).await?;
 
@@ -1344,5 +1678,478 @@ mod tests {
             .expect_err("tiny deadline should error");
         assert!(matches!(err, CrwError::Timeout(_)));
         // server drop verifies cleanup expect(1) despite the exhausted deadline
+    }
+
+    // ── one session per host (#637) ────────────────────────────────────────
+
+    const PAGE: &str = "<html><body>real content well over the empty threshold here</body></html>";
+
+    /// A sidecar whose tab `t1` serves `PAGE`, its evaluate answered after
+    /// `delay`, the create reporting `nav_status`.
+    async fn sidecar(nav_status: u16, delay: Duration) -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/tabs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tabId": "t1", "httpStatus": nav_status
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tabs/t1/evaluate"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(delay)
+                    .set_body_json(serde_json::json!({"ok": true, "result": PAGE})),
+            )
+            .mount(&server)
+            .await;
+        server
+    }
+
+    /// Records when each `POST /tabs` arrived.
+    #[derive(Clone, Default)]
+    struct Arrivals(std::sync::Arc<Mutex<Vec<Instant>>>);
+
+    impl wiremock::Respond for Arrivals {
+        fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
+            self.0.lock().unwrap().push(Instant::now());
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"tabId": "t1"}))
+        }
+    }
+
+    impl Arrivals {
+        fn gap(&self) -> Duration {
+            let at = self.0.lock().unwrap();
+            assert_eq!(at.len(), 2, "two creates");
+            at[1].duration_since(at[0])
+        }
+    }
+
+    /// Like [`sidecar`], recording create arrivals, every DELETE accepted.
+    async fn timed_sidecar(delay: Duration) -> (MockServer, Arrivals) {
+        let server = MockServer::start().await;
+        let arrivals = Arrivals::default();
+        Mock::given(method("POST"))
+            .and(path("/tabs"))
+            .respond_with(arrivals.clone())
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tabs/t1/evaluate"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(delay)
+                    .set_body_json(serde_json::json!({"ok": true, "result": PAGE})),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("DELETE"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .mount(&server)
+            .await;
+        (server, arrivals)
+    }
+
+    async fn expect_deletes(server: &MockServer, sessions: u64, groups: u64) {
+        Mock::given(method("DELETE"))
+            .and(path_regex(r"^/sessions/crw_[0-9a-f]{32}$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .expect(sessions)
+            .mount(server)
+            .await;
+        Mock::given(method("DELETE"))
+            .and(path_regex(r"^/tabs/group/task_[0-9a-f]{32}$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .expect(groups)
+            .mount(server)
+            .await;
+    }
+
+    /// The `userId` of every create, in arrival order.
+    async fn created_user_ids(server: &MockServer) -> Vec<String> {
+        server
+            .received_requests()
+            .await
+            .expect("recorded requests")
+            .iter()
+            .filter(|r| r.method.as_str() == "POST" && r.url.path() == "/tabs")
+            .map(|r| {
+                let body: serde_json::Value = serde_json::from_slice(&r.body).expect("json body");
+                body["userId"].as_str().expect("userId").to_string()
+            })
+            .collect()
+    }
+
+    async fn fetch_ok(r: &CamoufoxRenderer, url: &str) {
+        r.fetch(url, &HashMap::new(), None, deadline())
+            .await
+            .expect("fetch should succeed");
+    }
+
+    #[test]
+    fn user_id_hashes_the_host_scope() {
+        let key = session_key("https://WWW.Phoronix.com/news/x").expect("has a host");
+        assert_eq!(key, "www.phoronix.com|-|camoufox");
+        let id = session_user_id(&key, 0);
+        assert_eq!(id.len(), 4 + 32);
+        assert!(id.starts_with("crw_") && id[4..].bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(!id.contains("phoronix"));
+        assert_eq!(
+            id,
+            session_user_id(&session_key("https://www.phoronix.com/").unwrap(), 0)
+        );
+        assert_ne!(
+            id,
+            session_user_id(&session_key("https://phoronix.com/").unwrap(), 0)
+        );
+        assert_ne!(
+            id,
+            session_user_id(&key, 1),
+            "a wall moves the host to a new id"
+        );
+        assert_eq!(session_key("data:text/html,hi"), None);
+    }
+
+    #[tokio::test]
+    async fn request_proxy_partitions_the_session_without_leaking_into_the_id() {
+        let proxy = std::sync::Arc::new(
+            crw_core::ProxyEntry::parse("http://user:secret@px.example:8080").expect("proxy"),
+        );
+        let key = crate::REQUEST_PROXY
+            .scope(Some(proxy), async { session_key("https://example.com/") })
+            .await
+            .expect("has a host");
+        assert!(key.contains("secret"), "the key pins the proxy: {key}");
+        let id = session_user_id(&key, 0);
+        assert!(!id.contains("secret") && !id.contains("px.example"));
+        assert_ne!(
+            id,
+            session_user_id(&session_key("https://example.com/").unwrap(), 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn host_that_never_challenged_deletes_its_session_and_keeps_its_id() {
+        let server = sidecar(200, Duration::ZERO).await;
+        expect_deletes(&server, 2, 0).await;
+        let r = renderer(&server.uri());
+        fetch_ok(&r, "https://plain.example/a").await;
+        fetch_ok(&r, "https://plain.example/b").await;
+        let ids = created_user_ids(&server).await;
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], ids[1], "one host, one session id");
+        let deleted: Vec<String> = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.method.as_str() == "DELETE")
+            .map(|r| r.url.path().trim_start_matches("/sessions/").to_string())
+            .collect();
+        assert_eq!(deleted, vec![ids[0].clone(), ids[0].clone()]);
+    }
+
+    /// A page reached through a challenge leaves the session alive for the
+    /// next page, which runs under the same id and closes only its own tab.
+    #[tokio::test]
+    async fn solved_challenge_keeps_the_session_for_the_next_page() {
+        let server = sidecar(403, Duration::ZERO).await;
+        expect_deletes(&server, 0, 2).await;
+        let r = renderer(&server.uri());
+        fetch_ok(&r, "https://guarded.example/1").await;
+        fetch_ok(&r, "https://guarded.example/2").await;
+        let ids = created_user_ids(&server).await;
+        assert_eq!(ids[0], ids[1]);
+        let group_closes = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path().starts_with("/tabs/group/"))
+            .filter(|r| r.url.query() == Some(format!("userId={}", ids[0]).as_str()))
+            .count();
+        assert_eq!(
+            group_closes, 2,
+            "each page closes its group under the shared id"
+        );
+    }
+
+    /// While a sibling is still running, a request closes only its own tab:
+    /// deleting the session would kill the sibling's page. The last one out
+    /// deletes the session.
+    #[tokio::test]
+    async fn overlapping_requests_close_only_their_own_tab() {
+        let server = sidecar(200, Duration::from_millis(400)).await;
+        expect_deletes(&server, 1, 1).await;
+        let r = renderer(&server.uri());
+        // Mark the host clear first so both run in parallel, not single flight.
+        lock(&r.hosts).insert(
+            session_key("https://pair.example/").unwrap(),
+            HostSession {
+                ok_at: Some(Instant::now()),
+                ..HostSession::default()
+            },
+        );
+        tokio::join!(
+            fetch_ok(&r, "https://pair.example/a"),
+            fetch_ok(&r, "https://pair.example/b")
+        );
+    }
+
+    #[tokio::test]
+    async fn the_request_past_the_share_cap_runs_on_its_own_session() {
+        let server = sidecar(200, Duration::from_millis(400)).await;
+        Mock::given(method("DELETE"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .mount(&server)
+            .await;
+        let r = renderer(&server.uri());
+        lock(&r.hosts).insert(
+            session_key("https://busy.example/").unwrap(),
+            HostSession {
+                ok_at: Some(Instant::now()),
+                ..HostSession::default()
+            },
+        );
+        tokio::join!(
+            fetch_ok(&r, "https://busy.example/1"),
+            fetch_ok(&r, "https://busy.example/2"),
+            fetch_ok(&r, "https://busy.example/3"),
+            fetch_ok(&r, "https://busy.example/4"),
+        );
+        let ids = created_user_ids(&server).await;
+        let shared = session_user_id(&session_key("https://busy.example/").unwrap(), 0);
+        assert_eq!(ids.iter().filter(|id| **id == shared).count(), 3);
+        let own: Vec<&String> = ids.iter().filter(|id| **id != shared).collect();
+        assert_eq!(own.len(), 1);
+        let deletes = server.received_requests().await.unwrap();
+        let session_deletes: Vec<&str> = deletes
+            .iter()
+            .filter(|r| r.method.as_str() == "DELETE" && r.url.path().starts_with("/sessions/"))
+            .map(|r| r.url.path())
+            .collect();
+        assert!(session_deletes.contains(&format!("/sessions/{}", own[0]).as_str()));
+        assert!(session_deletes.contains(&format!("/sessions/{shared}").as_str()));
+    }
+
+    #[test]
+    fn closing_host_sends_joiners_to_their_own_session_until_the_delete_returns() {
+        let r = renderer("http://127.0.0.1:1");
+        let now = Instant::now();
+        let url = "https://closing.example/";
+        let key = session_key(url).unwrap();
+        let ok = Outcome {
+            ok: true,
+            solved: false,
+            wall: false,
+        };
+
+        let mut first = r.join(url, now);
+        let mut second = r.join(url, now);
+        let Lease::Shared(slot) = &mut first else {
+            panic!("first shares")
+        };
+        assert_eq!(
+            slot.finish(ok, now),
+            Cleanup::Group,
+            "a sibling is still running"
+        );
+        let Lease::Shared(slot) = &mut second else {
+            panic!("second shares")
+        };
+        assert_eq!(slot.finish(ok, now), Cleanup::Session, "last one out");
+        assert!(lock(&r.hosts)[&key].closing);
+        assert!(
+            matches!(r.join(url, now), Lease::OneOff(_)),
+            "never join a closing session"
+        );
+
+        drop(first);
+        drop(second);
+        let hosts = lock(&r.hosts);
+        assert!(!hosts[&key].closing);
+        assert_eq!(hosts[&key].in_flight, 0);
+    }
+
+    #[test]
+    fn a_cancelled_request_gives_its_place_back() {
+        let r = renderer("http://127.0.0.1:1");
+        let url = "https://cancel.example/";
+        for _ in 0..(SHARED_SESSION_MAX_IN_FLIGHT + 2) {
+            let lease = r.join(url, Instant::now());
+            assert!(matches!(lease, Lease::Shared(_)), "the slot was released");
+            drop(lease);
+        }
+        assert_eq!(lock(&r.hosts)[&session_key(url).unwrap()].in_flight, 0);
+    }
+
+    #[test]
+    fn a_wall_moves_the_host_to_a_fresh_id() {
+        let r = renderer("http://127.0.0.1:1");
+        let url = "https://walled.example/";
+        let now = Instant::now();
+        let mut lease = r.join(url, now);
+        let before = lease.user_id().to_string();
+        let Lease::Shared(slot) = &mut lease else {
+            panic!("shares")
+        };
+        let wall = Outcome {
+            ok: false,
+            solved: false,
+            wall: true,
+        };
+        assert_eq!(slot.finish(wall, now), Cleanup::Session);
+        drop(lease);
+        // Another host's join prunes; the wall's bump must survive it.
+        drop(r.join("https://elsewhere.example/", now));
+        let after = r.join(url, now);
+        assert_ne!(after.user_id(), before);
+    }
+
+    #[test]
+    fn idle_hosts_are_pruned_and_a_recent_wall_is_kept() {
+        let r = renderer("http://127.0.0.1:1");
+        let old = Instant::now() - HOST_WARM_TTL - Duration::from_secs(1);
+        let mut hosts = lock(&r.hosts);
+        hosts.insert(
+            "idle.example|-|camoufox".into(),
+            HostSession {
+                ok_at: Some(old),
+                ..HostSession::default()
+            },
+        );
+        hosts.insert(
+            "walled-long-ago.example|-|camoufox".into(),
+            HostSession {
+                generation: 1,
+                walled_at: Some(old),
+                ..HostSession::default()
+            },
+        );
+        hosts.insert(
+            "walled.example|-|camoufox".into(),
+            HostSession {
+                generation: 1,
+                walled_at: Some(Instant::now()),
+                ..HostSession::default()
+            },
+        );
+        drop(hosts);
+        drop(r.join("https://other.example/", Instant::now()));
+        let hosts = lock(&r.hosts);
+        assert!(!hosts.contains_key("idle.example|-|camoufox"));
+        assert!(!hosts.contains_key("walled-long-ago.example|-|camoufox"));
+        assert_eq!(hosts["walled.example|-|camoufox"].generation, 1);
+    }
+
+    /// The first pages of a burst to a host not yet known to be clear run one
+    /// at a time, so only one of them faces the challenge: the second create
+    /// is only sent once the first request has done both of its reads.
+    #[tokio::test]
+    async fn a_cold_burst_runs_one_solve_at_a_time() {
+        let delay = Duration::from_millis(400);
+        let (server, arrivals) = timed_sidecar(delay).await;
+        let r = renderer(&server.uri());
+        tokio::join!(
+            fetch_ok(&r, "https://cold-burst.example/1"),
+            fetch_ok(&r, "https://cold-burst.example/2")
+        );
+        assert!(
+            arrivals.gap() >= delay * 2,
+            "serialised: {:?}",
+            arrivals.gap()
+        );
+        drop(server);
+    }
+
+    /// Once the host is clear, the same burst runs in parallel.
+    #[tokio::test]
+    async fn a_clear_host_does_not_wait_for_a_solve() {
+        let delay = Duration::from_millis(400);
+        let (server, arrivals) = timed_sidecar(delay).await;
+        let r = renderer(&server.uri());
+        lock(&r.hosts).insert(
+            session_key("https://warm-burst.example/").unwrap(),
+            HostSession {
+                ok_at: Some(Instant::now()),
+                ..HostSession::default()
+            },
+        );
+        tokio::join!(
+            fetch_ok(&r, "https://warm-burst.example/1"),
+            fetch_ok(&r, "https://warm-burst.example/2")
+        );
+        assert!(arrivals.gap() < delay, "parallel: {:?}", arrivals.gap());
+        drop(server);
+    }
+
+    /// A waiter waits for the solver only as long as its own attempt can
+    /// afford, then goes ahead without the lock instead of failing on the wait.
+    #[tokio::test]
+    async fn a_waiter_out_of_time_goes_ahead_without_the_lock() {
+        // The solver's two reads take 3s; the waiter can afford 1s of waiting.
+        let (server, arrivals) = timed_sidecar(Duration::from_millis(1500)).await;
+        let r = renderer(&server.uri());
+        let no_headers = HashMap::new();
+        let solver = r.fetch(
+            "https://slow-solve.example/1",
+            &no_headers,
+            None,
+            deadline(),
+        );
+        let waiter = async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let budget = (before_poll(None) + Duration::from_secs(1)).as_millis() as u64;
+            r.fetch(
+                "https://slow-solve.example/2",
+                &no_headers,
+                None,
+                Deadline::from_request_ms(budget),
+            )
+            .await
+        };
+        let (solved, waited) = tokio::join!(solver, waiter);
+        solved.expect("the solver finishes");
+        waited.expect("the waiter finishes on its own");
+        let gap = arrivals.gap();
+        assert!(gap >= Duration::from_millis(900), "it waited: {gap:?}");
+        assert!(
+            gap < Duration::from_millis(2900),
+            "it did not wait for the solve: {gap:?}"
+        );
+        drop(server);
+    }
+
+    /// After waiting, a request still reaches its poll with more than the
+    /// challenge reserve left, so a recovery arm after this tier keeps its floor.
+    #[test]
+    fn a_lock_wait_leaves_the_reserve_and_one_attempt() {
+        let reserve = Duration::from_millis(29_250);
+        for wait_for in [
+            None,
+            Some(Duration::from_secs(2)),
+            Some(Duration::from_secs(15)),
+        ] {
+            for remaining in [10, 30, 45, 60, 90].map(Duration::from_secs) {
+                let wait = lock_wait_budget(remaining, reserve, wait_for);
+                // Create, the page wait and the first read, at their allowances.
+                let page_wait = wait_for.map_or(SETTLE_MAX, |w| w.max(SETTLE_MAX));
+                let at_poll = remaining
+                    .saturating_sub(wait)
+                    .saturating_sub(CREATE_ALLOWANCE + page_wait + WAIT_FOR_READ_RESERVE);
+                assert!(
+                    wait.is_zero() || at_poll > reserve,
+                    "{remaining:?} {wait_for:?}: waits {wait:?}, reaches the poll with {at_poll:?}"
+                );
+            }
+        }
+        // A long waitFor leaves less room to wait than the settle wait does.
+        let sixty = Duration::from_secs(60);
+        assert!(
+            lock_wait_budget(sixty, reserve, Some(Duration::from_secs(15)))
+                < lock_wait_budget(sixty, reserve, None)
+        );
+        assert!(lock_wait_budget(Duration::from_secs(10), Duration::ZERO, None).is_zero());
     }
 }

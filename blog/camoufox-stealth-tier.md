@@ -74,11 +74,11 @@ If the sidecar isn't reachable, CRW health-probes it and skips the tier rather t
 
 The renderer is a small REST client, not a CDP connection. Per request it:
 
-1. `POST /tabs` — opens a fresh, isolated session and navigates to the URL.
+1. `POST /tabs`: opens a tab in the host's session and navigates to the URL.
 2. `POST /tabs/{id}/evaluate` — runs `document.documentElement.outerHTML` to pull the fully JS-rendered DOM back as a string.
-3. `DELETE /sessions/{id}` — always tears the session down, even on error, so nothing leaks server-side.
+3. Cleanup, always, even on error: the request closes its own tab, and the host's session is kept only when it holds a solved challenge.
 
-That HTML string then flows through the *same* post-render pipeline as every other tier — `onlyMainContent`, include/exclude tags, markdown conversion. Nothing downstream knows or cares that the bytes came from a stealth browser, so your output shape is identical. Each request gets its own session with no cookie carry-over, and if the page comes back as a challenge wall, the tier raises a retryable error so the chain can move on instead of handing you a "Just a moment..." page.
+That HTML string then flows through the *same* post-render pipeline as every other tier: `onlyMainContent`, include/exclude tags, markdown conversion. Nothing downstream knows or cares that the bytes came from a stealth browser, so your output shape is identical. Requests to the same host share a session, so a solved Cloudflare challenge carries over to the next page, and if the page comes back as a challenge wall, the tier raises a retryable error so the chain can move on instead of handing you a "Just a moment..." page.
 
 ## The honest trade-offs
 
