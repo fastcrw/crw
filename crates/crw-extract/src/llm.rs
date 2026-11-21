@@ -51,6 +51,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Most a call that carries its request's deadline ([`LlmConfig::deadline`])
 /// may wait, however much of the request is left.
 const DEADLINE_CALL_CEILING: Duration = Duration::from_secs(60);
+/// Least such a call gets, so a slow page that spent most of its request
+/// still leaves the summary or answer time to come back. The request can run
+/// past its deadline by up to this much.
+const DEADLINE_CALL_FLOOR: Duration = Duration::from_secs(10);
 
 const EXTRACTION_SYSTEM_PROMPT: &str = "You extract the main article or content body from a web page's HTML. \
 Return only the article text as plain markdown. Strip nav, header, footer, ads, comments, related links, \
@@ -221,8 +225,9 @@ pub async fn extract_via_llm(
 /// Uses `cfg.api_key/provider/model/base_url/max_tokens/azure_api_version`.
 ///
 /// With `cfg.deadline` set the call, its wait for an LLM slot and any retry
-/// included, ends by what is left of that deadline, at most
-/// [`DEADLINE_CALL_CEILING`]. Without one each attempt gets the fixed
+/// included, ends by what is left of that deadline, at least
+/// [`DEADLINE_CALL_FLOOR`] and at most [`DEADLINE_CALL_CEILING`]. Without one
+/// each attempt gets the fixed
 /// [`REQUEST_TIMEOUT`].
 pub async fn chat(
     cfg: &LlmConfig,
@@ -239,7 +244,9 @@ pub async fn chat(
     let Some(deadline) = cfg.deadline else {
         return chat_within(cfg, REQUEST_TIMEOUT, system_prompt, user_msg).await;
     };
-    let budget = deadline.remaining().min(DEADLINE_CALL_CEILING);
+    let budget = deadline
+        .remaining()
+        .clamp(DEADLINE_CALL_FLOOR, DEADLINE_CALL_CEILING);
     // The transport timeout sits one second past `budget`, so the bound below
     // is the one that fires and names its length.
     let per_attempt = budget + Duration::from_secs(1);
@@ -2104,7 +2111,27 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_call_ends_with_its_request_deadline() {
         let url = slow_openai(Duration::from_secs(45)).await;
-        let cfg = cfg_with_deadline(url, Some(Duration::from_secs(10)));
+        let cfg = cfg_with_deadline(url, Some(Duration::from_secs(25)));
+        let started = tokio::time::Instant::now();
+        let err = chat(&cfg, "sys", "user").await.unwrap_err().to_string();
+        let waited = started.elapsed();
+        assert!(err.contains("timed out after 25s"), "{err}");
+        assert!(waited < Duration::from_secs(26), "waited {waited:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_with_little_of_its_request_left_still_gets_10s() {
+        // A slow page that left 2 s of a 30 s request: an 8 s answer still lands.
+        let url = slow_openai(Duration::from_secs(8)).await;
+        let cfg = cfg_with_deadline(url, Some(Duration::from_secs(2)));
+        let res = chat(&cfg, "sys", "user").await.expect("chat succeeds");
+        assert_eq!(res.content, "hello from mock");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_past_its_request_deadline_ends_after_10s() {
+        let url = slow_openai(Duration::from_secs(45)).await;
+        let cfg = cfg_with_deadline(url, Some(Duration::ZERO));
         let started = tokio::time::Instant::now();
         let err = chat(&cfg, "sys", "user").await.unwrap_err().to_string();
         let waited = started.elapsed();
