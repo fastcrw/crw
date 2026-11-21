@@ -626,9 +626,9 @@ console.log(body.data.markdown);</code></pre></div><div class="code-tab-panel" d
 </tr>
 <tr>
 <td><code>actions</code></td>
-<td>any</td>
+<td>object[]</td>
 <td>--</td>
-<td>Rejected with a clear error; use <code>cssSelector</code> or <code>xpath</code> instead</td>
+<td>Browser steps run on the page before it is read: <code>wait</code>, <code>click</code>, <code>write</code>, <code>press</code>, <code>scroll</code>. See <a href="#browser-actions">Browser actions</a></td>
 </tr>
 <tr>
 <td><code>mode</code></td>
@@ -740,6 +740,74 @@ a discount.</p>
 <li>Add <code>includeTags</code> and <code>excludeTags</code> after you confirm the raw markdown is noisy.</li>
 </ul>
 <p>If you turn on every targeting knob at once, debugging gets harder immediately.</p>
+<h2 id="browser-actions">Browser actions</h2>
+<p>Some pages only show part of their content until you interact with them: a product list behind a &quot;Load more&quot; button, a feed that grows as you scroll, a search box you have to type into. <code>actions</code> is an ordered list of steps that run in a real browser after the page loads and before it is read, so the markdown you get back is the page after those steps.</p>
+<pre data-lang="bash"><code class="language-bash">curl -X POST https://api.fastcrw.com/v1/scrape \
+  -H &quot;Authorization: Bearer $CRW_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;url&quot;: &quot;https://www.jbhifi.com.au/collections/tvs/cheap-tvs&quot;,
+    &quot;actions&quot;: [
+      { &quot;type&quot;: &quot;wait&quot;, &quot;selector&quot;: &quot;button.load-more-button&quot; },
+      { &quot;type&quot;: &quot;click&quot;, &quot;selector&quot;: &quot;button.load-more-button&quot;, &quot;optional&quot;: true },
+      { &quot;type&quot;: &quot;wait&quot;, &quot;milliseconds&quot;: 2500 },
+      { &quot;type&quot;: &quot;click&quot;, &quot;selector&quot;: &quot;button.load-more-button&quot;, &quot;optional&quot;: true },
+      { &quot;type&quot;: &quot;wait&quot;, &quot;milliseconds&quot;: 2500 }
+    ]
+  }'</code></pre>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Fields</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>wait</code></td>
+<td><code>milliseconds</code> or <code>selector</code> (exactly one)</td>
+<td>Sleep, or wait up to 10 s for an element matching <code>selector</code></td>
+</tr>
+<tr>
+<td><code>click</code></td>
+<td><code>selector</code>, <code>all</code> (default <code>false</code>)</td>
+<td>Click the first match, or every match with <code>all: true</code>. Waits up to 5 s for the element</td>
+</tr>
+<tr>
+<td><code>write</code></td>
+<td><code>text</code></td>
+<td>Type into the focused element. Click the field first</td>
+</tr>
+<tr>
+<td><code>press</code></td>
+<td><code>key</code></td>
+<td>Press one key: <code>Enter</code>, <code>Tab</code>, <code>Escape</code>, <code>Backspace</code>, <code>Delete</code>, <code>Space</code>, <code>ArrowUp</code>, <code>ArrowDown</code>, <code>ArrowLeft</code>, <code>ArrowRight</code>, <code>PageUp</code>, <code>PageDown</code>, <code>Home</code>, <code>End</code>, or a single character. Key combinations are not supported</td>
+</tr>
+<tr>
+<td><code>scroll</code></td>
+<td><code>direction</code> (<code>up</code> or <code>down</code>, default <code>down</code>), <code>selector</code></td>
+<td>Scroll the page, or the element matching <code>selector</code>, by one screen</td>
+</tr>
+</tbody></table>
+<p><code>wait</code> with a <code>selector</code>, <code>click</code> and <code>scroll</code> with a <code>selector</code> also take <code>optional: true</code>. An optional step whose element never appears is skipped and reported in <code>warnings</code> instead of failing the scrape. That is what makes &quot;click Load more up to N times&quot; work when you do not know how many pages the list has.</p>
+<p>Rules:</p>
+<ul>
+<li>At most 50 steps. <code>waitFor</code> plus every <code>wait.milliseconds</code> may add up to 60 000 ms.</li>
+<li>Actions need a Chrome tier: they force JS rendering, and <code>renderJs: false</code> or a <code>renderer</code> pin that cannot drive a page (<code>lightpanda</code>, <code>camoufox</code>, <code>impersonated-http</code>) is a 400.</li>
+<li>A step that cannot be carried out (its element never appears and it is not optional, or the page throws) fails the scrape with HTTP 422 and <code>errorCode: &quot;action_failed&quot;</code>, naming the step. A failed scrape is not billed. A page that turns out to be an anti-bot wall keeps its usual blocked answer instead.</li>
+<li>Typing into a password field, or into an embedded frame that cannot be checked, is refused.</li>
+<li>The result is never served from a cache, and billing is unchanged: 1 credit per page.</li>
+<li>A <code>wait</code> that would run past the request deadline fails the scrape instead of returning the page early.</li>
+<li>Long lists need time. On the cloud a request with actions gets a 60 s deadline unless you pass <code>deadlineMs</code> (or <code>timeout</code>) yourself.</li>
+<li>Only <code>wait</code>, <code>click</code>, <code>write</code>, <code>press</code> and <code>scroll</code> run. Firecrawl&#39;s <code>screenshot</code>, <code>scrape</code>, <code>executeJavascript</code> and <code>pdf</code> action types are a 400; add <code>screenshot</code> to <code>formats</code> to capture the final page.</li>
+</ul>
+<p>Where actions run:</p>
+<ul>
+<li><strong>Cloud:</strong> <code>/v1/scrape</code>, <code>/firecrawl/v1/scrape</code> and the <code>crw_scrape</code> MCP tool. Every other route (including <code>/firecrawl/v2/scrape</code>, batch scrape and crawl <code>scrapeOptions</code>) answers a request carrying <code>actions</code> with a 400.</li>
+<li><strong>Self-hosted:</strong> the same, plus <code>/firecrawl/v2/scrape</code> (the Firecrawl shape, unknown fields ignored) and <code>POST /v1/batch/scrape</code> (run per URL).</li>
+<li>The deprecated root <code>/v2/scrape</code> alias never runs actions. Firecrawl&#39;s Python SDK v2 always calls that root path, so use the native <code>/v1/scrape</code> for actions.</li>
+<li>After a click that loads a new page, the next step looks for its element on the new page. A <code>wait</code> with a selector from that page makes the hand-off explicit.</li>
+</ul>
 <h2 id="auto-and-max-mode">Auto and max mode</h2>
 <div class="callout callout-note"><div class="callout-icon"></div><div class="callout-content">Cloud only (fastcrw.com), Standard plan and up. A self-hosted engine ignores `mode`.</div></div><p>Some pages answer with an anti-bot challenge instead of content. The default <code>standard</code> mode reports those as a failed scrape, refunded. <code>mode</code> lets you pay to get through:</p>
 <table>
@@ -801,7 +869,7 @@ a discount.</p>
 <li>Requesting too many formats at once in production</li>
 <li>Combining <code>cssSelector</code>, <code>xpath</code>, <code>includeTags</code>, and <code>excludeTags</code> in the first attempt</li>
 <li>Sending <code>formats: [&quot;json&quot;]</code> without a <code>jsonSchema</code></li>
-<li>Assuming <code>actions</code> is supported because Firecrawl accepts it</li>
+<li>Sending Firecrawl&#39;s <code>screenshot</code>, <code>scrape</code>, <code>executeJavascript</code> or <code>pdf</code> action types: only <code>wait</code>, <code>click</code>, <code>write</code>, <code>press</code> and <code>scroll</code> run; for a capture of the final page, add <code>screenshot</code> to <code>formats</code></li>
 </ul>
 <h2 id="when-to-use-something-else">When to use something else</h2>
 <ul>

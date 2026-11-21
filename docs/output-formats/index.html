@@ -820,7 +820,7 @@ appends <code>/responses</code>; a complete endpoint URL is also accepted unchan
 <ul>
 <li><code>screenshot</code> — needs a browser tier that can capture: Chrome (<code>chrome</code>, <code>chrome_proxy</code>) or Playwright. LightPanda and Camoufox cannot capture, so an instance configured with only those refuses a screenshot request instead of returning an empty one. Sending <code>renderJs: false</code> together with <code>screenshot</code> is a 400 (a screenshot requires JS rendering). Check <code>screenshot.supported</code> on <code>GET /v1/capabilities</code> before requesting it.</li>
 <li><code>json</code> and <code>summary</code> — need an LLM: either a server-side key or a per-request <code>llmApiKey</code>. <code>GET /v1/capabilities</code> lists them under <code>formats.llmRequired</code>.</li>
-<li><code>actions</code> — click/scroll/wait actions are not supported. Sending <code>actions</code> returns a 400 with a message suggesting <code>cssSelector</code> or <code>xpath</code> as alternatives.</li>
+<li><code>actions</code>: browser steps (<code>wait</code>, <code>click</code>, <code>write</code>, <code>press</code>, <code>scroll</code>) need a Chrome tier, like <code>screenshot</code>. See <a href="/docs/scraping#browser-actions">Browser actions</a>.</li>
 </ul>
 </article>
     </main>
