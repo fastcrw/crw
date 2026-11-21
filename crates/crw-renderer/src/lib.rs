@@ -12191,7 +12191,10 @@ mod tests {
             r.cloak_after_egress = flag;
             r.breakers = Arc::new(BreakerRegistry::new(BreakerConfig {
                 window_size: 10,
-                min_calls: 4,
+                // Two, not four: a host with no residential win is held off the arm
+                // after two walled results (`EXIT_FAILURES`), so the arm runs twice
+                // and the breaker has to decide on those two calls.
+                min_calls: 2,
                 failure_rate_threshold: 0.5,
                 base_cooldown: Duration::from_secs(60),
                 max_cooldown: Duration::from_secs(60),
