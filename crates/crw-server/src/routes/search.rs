@@ -614,6 +614,9 @@ pub async fn search_inner(
                 // estimateMaxCreditCostForSearch.
                 let mut leg_cfg = llm.clone();
                 leg_cfg.max_tokens = leg_cfg.max_tokens.min(SEARCH_LLM_MAX_TOKENS_PER_LEG);
+                // Summaries and the answer wait for what is left of the
+                // request, not a fixed 30 s.
+                leg_cfg.deadline = Some(req_deadline);
                 // Eval determinism: a request-supplied answer temperature (the
                 // benchmark harness sets 0) overrides the provider default so
                 // A/B runs are reproducible. None = current prod behavior.

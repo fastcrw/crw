@@ -2053,6 +2053,12 @@ pub struct LlmConfig {
     /// Basis mode gets at least 300000. Raise it for slow self-hosted models.
     #[serde(default = "default_llm_timeout_ms")]
     pub timeout_ms: u64,
+    /// The deadline of the request this call serves (a scrape summary, a
+    /// search summary or answer). Such a call waits for what is left of it, at
+    /// most 60 s, instead of the fixed 30 s. Set per request, never read from
+    /// config.
+    #[serde(skip)]
+    pub deadline: Option<crate::Deadline>,
 }
 
 impl Default for LlmConfig {
@@ -2072,6 +2078,7 @@ impl Default for LlmConfig {
             reasoning_effort: None,
             endpoint_from_request: false,
             timeout_ms: default_llm_timeout_ms(),
+            deadline: None,
         }
     }
 }
