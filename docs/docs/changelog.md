@@ -8,6 +8,23 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.48.0](https://github.com/fastcrw/crw/compare/v0.47.1...v0.48.0) (2026-11-21)
+
+
+### Features
+
+* **scrape:** run browser actions before reading the page ([bdaa499](https://github.com/fastcrw/crw/commit/bdaa499177f53456bd33469767a81dee4d1b04c4)), closes [#658](https://github.com/fastcrw/crw/issues/658)
+
+
+### Bug Fixes
+
+* **crawl:** answer a selector miss on a settled render as a miss, not a timeout ([50495da](https://github.com/fastcrw/crw/commit/50495da5f71f3d1039b37c7034b797230db61893))
+* **extract:** let an explicit selector reach elements inside stripped chrome ([3c2d1f9](https://github.com/fastcrw/crw/commit/3c2d1f94c5a54f32a710580254a027c91bb40d42))
+* **renderer:** log why a pool recycle retry failed ([bfe9274](https://github.com/fastcrw/crw/commit/bfe9274c364a91cfa1867265aa76667152fa74e0))
+* **renderer:** retry a failed context create once before closing a slot ([fc4c3c2](https://github.com/fastcrw/crw/commit/fc4c3c28862f3e4cc0a0fb709f9b18546927276f))
+* **renderer:** reuse one camoufox session per host ([7189b18](https://github.com/fastcrw/crw/commit/7189b1823d736fb4ef1029e544e41d9f6382d8ff))
+* **scrape:** run actions on a budget-cut page and leave it idle ([cf3ce8c](https://github.com/fastcrw/crw/commit/cf3ce8cb351f20ba9f371624179182b9442559b8))
+
 ## [0.47.1](https://github.com/fastcrw/crw/compare/v0.47.0...v0.47.1) (2026-11-21)
 
 
