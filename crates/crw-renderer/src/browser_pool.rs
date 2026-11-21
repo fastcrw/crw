@@ -27,6 +27,12 @@ use crw_core::error::{CrwError, CrwResult};
 
 use crate::cdp_conn::CdpConnection;
 
+/// Wait before the one retry of a failed recycle `createBrowserContext`.
+const CREATE_CTX_RETRY_DELAY: Duration = Duration::from_secs(1);
+/// Timeout of that retry: longer than the first try, which already failed
+/// once against a browser that was momentarily not answering.
+const CREATE_CTX_RETRY_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Operations the pool performs against a Chrome connection. Trait-extracted
 /// so unit tests can substitute a fake without bringing up real CDP. The blanket
 /// impl below wires it to `CdpConnection`.
@@ -750,9 +756,25 @@ impl<C: ChromeConnOps> PoolGuard<C> {
             .chrome_pool_recycle_seconds
             .with_label_values(&["create_ctx"])
             .start_timer();
-        let create_res =
+        let mut create_res =
             tokio::time::timeout(pool.cfg.create_ctx_timeout, conn.create_browser_context()).await;
         timer.observe_duration();
+        // Chrome can be deaf to CDP for a few seconds while it finishes tearing
+        // down a heavy page (software GL works through a backlog), which is
+        // exactly when a recycle lands. The connection is not broken, so one
+        // more try after a beat keeps a healthy slot instead of closing it and
+        // making the next request reconnect into the same deaf window. Only the
+        // failure path pays the wait.
+        if !matches!(create_res, Ok(Ok(_))) {
+            tokio::time::sleep(CREATE_CTX_RETRY_DELAY).await;
+            let timer = metrics
+                .chrome_pool_recycle_seconds
+                .with_label_values(&["create_ctx_retry"])
+                .start_timer();
+            create_res =
+                tokio::time::timeout(CREATE_CTX_RETRY_TIMEOUT, conn.create_browser_context()).await;
+            timer.observe_duration();
+        }
         let fresh_ctx = match create_res {
             Ok(Ok(id)) => id,
             Ok(Err(_)) | Err(_) => {
@@ -986,6 +1008,8 @@ mod tests {
         close_target_should_fail: AtomicBool,
         dispose_ctx_should_fail: AtomicBool,
         create_ctx_should_fail: AtomicBool,
+        /// Fail the next create only, then succeed (a briefly deaf browser).
+        create_ctx_fail_once: AtomicBool,
         health_check_should_fail: AtomicBool,
         last_close_target_id: StdMutex<Option<String>>,
         last_dispose_ctx_id: StdMutex<Option<String>>,
@@ -996,6 +1020,11 @@ mod tests {
     impl ChromeConnOps for FakeConn {
         async fn create_browser_context(&self) -> CrwResult<String> {
             let n = self.create_ctx_calls.fetch_add(1, Ordering::SeqCst);
+            if self.create_ctx_fail_once.swap(false, Ordering::SeqCst) {
+                return Err(CrwError::RendererError(
+                    "create_ctx forced fail once".into(),
+                ));
+            }
             if self.create_ctx_should_fail.load(Ordering::SeqCst) {
                 return Err(CrwError::RendererError("create_ctx forced fail".into()));
             }
@@ -1611,12 +1640,39 @@ mod tests {
         let conn = guard.conn.clone();
         guard.record_target("t-1".into());
         conn.create_ctx_should_fail.store(true, Ordering::SeqCst);
+        let created_before = conn.create_ctx_calls.load(Ordering::SeqCst);
         guard.release().await.unwrap();
-        // close_target + dispose_ctx both succeeded; the recycle create_ctx failed.
+        // close_target + dispose_ctx both succeeded; the recycle create_ctx
+        // failed, and so did its one retry.
         assert_eq!(conn.close_target_calls.load(Ordering::SeqCst), 1);
         assert_eq!(conn.dispose_ctx_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            conn.create_ctx_calls.load(Ordering::SeqCst) - created_before,
+            2
+        );
         assert_eq!(conn.close_conn_calls.load(Ordering::SeqCst), 1);
         assert_eq!(pool.idle_len(), 0);
+        assert_eq!(pool.inflight(), 0);
+    }
+
+    /// A browser that misses one createBrowserContext (deaf for a moment while
+    /// it tears down a heavy page) keeps its slot: the retry succeeds and the
+    /// connection goes back to the free list instead of being closed.
+    #[tokio::test]
+    async fn release_create_ctx_retries_once_and_keeps_the_slot() {
+        let pool = BrowserContextPool::new(small_pool_cfg(), fake_factory());
+        let guard = pool.acquire().await.unwrap();
+        let conn = guard.conn.clone();
+        guard.record_target("t-1".into());
+        conn.create_ctx_fail_once.store(true, Ordering::SeqCst);
+        let created_before = conn.create_ctx_calls.load(Ordering::SeqCst);
+        guard.release().await.unwrap();
+        assert_eq!(
+            conn.create_ctx_calls.load(Ordering::SeqCst) - created_before,
+            2
+        );
+        assert_eq!(conn.close_conn_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(pool.idle_len(), 1);
         assert_eq!(pool.inflight(), 0);
     }
 
