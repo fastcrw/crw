@@ -2,6 +2,16 @@
 
 All notable changes to CRW are documented here.
 
+## [0.47.1](https://github.com/fastcrw/crw/compare/v0.47.0...v0.47.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **crawl:** detect a JSON dump through the converter's escapes ([c1244f1](https://github.com/fastcrw/crw/commit/c1244f17d5b7dfc8071163b04aa7f67d9ea2b851))
+* **crawl:** escalate a JSON-dump body and let a readable render replace it ([b10d87f](https://github.com/fastcrw/crw/commit/b10d87f870ee3690f03cd42eef48d383df9dba08))
+* **crawl:** tighten JSON-dump escalation per review ([5f132ef](https://github.com/fastcrw/crw/commit/5f132efe137069031c9445b42fb2895090a87ff2))
+* **mcp:** state the configured default in maxLength descriptions ([a6e1367](https://github.com/fastcrw/crw/commit/a6e1367cd9f2322234faad25b6a055c8aea173ac))
+
 ## [0.47.0](https://github.com/fastcrw/crw/compare/v0.46.3...v0.47.0) (2026-11-20)
 
 
