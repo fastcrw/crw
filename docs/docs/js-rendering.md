@@ -275,17 +275,26 @@ it never silently joins `auto`.
 
 The renderer talks to the sidecar over HTTP, not CDP:
 
-1. `POST /tabs` — create a fresh, isolated session and navigate to the URL.
+1. `POST /tabs`: open a tab in the host's session and navigate to the URL.
 2. `POST /tabs/{id}/evaluate` — run `document.documentElement.outerHTML` to get
    the fully JS-rendered DOM.
-3. `DELETE /sessions/{id}` — always tear the session down (even on error), so
-   no server-side session leaks.
+3. Cleanup, always, even on error: the request closes its own tab, and the last
+   request to the host deletes the session unless the host needed a challenge
+   solve.
 
 The returned HTML flows through the **same** post-render pipeline as every other
 tier (`only_main_content`, tag filters, markdown), so your output shape is
-unchanged. Each request gets a fresh session (no cookie carry-over). If the page
-comes back as a bot wall / challenge, the tier reports a retryable error so the
-chain can react.
+unchanged. If the page comes back as a bot wall / challenge, the tier reports a
+retryable error so the chain can react.
+
+Requests to the same host share one sidecar session, so a Cloudflare challenge
+solved for the first page is reused by the next ones instead of being solved
+again. The session id is a hash of the host and the request proxy, never the
+raw values. Up to 3 requests to one host share it at a time (the sidecar's
+default `MAX_CONCURRENT_PER_USER`); more run on a session of their own. The
+sidecar closes an idle session within a minute, and its persistence plugin (on
+by default) keeps the cookies on disk for the same host. A bot wall moves the
+host to a fresh session.
 
 ### Trade-offs
 
