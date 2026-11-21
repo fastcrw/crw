@@ -53,5 +53,5 @@ hex = { workspace = true }
 
 [dev-dependencies]
 wiremock = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 url = { workspace = true }

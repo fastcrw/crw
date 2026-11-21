@@ -48,6 +48,9 @@ const ANTHROPIC_DEFAULT_BASE_URL: &str = "https://api.anthropic.com/v1/messages"
 const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/chat/completions";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Most a call that carries its request's deadline ([`LlmConfig::deadline`])
+/// may wait, however much of the request is left.
+const DEADLINE_CALL_CEILING: Duration = Duration::from_secs(60);
 
 const EXTRACTION_SYSTEM_PROMPT: &str = "You extract the main article or content body from a web page's HTML. \
 Return only the article text as plain markdown. Strip nav, header, footer, ads, comments, related links, \
@@ -196,6 +199,7 @@ pub async fn extract_via_llm(
 
     let result = dispatch(
         false, // operator config: `extract_via_llm` takes no caller endpoint
+        REQUEST_TIMEOUT,
         provider,
         api_key,
         model,
@@ -215,6 +219,11 @@ pub async fn extract_via_llm(
 /// ([`crate::summary`], [`crate::answer`]).
 ///
 /// Uses `cfg.api_key/provider/model/base_url/max_tokens/azure_api_version`.
+///
+/// With `cfg.deadline` set the call, its wait for an LLM slot and any retry
+/// included, ends by what is left of that deadline, at most
+/// [`DEADLINE_CALL_CEILING`]. Without one each attempt gets the fixed
+/// [`REQUEST_TIMEOUT`].
 pub async fn chat(
     cfg: &LlmConfig,
     system_prompt: &str,
@@ -227,8 +236,33 @@ pub async fn chat(
                 .into(),
         ));
     }
+    let Some(deadline) = cfg.deadline else {
+        return chat_within(cfg, REQUEST_TIMEOUT, system_prompt, user_msg).await;
+    };
+    let budget = deadline.remaining().min(DEADLINE_CALL_CEILING);
+    // The transport timeout sits one second past `budget`, so the bound below
+    // is the one that fires and names its length.
+    let per_attempt = budget + Duration::from_secs(1);
+    let call = chat_within(cfg, per_attempt, system_prompt, user_msg);
+    tokio::time::timeout(budget, call)
+        .await
+        .unwrap_or_else(|_| {
+            Err(CrwError::Internal(format!(
+                "LLM request timed out after {:.0}s",
+                budget.as_secs_f64()
+            )))
+        })
+}
+
+async fn chat_within(
+    cfg: &LlmConfig,
+    timeout: Duration,
+    system_prompt: &str,
+    user_msg: &str,
+) -> CrwResult<LlmCallResult> {
     dispatch(
         cfg.endpoint_from_request,
+        timeout,
         &cfg.provider,
         &cfg.api_key,
         &cfg.model,
@@ -266,6 +300,9 @@ pub async fn expand_query(cfg: &LlmConfig, query: &str, max_variants: usize) -> 
          Output at most {n} line(s)."
     );
     let mut leg = cfg.clone();
+    // A helper leg keeps its fixed budget; only the answer itself follows the
+    // request deadline.
+    leg.deadline = None;
     leg.max_tokens = leg.max_tokens.min(60 + 60 * n as u32);
     match chat(&leg, &sys, query).await {
         Ok(r) => {
@@ -328,6 +365,9 @@ pub async fn scout_followups(
     );
     let user = format!("QUESTION: {query}\n\nEVIDENCE (did not answer it):\n{evidence}");
     let mut leg = cfg.clone();
+    // A helper leg keeps its fixed budget; only the answer itself follows the
+    // request deadline.
+    leg.deadline = None;
     leg.max_tokens = leg.max_tokens.min(60 + 60 * n as u32);
     match chat(&leg, &sys, &user).await {
         Ok(r) => {
@@ -354,6 +394,7 @@ pub async fn scout_followups(
 #[allow(clippy::too_many_arguments)]
 async fn dispatch(
     guarded: bool,
+    timeout: Duration,
     provider: &str,
     api_key: &str,
     model: &str,
@@ -379,6 +420,7 @@ async fn dispatch(
         "anthropic" => {
             call_anthropic(
                 client,
+                timeout,
                 api_key,
                 model,
                 base_url,
@@ -397,6 +439,7 @@ async fn dispatch(
         provider_tag @ ("openai" | "deepseek" | "openai-compatible") => {
             call_openai(
                 client,
+                timeout,
                 api_key,
                 model,
                 base_url,
@@ -421,7 +464,7 @@ async fn dispatch(
                 endpoint_from_request: guarded,
                 ..LlmConfig::default()
             };
-            crate::responses::call_text(&cfg, system_prompt, user_msg, REQUEST_TIMEOUT).await
+            crate::responses::call_text(&cfg, system_prompt, user_msg, timeout).await
         }
         "azure" => {
             let endpoint = base_url.ok_or_else(|| {
@@ -436,6 +479,7 @@ async fn dispatch(
             })?;
             call_azure(
                 client,
+                timeout,
                 api_key,
                 endpoint,
                 model,
@@ -480,6 +524,7 @@ pub(crate) fn anthropic_effort<'a>(
 #[allow(clippy::too_many_arguments)]
 async fn call_anthropic(
     client: &reqwest::Client,
+    timeout: Duration,
     api_key: &str,
     model: &str,
     base_url: Option<&str>,
@@ -505,6 +550,7 @@ async fn call_anthropic(
     let resp = send_provider_post(
         client
             .post(url)
+            .timeout(timeout)
             .header("x-api-key", api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json")
@@ -555,6 +601,7 @@ async fn call_anthropic(
 #[allow(clippy::too_many_arguments)]
 async fn call_openai(
     client: &reqwest::Client,
+    timeout: Duration,
     api_key: &str,
     model: &str,
     base_url: Option<&str>,
@@ -599,10 +646,10 @@ async fn call_openai(
         body["reasoning_effort"] = serde_json::json!(effort);
     }
     // Fixed self-limiting retry on transient server throttling (HTTP 429/503)
-    // only. The shared client carries a 30s per-attempt timeout and the
-    // caller's request deadline is not threaded in here, so the budget stays
-    // small and fixed (a few short jittered sleeps). 429/503 are fast server
-    // rejects, so the worst case stays well under the request deadline. All
+    // only. Each attempt gets `timeout`; a call that carries a request deadline
+    // is also bounded as a whole by `chat`, so the retry budget stays small and
+    // fixed (a few short jittered sleeps). 429/503 are fast server rejects, so
+    // the worst case stays well under the request deadline. All
     // other non-2xx responses (and transport/timeout errors) keep the original
     // single-POST contract: hard-error on the first response.
     const MAX_ATTEMPTS: u32 = 3;
@@ -612,6 +659,7 @@ async fn call_openai(
         let resp = send_provider_post(
             client
                 .post(url)
+                .timeout(timeout)
                 .bearer_auth(api_key)
                 .header("content-type", "application/json")
                 .json(&body),
@@ -670,6 +718,7 @@ async fn call_openai(
 #[allow(clippy::too_many_arguments)]
 async fn call_azure(
     client: &reqwest::Client,
+    timeout: Duration,
     api_key: &str,
     endpoint: &str,
     deployment: &str,
@@ -697,6 +746,7 @@ async fn call_azure(
     let resp = send_provider_post(
         client
             .post(&url)
+            .timeout(timeout)
             .header("api-key", api_key)
             .header("content-type", "application/json")
             .json(&body),
@@ -911,7 +961,18 @@ mod tests {
     #[tokio::test]
     async fn unknown_provider_is_rejected_before_any_http_call() {
         let err = dispatch(
-            false, "gemini", "key", "model", None, 128, None, None, None, "sys", "user",
+            false,
+            REQUEST_TIMEOUT,
+            "gemini",
+            "key",
+            "model",
+            None,
+            128,
+            None,
+            None,
+            None,
+            "sys",
+            "user",
         )
         .await
         .expect_err("an unsupported provider must be rejected");
@@ -1985,5 +2046,95 @@ mod tests {
             hits.fetch_add(1, Ordering::SeqCst);
         }
         assert_eq!(hits.load(Ordering::SeqCst), 3);
+    }
+
+    // ── the request deadline bounds a summary or answer call ──────────────
+
+    /// An OpenAI-compatible endpoint that answers once `delay` has passed on
+    /// the test's clock. Under paused time a test can then tell a 30 s budget
+    /// from a 60 s one without waiting for either.
+    ///
+    /// The socket work runs in `spawn_blocking`, which stops the paused clock
+    /// from auto-advancing: loopback delivery can lag under load, and an
+    /// advance while a request or response is still in flight would fire a
+    /// timeout the code under test never earned.
+    async fn slow_openai(delay: Duration) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accepted = tokio::task::spawn_blocking(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let _ = sock.read(&mut [0u8; 8192]);
+            sock
+        });
+        tokio::spawn(async move {
+            let mut sock = accepted.await.unwrap();
+            tokio::time::sleep(delay).await;
+            tokio::task::spawn_blocking(move || {
+                let body = openai_chat_response().to_string();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                     content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+                // Hold the clock until the client has read it and hung up.
+                let _ = sock.set_read_timeout(Some(Duration::from_secs(10)));
+                let _ = sock.read(&mut [0u8; 64]);
+            });
+        });
+        format!("http://{addr}")
+    }
+
+    fn cfg_with_deadline(base_url: String, deadline: Option<Duration>) -> LlmConfig {
+        LlmConfig {
+            deadline: deadline.map(crw_core::Deadline::now_plus),
+            ..base_cfg("openai", base_url)
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_with_time_left_on_its_request_outlives_30s() {
+        let url = slow_openai(Duration::from_secs(45)).await;
+        let cfg = cfg_with_deadline(url, Some(Duration::from_secs(55)));
+        let res = chat(&cfg, "sys", "user").await.expect("chat succeeds");
+        assert_eq!(res.content, "hello from mock");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_ends_with_its_request_deadline() {
+        let url = slow_openai(Duration::from_secs(45)).await;
+        let cfg = cfg_with_deadline(url, Some(Duration::from_secs(10)));
+        let started = tokio::time::Instant::now();
+        let err = chat(&cfg, "sys", "user").await.unwrap_err().to_string();
+        let waited = started.elapsed();
+        assert!(err.contains("timed out after 10s"), "{err}");
+        assert!(waited < Duration::from_secs(11), "waited {waited:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_long_request_deadline_is_capped_at_60s() {
+        let url = slow_openai(Duration::from_secs(75)).await;
+        let cfg = cfg_with_deadline(url, Some(Duration::from_secs(120)));
+        let started = tokio::time::Instant::now();
+        let err = chat(&cfg, "sys", "user").await.unwrap_err().to_string();
+        let waited = started.elapsed();
+        assert!(err.contains("timed out after 60s"), "{err}");
+        assert!(waited < Duration::from_secs(61), "waited {waited:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_without_a_deadline_keeps_the_fixed_30s() {
+        // Helper legs (query rewrite, scout, passage selection) and the
+        // content-extraction fallback ride this path.
+        let url = slow_openai(Duration::from_secs(45)).await;
+        let cfg = cfg_with_deadline(url, None);
+        let started = tokio::time::Instant::now();
+        assert!(chat(&cfg, "sys", "user").await.is_err());
+        let waited = started.elapsed();
+        assert!(
+            waited >= REQUEST_TIMEOUT && waited < Duration::from_secs(31),
+            "waited {waited:?}"
+        );
     }
 }
