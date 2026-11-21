@@ -41,7 +41,7 @@
 
 use moka::future::Cache;
 use std::sync::LazyLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::preference::normalize_host;
 
@@ -199,6 +199,113 @@ impl StickySessions {
     }
 }
 
+/// Failed residential attempts a host may take in one window before it is held
+/// off the residential arm, when residential has not served it recently. Two
+/// exits are scored per IP, so one failure proves little and the second holds.
+pub const EXIT_FAILURES: u32 = 2;
+
+/// The same limit for a host residential served within the last window: a host
+/// that wins about two of three (manuals.plus) loses too much if one bad exit
+/// holds it for ten minutes, so it earns four failures first.
+pub const EXIT_FAILURES_AFTER_WIN: u32 = 4;
+
+#[derive(Clone)]
+struct Strikes {
+    failures: u32,
+    /// First failure of the current window.
+    since: Instant,
+    /// Last residential success.
+    won_at: Option<Instant>,
+}
+
+/// Per-host count of failed residential attempts plus the time of the last
+/// residential success. The window runs from the FIRST failure and a success
+/// never resets the count, so a host that alternates win and miss still
+/// reaches its limit instead of looping on paid attempts forever.
+#[derive(Clone)]
+pub struct HostStrikes {
+    cache: Cache<String, Strikes>,
+    window: Duration,
+}
+
+impl HostStrikes {
+    pub fn new(window: Duration) -> Self {
+        Self {
+            // The TTL only bounds memory; the window logic below is explicit.
+            cache: Cache::builder()
+                .max_capacity(CAPACITY)
+                .time_to_live(window)
+                .build(),
+            window,
+        }
+    }
+
+    pub fn with_defaults() -> Self {
+        Self::new(COOLDOWN)
+    }
+
+    /// Record one failed residential attempt for `host`; returns the failures
+    /// counted in the current window. Atomic per key: concurrent misses on one
+    /// host (a crawl) must not lose strikes.
+    pub async fn strike(&self, host: &str) -> u32 {
+        let window = self.window;
+        let now = Instant::now();
+        self.cache
+            .entry(normalize_host(host))
+            .and_upsert_with(|cur| async move {
+                let mut s = cur.map(|e| e.into_value()).unwrap_or(Strikes {
+                    failures: 0,
+                    since: now,
+                    won_at: None,
+                });
+                if s.failures == 0 || now.duration_since(s.since) >= window {
+                    s.failures = 0;
+                    s.since = now;
+                }
+                s.failures += 1;
+                s
+            })
+            .await
+            .into_value()
+            .failures
+    }
+
+    /// Record a residential success for `host`. Keeps the failure count.
+    pub async fn note_win(&self, host: &str) {
+        let now = Instant::now();
+        self.cache
+            .entry(normalize_host(host))
+            .and_upsert_with(|cur| async move {
+                let mut s = cur.map(|e| e.into_value()).unwrap_or(Strikes {
+                    failures: 0,
+                    since: now,
+                    won_at: None,
+                });
+                s.won_at = Some(now);
+                s
+            })
+            .await;
+    }
+
+    /// Whether residential served `host` within the window.
+    pub async fn has_won(&self, host: &str) -> bool {
+        self.cache
+            .get(&normalize_host(host))
+            .await
+            .and_then(|s| s.won_at)
+            .is_some_and(|t| t.elapsed() < self.window)
+    }
+
+    /// Failed attempts a host may take before it is held, given its history.
+    pub async fn limit(&self, host: &str) -> u32 {
+        if self.has_won(host).await {
+            EXIT_FAILURES_AFTER_WIN
+        } else {
+            EXIT_FAILURES
+        }
+    }
+}
+
 impl Default for EgressMemory {
     fn default() -> Self {
         Self::with_defaults()
@@ -275,5 +382,66 @@ mod tests {
 
         m.note_block("hostile.com").await;
         assert!(m.should_proxy("hostile.com").await);
+    }
+
+    #[tokio::test]
+    async fn strikes_count_per_host_and_a_win_keeps_them() {
+        let m = HostStrikes::with_defaults();
+        assert_eq!(m.strike("a.example.com").await, 1);
+        m.note_win("a.example.com").await;
+        assert_eq!(
+            m.strike("b.example.com").await,
+            2,
+            "same eTLD+1, win keeps the count"
+        );
+        assert_eq!(m.strike("other.com").await, 1);
+    }
+
+    #[tokio::test]
+    async fn limit_is_four_after_a_win_and_two_without() {
+        let m = HostStrikes::with_defaults();
+        assert_eq!(m.limit("example.com").await, EXIT_FAILURES);
+        m.note_win("example.com").await;
+        assert_eq!(m.limit("example.com").await, EXIT_FAILURES_AFTER_WIN);
+        assert_eq!(m.limit("other.com").await, EXIT_FAILURES);
+    }
+
+    #[tokio::test]
+    async fn the_window_runs_from_the_first_strike() {
+        // A wide window and a short gap: an oversleep on a loaded machine
+        // cannot push the second strike past the window.
+        let window = Duration::from_millis(600);
+        let m = HostStrikes::new(window);
+        assert_eq!(m.strike("example.com").await, 1);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(m.strike("example.com").await, 2);
+        tokio::time::sleep(window * 2).await;
+        // A steady stream does not stretch the window: the count restarts.
+        assert_eq!(m.strike("example.com").await, 1);
+    }
+
+    #[tokio::test]
+    async fn a_stale_win_does_not_raise_the_limit() {
+        let m = HostStrikes::new(TINY);
+        m.note_win("example.com").await;
+        assert!(m.has_won("example.com").await);
+        tokio::time::sleep(TINY * 2).await;
+        assert!(!m.has_won("example.com").await);
+        assert_eq!(m.limit("example.com").await, EXIT_FAILURES);
+    }
+
+    #[tokio::test]
+    async fn concurrent_strikes_are_all_counted() {
+        let m = HostStrikes::with_defaults();
+        let handles: Vec<_> = (0..32)
+            .map(|_| {
+                let m = m.clone();
+                tokio::spawn(async move { m.strike("example.com").await })
+            })
+            .collect();
+        for h in handles {
+            h.await.unwrap();
+        }
+        assert_eq!(m.strike("example.com").await, 33);
     }
 }
