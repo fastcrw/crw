@@ -294,7 +294,7 @@ If you turn on every targeting knob at once, debugging gets harder immediately.
 Some pages only show part of their content until you interact with them: a product list behind a "Load more" button, a feed that grows as you scroll, a search box you have to type into. `actions` is an ordered list of steps that run in a real browser after the page loads and before it is read, so the markdown you get back is the page after those steps.
 
 ```bash
-curl -X POST https://fastcrw.com/api/v1/scrape \
+curl -X POST https://api.fastcrw.com/v1/scrape \
   -H "Authorization: Bearer $CRW_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
