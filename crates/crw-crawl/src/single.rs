@@ -1267,6 +1267,11 @@ async fn scrape_url_inner(
         // caller asked only for `summary`, the markdown is the input to the
         // LLM but is not surfaced in the response (see strip below).
         let md_owned = data.markdown.clone().unwrap_or_default();
+        // The summary waits for what is left of the request, not a fixed 30 s.
+        let llm = &LlmConfig {
+            deadline: Some(deadline),
+            ..llm.clone()
+        };
         match crw_extract::summary::summarize(
             &md_owned,
             llm,
