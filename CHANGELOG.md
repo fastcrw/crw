@@ -2,6 +2,13 @@
 
 All notable changes to CRW are documented here.
 
+## [0.49.0](https://github.com/fastcrw/crw/compare/v0.48.0...v0.49.0) (2026-11-23)
+
+
+### Features
+
+* **renderer:** add a fast_ready switch for the lightpanda tier ([4512290](https://github.com/fastcrw/crw/commit/4512290bd1242481bb895c19e119e9778dafe192)), closes [#777](https://github.com/fastcrw/crw/issues/777)
+
 ## [0.48.0](https://github.com/fastcrw/crw/compare/v0.47.1...v0.48.0) (2026-11-21)
 
 
