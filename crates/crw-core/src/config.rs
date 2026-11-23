@@ -880,6 +880,12 @@ pub struct RendererConfig {
     /// shell). Default off; A/B-gated on the bench (quality_gate must hold).
     #[serde(default)]
     pub chrome_fast_ready: bool,
+    /// The same earliest-ready exit for the LightPanda tier. Without it a page
+    /// with none of the SPA root selectors (`main`, `article`, `#root > *`, ...)
+    /// keeps polling until the LightPanda budget cuts the render, even when the
+    /// page loaded in a few hundred ms. Default off; A/B-gated on the bench.
+    #[serde(default)]
+    pub lightpanda_fast_ready: bool,
     /// latency-qn: conditional hedge. In auto mode, race lightpanda + chrome
     /// CONCURRENTLY (chrome's clock starts immediately instead of after lightpanda
     /// fails) and take the best by tier priority. Cuts the serial prefix (~3.4s
@@ -1270,6 +1276,7 @@ impl Default for RendererConfig {
             chrome_challenge_max_retries: None,
             chrome_spa_selector_max_ms: None,
             chrome_fast_ready: false,
+            lightpanda_fast_ready: false,
             chrome_hedge: false,
             auto_egress_escalation: false,
             cloak_recover_on_cf: false,
@@ -3613,6 +3620,7 @@ search_backend_url = "http://from-file:8080"
         assert_eq!(r.chrome_challenge_max_retries, None);
         assert_eq!(r.chrome_spa_selector_max_ms, None);
         assert!(!r.chrome_fast_ready);
+        assert!(!r.lightpanda_fast_ready);
         assert!(!r.chrome_hedge);
         assert!(!r.auto_egress_escalation);
         assert!(!r.cloak_recover_on_cf);

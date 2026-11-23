@@ -1531,7 +1531,8 @@ impl FallbackRenderer {
                             config.lightpanda_timeout(),
                             config.pool_size,
                         )
-                        .with_user_agent(&effective_ua),
+                        .with_user_agent(&effective_ua)
+                        .with_fast_ready(config.lightpanda_fast_ready),
                     ));
                 } else if matches!(config.mode, RendererMode::Lightpanda) {
                     return Err(CrwError::ConfigError(
