@@ -8,6 +8,15 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.49.1](https://github.com/fastcrw/crw/compare/v0.49.0...v0.49.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **extract:** give a deadline-bound LLM call at least 10 s ([7955cd4](https://github.com/fastcrw/crw/commit/7955cd4eab4b8a3c697d8d7f6dc0798d408624dd))
+* **extract:** give summary and answer LLM calls the request's time left ([9a6d9af](https://github.com/fastcrw/crw/commit/9a6d9af8c6c00ec7378322c8f8a83905c3f61d1f))
+* **renderer:** keep residential open for a host until 4 failures after a recent win ([49bf581](https://github.com/fastcrw/crw/commit/49bf58181403148e039ce83ff31d2b582d165b07))
+
 ## [0.49.0](https://github.com/fastcrw/crw/compare/v0.48.0...v0.49.0) (2026-11-23)
 
 
