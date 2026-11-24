@@ -332,8 +332,8 @@ Rules:
 
 Where actions run:
 
-- **Cloud:** `/v1/scrape`, `/firecrawl/v1/scrape` and the `crw_scrape` MCP tool. Every other route (including `/firecrawl/v2/scrape`, batch scrape and crawl `scrapeOptions`) answers a request carrying `actions` with a 400.
-- **Self-hosted:** the same, plus `/firecrawl/v2/scrape` (the Firecrawl shape, unknown fields ignored) and `POST /v1/batch/scrape` (run per URL).
+- **Cloud:** `/v1/scrape`, `/firecrawl/v1/scrape`, `/firecrawl/v2/scrape` (the Firecrawl shape, unknown fields ignored) and the `crw_scrape` MCP tool. Every other route (batch scrape, crawl `scrapeOptions`) answers a request carrying `actions` with a 400.
+- **Self-hosted:** the same, plus `POST /v1/batch/scrape` (run per URL).
 - The deprecated root `/v2/scrape` alias never runs actions. Firecrawl's Python SDK v2 always calls that root path, so use the native `/v1/scrape` for actions.
 - After a click that loads a new page, the next step looks for its element on the new page. A `wait` with a selector from that page makes the hand-off explicit.
 
