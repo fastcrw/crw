@@ -801,8 +801,8 @@ a discount.</p>
 </ul>
 <p>Where actions run:</p>
 <ul>
-<li><strong>Cloud:</strong> <code>/v1/scrape</code>, <code>/firecrawl/v1/scrape</code> and the <code>crw_scrape</code> MCP tool. Every other route (including <code>/firecrawl/v2/scrape</code>, batch scrape and crawl <code>scrapeOptions</code>) answers a request carrying <code>actions</code> with a 400.</li>
-<li><strong>Self-hosted:</strong> the same, plus <code>/firecrawl/v2/scrape</code> (the Firecrawl shape, unknown fields ignored) and <code>POST /v1/batch/scrape</code> (run per URL).</li>
+<li><strong>Cloud:</strong> <code>/v1/scrape</code>, <code>/firecrawl/v1/scrape</code>, <code>/firecrawl/v2/scrape</code> (the Firecrawl shape, unknown fields ignored) and the <code>crw_scrape</code> MCP tool. Every other route (batch scrape, crawl <code>scrapeOptions</code>) answers a request carrying <code>actions</code> with a 400.</li>
+<li><strong>Self-hosted:</strong> the same, plus <code>POST /v1/batch/scrape</code> (run per URL).</li>
 <li>The deprecated root <code>/v2/scrape</code> alias never runs actions. Firecrawl&#39;s Python SDK v2 always calls that root path, so use the native <code>/v1/scrape</code> for actions.</li>
 <li>After a click that loads a new page, the next step looks for its element on the new page. A <code>wait</code> with a selector from that page makes the hand-off explicit.</li>
 </ul>
