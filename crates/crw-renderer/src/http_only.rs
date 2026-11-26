@@ -61,13 +61,48 @@ const CHALLENGE_DIRECT_RESERVE: std::time::Duration = std::time::Duration::from_
 /// exit is in its bad tail. Everything above it stays with the direct rescue.
 const CHALLENGE_PROXY_MAX: std::time::Duration = std::time::Duration::from_secs(6);
 
-/// The response declares a PDF (`application/pdf`, any case, any parameters).
+/// The response declares a PDF: `Content-Type: application/pdf` (any case, any
+/// parameters), or a download whose `Content-Disposition` filename ends in
+/// `.pdf`. The second shape is a shop or CMS download handler that labels
+/// every file `application/octet-stream`; seen on prod: shop.iflight.com
+/// `?route=product/product/download&download_id=N`, 1.5 to 11 MB manuals,
+/// 31 customer 5xx in one day because the body was cut at the tier timeout.
 fn is_pdf_response(r: &reqwest::Response) -> bool {
-    r.headers()
+    headers_declare_pdf(r.headers())
+}
+
+fn headers_declare_pdf(h: &reqwest::header::HeaderMap) -> bool {
+    let pdf_type = h
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split(';').next())
-        .is_some_and(|t| t.trim().eq_ignore_ascii_case("application/pdf"))
+        .is_some_and(|t| t.trim().eq_ignore_ascii_case("application/pdf"));
+    // Lossy, not `to_str`: download handlers send raw UTF-8 names (iflight:
+    // `filename="... FC（RX）Wiring Diagram.pdf"`), which `to_str` refuses.
+    let pdf_name = h
+        .get(reqwest::header::CONTENT_DISPOSITION)
+        .is_some_and(|v| disposition_names_pdf(&String::from_utf8_lossy(v.as_bytes())));
+    pdf_type || pdf_name
+}
+
+/// Any `filename` / `filename*` parameter ends in `.pdf`. A quoted value runs
+/// to its closing quote (so a `;` inside the name does not split it), a bare
+/// one to the next `;`; `filename*=UTF-8''a.pdf` is a bare value ending the
+/// same way.
+fn disposition_names_pdf(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.match_indices("filename").any(|(at, key)| {
+        let rest = lower[at + key.len()..].trim_start_matches('*').trim_start();
+        let Some(rest) = rest.strip_prefix('=') else {
+            return false;
+        };
+        let rest = rest.trim_start();
+        let name = match rest.strip_prefix('"') {
+            Some(quoted) => quoted.split('"').next().unwrap_or(""),
+            None => rest.split(';').next().unwrap_or(""),
+        };
+        name.trim_end().ends_with(".pdf")
+    })
 }
 
 /// Returns true if a `reqwest::Error` is worth retrying on the SAME egress.
@@ -3806,6 +3841,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn headers_declare_pdf_by_type_or_attachment_name() {
+        fn h(pairs: &[(&'static str, &'static str)]) -> reqwest::header::HeaderMap {
+            pairs
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        reqwest::header::HeaderName::from_static(k),
+                        reqwest::header::HeaderValue::from_bytes(v.as_bytes()).unwrap(),
+                    )
+                })
+                .collect()
+        }
+        let ct = "content-type";
+        let cd = "content-disposition";
+        assert!(headers_declare_pdf(&h(&[(
+            ct,
+            "application/pdf; charset=binary"
+        )])));
+        assert!(headers_declare_pdf(&h(&[
+            (ct, "application/octet-stream"),
+            (cd, "attachment; filename=\"NR13022 Guide-20230615.pdf\""),
+        ])));
+        assert!(headers_declare_pdf(&h(&[(
+            cd,
+            "attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.Pdf"
+        )])));
+        assert!(headers_declare_pdf(&h(&[(
+            cd,
+            "attachment; filename=\"BF20768_iFlight Borg Mini H7 FC（RX）Wiring Diagram_260709.pdf\""
+        )])));
+        assert!(headers_declare_pdf(&h(&[(
+            cd,
+            "attachment; filename=\"Guide; v2.pdf\"; size=9"
+        )])));
+        assert!(headers_declare_pdf(&h(&[(
+            cd,
+            "attachment;filename=a.PDF;size=9"
+        )])));
+        assert!(!headers_declare_pdf(&h(&[(
+            ct,
+            "application/octet-stream"
+        )])));
+        assert!(!headers_declare_pdf(&h(&[(
+            cd,
+            "attachment; filename=\"a.pdf.zip\"; x=1.pdf"
+        )])));
+        assert!(!headers_declare_pdf(&h(&[(
+            cd,
+            "attachment; filename=\"a.pdf.zip\""
+        )])));
+        assert!(!headers_declare_pdf(&h(&[(cd, "inline")])));
+    }
+
     /// A PDF that streams for longer than the tier timeout must still arrive
     /// whole when the caller's deadline allows it, because no browser tier can
     /// fetch a PDF. That holds for a `.pdf` path and for a PDF behind any other
@@ -3839,6 +3928,18 @@ mod tests {
         async fn slow_html() -> impl axum::response::IntoResponse {
             slow_body("text/html")
         }
+        static ATTACHMENT_HITS: std::sync::atomic::AtomicUsize =
+            std::sync::atomic::AtomicUsize::new(0);
+        async fn slow_attachment() -> impl axum::response::IntoResponse {
+            ATTACHMENT_HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (
+                [(
+                    axum::http::header::CONTENT_DISPOSITION,
+                    "attachment; filename=\"Assembly Guide.PDF\"",
+                )],
+                slow_body("application/octet-stream"),
+            )
+        }
         let base = spawn_router(
             axum::Router::new()
                 .route("/doc.pdf", axum::routing::get(slow_pdf))
@@ -3846,7 +3947,8 @@ mod tests {
                     "/bitstreams/1/download",
                     axum::routing::get(slow_pdf_with_charset),
                 )
-                .route("/page", axum::routing::get(slow_html)),
+                .route("/page", axum::routing::get(slow_html))
+                .route("/download", axum::routing::get(slow_attachment)),
         )
         .await;
         let fetcher = HttpFetcher::with_timeout(
@@ -3880,6 +3982,22 @@ mod tests {
             DOWNLOAD_HITS.load(std::sync::atomic::Ordering::SeqCst),
             2,
             "asked once more after the headers, and only once"
+        );
+
+        let ok = fetcher
+            .fetch(
+                &format!("{base}/download"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(10_000),
+            )
+            .await
+            .expect("an octet-stream attachment named .pdf must arrive under the deadline");
+        assert_eq!(ok.content_type.as_deref(), Some("application/pdf"));
+        assert_eq!(
+            ATTACHMENT_HITS.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the attachment is asked once more after the headers, and only once"
         );
 
         let err = fetcher
