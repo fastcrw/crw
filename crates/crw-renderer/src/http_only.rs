@@ -40,6 +40,15 @@ const HTTP_MAX_RETRIES: u32 = 1;
 /// Backoff before the retry attempt. Short — we are inside the request path
 /// and the upstream timeout is 30s, so we cannot afford long sleeps.
 const HTTP_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_millis(250);
+/// Budget a slow-origin wait always leaves for the JS tiers after it. They face
+/// the same slow origin, so they only win where the HTTP client is the one being
+/// stalled (a fingerprint gate); a stalled host that LightPanda then served took
+/// it 2 to 4 s after the HTTP wait (businesswire.com, 2026-11-26).
+const SLOW_ORIGIN_LADDER_RESERVE: std::time::Duration = std::time::Duration::from_secs(8);
+/// Longest a connected but slow origin is waited for, headers and body. Covers
+/// the slow server renders seen on prod (milanwillowglen.com: 3.3 to 8.5 s to
+/// first byte) without handing a stalled host most of a 30 to 60 s deadline.
+const SLOW_ORIGIN_MAX: std::time::Duration = std::time::Duration::from_secs(12);
 /// Budget held back from a proxy attempt that was armed mid-loop by a 429 or a
 /// header-announced challenge, so a hanging proxy can always fall back to direct.
 ///
@@ -118,6 +127,20 @@ fn is_retriable_error(e: &reqwest::Error) -> bool {
     // so they are excluded here: retrying them on the same dead egress just wastes
     // budget.
     e.is_timeout() && !e.is_connect()
+}
+
+/// How long the slow-origin race may wait in total. Never less than `base`
+/// (`2 x tier + backoff`, the old worst case, which short deadlines keep), and
+/// beyond it only up to [`SLOW_ORIGIN_MAX`] and only while
+/// [`SLOW_ORIGIN_LADDER_RESERVE`] is left for the tiers after it.
+fn slow_origin_envelope(
+    remaining: std::time::Duration,
+    base: std::time::Duration,
+) -> std::time::Duration {
+    let stretched = remaining
+        .saturating_sub(SLOW_ORIGIN_LADDER_RESERVE)
+        .min(SLOW_ORIGIN_MAX);
+    stretched.max(base).min(remaining)
 }
 
 /// A send outcome that settles a slow-origin race: a response the fetch loop
@@ -816,9 +839,11 @@ impl PageFetcher for HttpFetcher {
             // an identical fresh one that stalled the same way, so it failed in
             // every mode while the deadline still had room. Now the first request
             // is kept and the retry starts beside it at the moment it always did,
-            // with the budget it always had. The worst case stays at
-            // `2 x tier + backoff`, so later tiers keep the budget they get today.
-            // One exception: a `.pdf` path used to give up at the first header
+            // with the budget it always had. On a short deadline the worst case
+            // stays at `2 x tier + backoff`; a longer one lets the wait run up
+            // to `SLOW_ORIGIN_MAX` while `SLOW_ORIGIN_LADDER_RESERVE` is left for
+            // the tiers after it (`slow_origin_envelope`), because those tiers
+            // face the same slow origin. One exception: a `.pdf` path used to give up at the first header
             // timeout with no retry, and now waits the same envelope. No browser
             // tier can fetch a PDF, so the extra wait costs it nothing.
             // Direct egress on the first attempt only: a proxied attempt has its
@@ -833,7 +858,12 @@ impl PageFetcher for HttpFetcher {
                 && remaining > retry_at + crate::MIN_TIER_BUDGET;
             body_ends_by = None;
             let send_result = if race {
-                let envelope = std::cmp::min(remaining, retry_at + self.request_timeout);
+                let base = retry_at + self.request_timeout;
+                let envelope = slow_origin_envelope(remaining, base);
+                // With room past the old worst case, a slow body (headers early,
+                // page rendered as it streams) gets the envelope too: the JS tiers
+                // would read the same slow stream, and the reserve stays theirs.
+                let stretched = envelope > base;
                 let (first_budget, retry_budget) = if lifted {
                     // The body lift stays: a PDF still streams on the whole budget.
                     header_budget = envelope;
@@ -853,11 +883,13 @@ impl PageFetcher for HttpFetcher {
                 // one retry.
                 match &raced {
                     Ok((_, true)) => attempt = 1,
-                    // Headers inside the tier timeout: the old total stands.
-                    // Headers after it (before the retry started) are the
-                    // stalled case, whose body gets the envelope the retry
-                    // would have had.
-                    Ok((_, false)) if !lifted && sent_at.elapsed() < self.request_timeout => {
+                    // Headers inside the tier timeout on a deadline with no room
+                    // to stretch: the old total stands. Headers after it (before
+                    // the retry started) are the stalled case, whose body gets
+                    // the envelope the retry would have had.
+                    Ok((_, false))
+                        if !lifted && !stretched && sent_at.elapsed() < self.request_timeout =>
+                    {
                         body_ends_by = Some(sent_at + self.request_timeout);
                     }
                     _ => {}
@@ -4217,9 +4249,9 @@ mod tests {
         );
     }
 
-    /// Headers inside the tier timeout, body stalled: the body keeps the tier
-    /// timeout as before, so the ladder gets the rest of the budget. The race
-    /// only lengthens a wait for HEADERS.
+    /// Headers inside the tier timeout, body stalled, on a deadline with no room
+    /// past the old worst case (12 s leaves less than the ladder reserve): the
+    /// body keeps the tier timeout as before, so the ladder gets the rest.
     #[tokio::test]
     async fn fast_headers_keep_the_tier_timeout_for_the_body() {
         async fn stalled_body() -> impl axum::response::IntoResponse {
@@ -4245,7 +4277,7 @@ mod tests {
                 &format!("{base}/"),
                 &HashMap::new(),
                 None,
-                Deadline::from_request_ms(18_000),
+                Deadline::from_request_ms(12_000),
             )
             .await
             .expect_err("the body never completes");
@@ -4293,6 +4325,83 @@ mod tests {
             .await
             .expect("the body arrives inside the envelope");
         assert!(r.html.contains("Just late"));
+    }
+
+    #[test]
+    fn slow_origin_envelope_leaves_the_ladder_its_reserve() {
+        let s = std::time::Duration::from_secs;
+        let ms = std::time::Duration::from_millis;
+        let base = ms(8250);
+        // Short deadlines keep the old worst case, capped by what is left.
+        assert_eq!(slow_origin_envelope(ms(5000), base), ms(5000));
+        assert_eq!(slow_origin_envelope(s(15), base), base);
+        // Past base + reserve the wait grows, always leaving the reserve.
+        assert_eq!(slow_origin_envelope(s(18), base), s(10));
+        assert_eq!(slow_origin_envelope(s(30), base), SLOW_ORIGIN_MAX);
+        assert_eq!(slow_origin_envelope(s(60), base), SLOW_ORIGIN_MAX);
+    }
+
+    /// Headers after `2 x tier + backoff` used to fail on every deadline. With
+    /// room left past the ladder reserve the first request is still waited for.
+    #[tokio::test]
+    async fn very_slow_headers_are_served_on_a_long_deadline() {
+        async fn slow() -> impl axum::response::IntoResponse {
+            tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/html")],
+                "<html><body><h1>Six seconds late</h1></body></html>",
+            )
+        }
+        let base = spawn_router(axum::Router::new().route("/", axum::routing::get(slow))).await;
+        let fetcher = race_fetcher();
+        let r = fetcher
+            .fetch(
+                &format!("{base}/"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .expect("a 6 s origin fits a 30 s deadline's envelope");
+        assert!(r.html.contains("Six seconds late"));
+    }
+
+    /// Headers early, body streamed slowly past the tier timeout, on a long
+    /// deadline: the body is read to the end instead of cut at the tier timeout
+    /// (milanwillowglen.com on prod, 2026-11-26: "the body did not arrive within
+    /// the tier timeout", then the JS tiers ran out of deadline on the same page).
+    #[tokio::test]
+    async fn slow_body_is_read_to_the_end_on_a_long_deadline() {
+        async fn slow_body() -> impl axum::response::IntoResponse {
+            use futures::StreamExt as _;
+            let chunks = futures::stream::iter([
+                &b"<html><body><h1>Streamed"[..],
+                &b"</h1></body></html>"[..],
+            ])
+            .then(|c| async move {
+                if c.starts_with(b"</") {
+                    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+                }
+                Ok::<_, std::io::Error>(axum::body::Bytes::from_static(c))
+            });
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/html")],
+                axum::body::Body::from_stream(chunks),
+            )
+        }
+        let base =
+            spawn_router(axum::Router::new().route("/", axum::routing::get(slow_body))).await;
+        let fetcher = race_fetcher();
+        let r = fetcher
+            .fetch(
+                &format!("{base}/"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .expect("the body finishes inside the envelope");
+        assert!(r.html.contains("Streamed"));
     }
 
     /// The retry leg keeps what the old retry gave: a first request stuck for
@@ -4348,7 +4457,7 @@ mod tests {
                 &format!("{base}/stall.pdf"),
                 &HashMap::new(),
                 None,
-                Deadline::from_request_ms(30_000),
+                Deadline::from_request_ms(12_000),
             )
             .await
             .expect_err("no headers, no page");
