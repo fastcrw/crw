@@ -9,6 +9,38 @@ use crw_crawl::single::scrape_url;
 use crate::error::AppError;
 use crate::state::{AppState, validate_renderer_pin};
 
+/// Trusted header the SaaS sets when the `deadline_ms` on the body is its own
+/// default, written because the caller sent none (the SaaS always sends one,
+/// see `crw-saas/src/lib/scrape-deadline.ts`). Same channel as
+/// `x-crw-force-cloak`: the engine is not internet-exposed in the managed
+/// deployment.
+const DEADLINE_DEFAULT_HEADER: &str = "x-crw-deadline-default";
+
+/// The deadline for one synchronous scrape. Its length is always
+/// `effective_deadline_ms`; it is hard ([`Deadline::is_hard`]) only when the
+/// caller set it: `deadline_ms` is present and the front-end did not mark it as
+/// its own default. `headers` is `None` where no front-end sits in between
+/// (MCP), so a deadline there is the caller's.
+pub(crate) fn scrape_deadline(
+    config: &crw_core::config::AppConfig,
+    req: &ScrapeRequest,
+    headers: Option<&axum::http::HeaderMap>,
+) -> Deadline {
+    let ms = config.effective_deadline_ms(
+        req.deadline_ms,
+        crw_core::actions::deadline_wait_for(req.actions.as_ref(), req.wait_for),
+    );
+    let chosen_upstream = headers
+        .and_then(|h| h.get(DEADLINE_DEFAULT_HEADER))
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
+    if req.deadline_ms.is_some() && !chosen_upstream {
+        Deadline::hard_ms(ms)
+    } else {
+        Deadline::from_request_ms(ms)
+    }
+}
+
 pub async fn scrape(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -94,10 +126,7 @@ pub async fn scrape(
     let user_agent = &state.config.crawler.user_agent;
     let default_stealth =
         state.config.crawler.stealth.enabled && state.config.crawler.stealth.inject_headers;
-    let deadline = Deadline::from_request_ms(state.config.effective_deadline_ms(
-        req.deadline_ms,
-        crw_core::actions::deadline_wait_for(req.actions.as_ref(), req.wait_for),
-    ));
+    let deadline = scrape_deadline(&state.config, &req, Some(&headers));
     let data = scrape_url(
         &req,
         &state.renderer,
@@ -195,4 +224,45 @@ pub async fn scrape(
     let mut resp = ApiResponse::ok(data);
     resp.warning = warning;
     Ok(Json(resp))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    fn req(deadline_ms: Option<u64>) -> ScrapeRequest {
+        ScrapeRequest {
+            url: "https://example.com".into(),
+            deadline_ms,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn only_a_deadline_the_caller_sent_is_hard() {
+        let cfg = crw_core::config::AppConfig::default();
+        let mut marked = HeaderMap::new();
+        marked.insert(DEADLINE_DEFAULT_HEADER, "1".parse().unwrap());
+
+        let sent = scrape_deadline(&cfg, &req(Some(15_000)), Some(&HeaderMap::new()));
+        assert!(sent.is_hard());
+        assert_eq!(sent.requested_ms(), 15_000);
+        // MCP: no front-end in between, the deadline is the caller's.
+        assert!(scrape_deadline(&cfg, &req(Some(15_000)), None).is_hard());
+
+        // The SaaS filled it in: same length, not hard.
+        let chosen = scrape_deadline(&cfg, &req(Some(30_000)), Some(&marked));
+        assert!(!chosen.is_hard());
+        assert_eq!(chosen.requested_ms(), 30_000);
+
+        // None sent: the engine default, not hard, marker or not.
+        let default = scrape_deadline(&cfg, &req(None), None);
+        assert!(!default.is_hard());
+        assert_eq!(
+            default.requested_ms(),
+            cfg.effective_deadline_ms(None, None)
+        );
+        assert!(!scrape_deadline(&cfg, &req(None), Some(&marked)).is_hard());
+    }
 }

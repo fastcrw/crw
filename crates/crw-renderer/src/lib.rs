@@ -1062,7 +1062,9 @@ pub const MIN_TIER_BUDGET: Duration = Duration::from_millis(500);
 /// (prod-measured: remaining ~2s). The arm's fetch is dispatched with a fresh
 /// `Deadline::now_plus(this)` so recovery is actually attempted; only
 /// hard-blocked scrapes (which would otherwise fail) pay the extra time, and the
-/// SaaS→engine fetch tolerates up to 120s (`crw-client.ts TIMEOUT_MS`).
+/// SaaS→engine fetch tolerates up to 120s (`crw-client.ts TIMEOUT_MS`). That
+/// holds for a deadline chosen for the caller; under one the caller set itself
+/// the arm ends with it instead (see [`chrome_proxy_arm_budget`]).
 ///
 /// Sized from a live measurement (2026-09-08, `www.carfax.ca` behind Azure Front
 /// Door): a residential Chrome render of the page takes 12.3 to 16.3 s end to
@@ -1078,6 +1080,31 @@ pub const MIN_TIER_BUDGET: Duration = Duration::from_millis(500);
 /// slow the direct chrome tier on the hot path, so the max is applied to the
 /// proxy tier only.
 pub(crate) const CHROME_PROXY_ARM_BUDGET_MS: u64 = 20_000;
+
+/// Least budget worth a residential attempt under a caller's own deadline.
+/// The fastest residential serves measured from this box were 1.9 to 2.7 s
+/// (4 of 70, 2026-11-25), so below this the arm practically never serves and
+/// is skipped instead of started.
+const CHROME_PROXY_ARM_MIN: Duration = Duration::from_secs(3);
+
+/// Budget for one post-ladder chrome_proxy arm run. A deadline chosen for the
+/// caller (engine default, the SaaS's own default, crawl and batch pages) gets
+/// the fresh [`CHROME_PROXY_ARM_BUDGET_MS`], as the ladder has burned it down
+/// (see there). A deadline the caller set itself ([`crw_core::Deadline::is_hard`])
+/// gets only what is left of it, capped at the same budget, and the arm does
+/// not run when that is under [`CHROME_PROXY_ARM_MIN`]. Such a caller has
+/// stopped waiting once its deadline passes, so a recovery that lands later is
+/// residential bandwidth and a pool slot spent on an answer nobody reads (prod
+/// 2026-11-24: 32 scrapes at `deadlineMs` 15 or 18 s answered at 33 to 38 s,
+/// 22 of them failed anyway). No grace is added on top: building the response
+/// after the arm already takes up to ~0.6 s (bench 2026-11-26).
+fn chrome_proxy_arm_budget(deadline: &crw_core::Deadline) -> Duration {
+    let full = Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS);
+    if !deadline.is_hard() {
+        return full;
+    }
+    deadline.remaining().min(full)
+}
 
 /// Budget a residential-first attempt always leaves for lightpanda/chrome to
 /// run after it if chrome_proxy fails.
@@ -5089,6 +5116,8 @@ impl FallbackRenderer {
             // the arm, where they run once.
             let actions_already_ran =
                 actions_requested() && thin_result.as_ref().is_some_and(|r| r.actions.is_some());
+            let arm_has_time =
+                !deadline.is_hard() || chrome_proxy_arm_budget(&deadline) >= CHROME_PROXY_ARM_MIN;
             let arm_wanted = saw_hard_block
                 && !actions_already_ran
                 && !chain.contains(&kind)
@@ -5098,6 +5127,20 @@ impl FallbackRenderer {
                 // needs the arm to uncover the challenge that opens cloak.
                 && (opted_after_egress || !self.residential_held_hosts.should_proxy(&host).await)
                 && (opted_after_egress || !self.breakers.host_for(&host, kind).await.is_open());
+            // Wanted, but the caller's own deadline leaves too little for a
+            // residential attempt: no permit, no probe claim, no traffic.
+            if arm_wanted && !arm_has_time {
+                metrics()
+                    .render_route_decision_total
+                    .with_label_values(&[kind.as_str(), "armDeadline"])
+                    .inc();
+                tracing::info!(
+                    host = %host,
+                    remaining_ms = deadline.remaining().as_millis() as u64,
+                    "chrome_proxy arm skipped: caller deadline",
+                );
+            }
+            let arm_wanted = arm_wanted && arm_has_time;
             let arm_permit = if arm_wanted {
                 self.chrome_proxy_arm_sem.clone().try_acquire_owned().ok()
             } else {
@@ -5128,13 +5171,27 @@ impl FallbackRenderer {
                     }
                 }
                 let entry = self.pick_proxy_for_url(url);
-                // Fresh budget (not the exhausted shared deadline) so the
-                // residential connect + nav + render can actually complete; the
-                // SaaS→engine fetch tolerates up to 120s. Effective render budget
-                // is min(CHROME_PROXY_ARM_BUDGET_MS, chrome_nav_budget_ms).
-                let arm_deadline = crw_core::Deadline::now_plus(std::time::Duration::from_millis(
-                    CHROME_PROXY_ARM_BUDGET_MS,
-                ));
+                // Its own budget (not the exhausted shared deadline) so the
+                // residential connect + nav + render can actually complete;
+                // under a deadline the caller set itself it ends with that
+                // deadline (`chrome_proxy_arm_budget`). Effective
+                // render budget is min(this, chrome_nav_budget_ms). Read again
+                // here, after the lookups above, so their wait is not added on
+                // top of the grace.
+                let arm_budget = chrome_proxy_arm_budget(&deadline);
+                let arm_deadline = crw_core::Deadline::now_plus(arm_budget);
+                let arm_started = std::time::Instant::now();
+                // The caller's own deadline cut this run short of the full
+                // budget. A failure it ran out of time on then says nothing
+                // about the host or the exit (a cut-off render of a page that
+                // clears in 12 s looks like a wall), so it must not hold the
+                // host, strike its exit or count on its breakers: those verdicts
+                // apply to every later request, default deadlines included. A
+                // wall that rendered in full, and every success, still count.
+                // The second of slack keeps a run that got all but a few
+                // milliseconds of its budget counted as the tier's.
+                let arm_clamped = arm_budget + Duration::from_secs(1)
+                    < Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS);
                 // A fresh sticky exit, remembered for the host if it serves the
                 // page (see `residential_hosts`).
                 let sessid = format!("crp{:016x}", rand::random::<u64>());
@@ -5169,6 +5226,20 @@ impl FallbackRenderer {
                         // interactive solve.
                         let r_cf_challenge = detector::looks_like_cloudflare_challenge(&r.html);
                         let r_ok = !r_cf_challenge && Self::residential_body_ok(&r);
+                        // A body the caller's deadline cut off before it settled
+                        // (`arm_clamped` and the nav budget fired): a rendered
+                        // wall is still a verdict, a half-loaded page is not.
+                        let cut_off = arm_clamped && r.truncated;
+                        tracing::info!(
+                            host = %host,
+                            budget_ms = arm_budget.as_millis() as u64,
+                            hard = deadline.is_hard(),
+                            elapsed_ms = arm_started.elapsed().as_millis() as u64,
+                            ok = r_ok,
+                            truncated = r.truncated,
+                            cf_probe,
+                            "chrome_proxy arm",
+                        );
                         // The challenge this arm uncovered is the ONLY thing
                         // that can open the cloak gate below. Set under cfg so
                         // the lean build neither binds nor assigns it.
@@ -5216,7 +5287,7 @@ impl FallbackRenderer {
                             }
                         } else if cf_probe && !host.is_empty() {
                             self.note_cf_probe_failure(&host).await;
-                        } else if !host.is_empty() && self.residential_body_walled(&r) {
+                        } else if !host.is_empty() && !cut_off && self.residential_body_walled(&r) {
                             // A non-Cloudflare wall the exit could not clear. Only
                             // a wall body counts: a thin page, a failed render or
                             // a 404 is the URL, and a timeout or tunnel error is
@@ -5275,6 +5346,8 @@ impl FallbackRenderer {
                                 };
                                 let verdict = if cf_routed_onward {
                                     BreakerOutcome::SiteBlocked
+                                } else if cut_off {
+                                    BreakerOutcome::DeadlineClamped
                                 } else {
                                     BreakerOutcome::RenderError
                                 };
@@ -5306,6 +5379,16 @@ impl FallbackRenderer {
                         }
                     }
                     Err(e) => {
+                        tracing::info!(
+                            host = %host,
+                            budget_ms = arm_budget.as_millis() as u64,
+                            hard = deadline.is_hard(),
+                            elapsed_ms = arm_started.elapsed().as_millis() as u64,
+                            ok = false,
+                            cf_probe,
+                            error = %LogErr(&e),
+                            "chrome_proxy arm",
+                        );
                         if cf_probe && !host.is_empty() {
                             // Every probe that did not serve the page spends one
                             // of the host's two probes per TTL, an error too. A
@@ -5326,15 +5409,21 @@ impl FallbackRenderer {
                             // matches only cloak's own content messages, so this
                             // arm keeps recording a real transport failure
                             // globally.
-                            let global = (!is_cloak_content_verdict(&e))
-                                .then_some(BreakerOutcome::ConnectionError);
+                            //
+                            // A timeout inside a budget the caller's own deadline
+                            // cut (`arm_clamped`) is that deadline's doing, not the
+                            // tier's (the ladder books it the same way). Counted,
+                            // short-deadline callers could switch the arm off for
+                            // the host, or globally for every host. Runs on the
+                            // full budget still feed both breakers.
+                            let outcome = if arm_clamped && matches!(e, CrwError::Timeout(_)) {
+                                BreakerOutcome::DeadlineClamped
+                            } else {
+                                BreakerOutcome::ConnectionError
+                            };
+                            let global = (!is_cloak_content_verdict(&e)).then_some(outcome);
                             self.breakers
-                                .record_scoped_outcome(
-                                    &host,
-                                    kind,
-                                    global,
-                                    Some(BreakerOutcome::ConnectionError),
-                                )
+                                .record_scoped_outcome(&host, kind, global, Some(outcome))
                                 .await;
                         }
                         if self.latency_breakdown {
@@ -6360,6 +6449,8 @@ mod tests {
     enum MockBehavior {
         Ok(String),
         OkStatus(u16, String),
+        /// A 200 the nav budget cut off (`FetchResult::truncated`).
+        OkTruncated(String),
         Err(String),
         Timeout,
         /// Panics if fetched: proves a tier was NEVER consulted. Only the
@@ -6378,8 +6469,9 @@ mod tests {
             _wait_for_ms: Option<u64>,
             _deadline: crw_core::Deadline,
         ) -> CrwResult<FetchResult> {
+            let truncated = matches!(self.behavior, MockBehavior::OkTruncated(_));
             let (status, html) = match &self.behavior {
-                MockBehavior::Ok(html) => (200u16, html.clone()),
+                MockBehavior::Ok(html) | MockBehavior::OkTruncated(html) => (200u16, html.clone()),
                 MockBehavior::OkStatus(s, html) => (*s, html.clone()),
                 MockBehavior::Err(msg) => return Err(CrwError::RendererError(msg.clone())),
                 MockBehavior::Timeout => return Err(CrwError::Timeout(1)),
@@ -6398,7 +6490,7 @@ mod tests {
                 render_decision: None,
                 credit_cost: 0,
                 warnings: Vec::new(),
-                truncated: false,
+                truncated,
                 budget_settled: false,
                 deadline_exceeded: false,
                 captured_responses: Vec::new(),
@@ -10241,6 +10333,161 @@ mod tests {
         ]);
         r.auto_egress_escalation = true;
         (lp, chrome, proxy, r)
+    }
+
+    /// Runs one walled scrape through the post-ladder arm under `deadline` and
+    /// returns the chrome_proxy mock plus the chrome mock. Fresh renderer each
+    /// time: a served arm remembers the host and the next call would go
+    /// residential-first instead.
+    async fn walled_scrape_under(
+        deadline: crw_core::Deadline,
+    ) -> (Arc<SeqFetcher>, Arc<SeqFetcher>) {
+        let (_lp, chrome, proxy, r) =
+            walled_ladder_with_proxy(vec![MockBehavior::Ok(recovered_html())]);
+        let _ = r
+            .fetch(
+                "https://example.com/1",
+                &HashMap::new(),
+                Some(true),
+                None,
+                Some("auto"),
+                deadline,
+            )
+            .await;
+        (proxy, chrome)
+    }
+
+    #[tokio::test]
+    async fn chrome_proxy_arm_ends_with_the_callers_own_deadline() {
+        // The caller set 12 s itself: the arm ends with it (main
+        // gave it a fresh 20 s past it). Upper bound only, so a slow ladder on a
+        // loaded box cannot flake it.
+        let (proxy, _) = walled_scrape_under(crw_core::Deadline::hard_ms(12_000)).await;
+        assert_eq!(proxy.calls(), 1, "the arm must fire with 12 s left");
+        let budget = proxy.last_budget().expect("arm budget recorded");
+        assert!(
+            budget <= Duration::from_millis(12_000),
+            "arm outran the caller's deadline: {budget:?}"
+        );
+        assert!(budget >= CHROME_PROXY_ARM_MIN, "{budget:?}");
+    }
+
+    #[tokio::test]
+    async fn chrome_proxy_arm_is_skipped_when_the_callers_deadline_is_spent() {
+        // 1.5 s is under the minimum: no residential attempt.
+        let (proxy, chrome) = walled_scrape_under(crw_core::Deadline::hard_ms(1_500)).await;
+        assert!(
+            chrome.calls() >= 1,
+            "the ladder must have run and hit the wall"
+        );
+        assert_eq!(proxy.calls(), 0, "the arm ran past a spent caller deadline");
+    }
+
+    #[tokio::test]
+    async fn chrome_proxy_arm_keeps_its_fresh_budget_on_a_chosen_deadline() {
+        // A deadline chosen for the caller (engine default, the SaaS default,
+        // crawl) is unchanged, however little of it is left.
+        for d in [
+            crw_core::Deadline::from_request_ms(1_500),
+            crw_core::Deadline::from_request_ms(6_000),
+        ] {
+            let (proxy, _) = walled_scrape_under(d).await;
+            assert_eq!(proxy.calls(), 1);
+            let budget = proxy.last_budget().expect("arm budget recorded");
+            assert!(
+                budget > Duration::from_millis(CHROME_PROXY_ARM_BUDGET_MS - 4_000),
+                "{budget:?}"
+            );
+        }
+    }
+
+    /// Drives `n` walled scrapes on one host whose arm always times out.
+    async fn arm_timeouts_on_one_host(
+        n: usize,
+        deadline: impl Fn() -> crw_core::Deadline,
+    ) -> (Arc<SeqFetcher>, FallbackRenderer) {
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![MockBehavior::Timeout]);
+        for i in 0..n {
+            let _ = r
+                .fetch(
+                    &format!("https://example.com/{i}"),
+                    &HashMap::new(),
+                    Some(true),
+                    None,
+                    Some("auto"),
+                    deadline(),
+                )
+                .await;
+        }
+        (proxy, r)
+    }
+
+    #[tokio::test]
+    async fn a_clamped_arm_timeout_does_not_open_the_global_breaker() {
+        // Past the breaker's min_calls (50): the caller's own short deadline cut
+        // the arm's budget, so its timeouts are the deadline's, not the tier's.
+        // Counted they would switch the arm off for the host, globally for every
+        // host, and with it for requests on a full budget. Those still feed both
+        // breakers (see the next test).
+        let (proxy, r) = arm_timeouts_on_one_host(60, || crw_core::Deadline::hard_ms(8_000)).await;
+        assert!(proxy.calls() >= 50, "arm ran {} times", proxy.calls());
+        assert!(!r.breakers.global_for(RendererKind::ChromeProxy).is_open());
+        assert!(
+            !r.breakers
+                .host_for("example.com", RendererKind::ChromeProxy)
+                .await
+                .is_open()
+        );
+    }
+
+    /// Four walled arm runs on one host under a caller's own 8 s deadline (so
+    /// every arm budget is clamped), with the proxy answering `behavior`.
+    async fn clamped_walled_arms(behavior: MockBehavior) -> (Arc<SeqFetcher>, FallbackRenderer) {
+        let (_lp, _chrome, proxy, r) = walled_ladder_with_proxy(vec![behavior]);
+        for i in 0..4 {
+            let _ = r
+                .fetch(
+                    &format!("https://example.com/{i}"),
+                    &HashMap::new(),
+                    Some(true),
+                    None,
+                    Some("auto"),
+                    crw_core::Deadline::hard_ms(8_000),
+                )
+                .await;
+        }
+        (proxy, r)
+    }
+
+    #[tokio::test]
+    async fn cut_off_arm_walls_never_hold_a_host_for_default_traffic() {
+        // Two walled arms hold the host (see the tests below), and a hold stops
+        // the arm for every request on it. A wall the caller's own short deadline
+        // cut off before it settled says nothing about the host: requests on a
+        // chosen deadline must still get the arm afterwards.
+        let (proxy, r) = clamped_walled_arms(MockBehavior::OkTruncated(arm_wall_html())).await;
+        assert_eq!(proxy.calls(), 4, "every clamped arm ran");
+        assert!(!r.residential_held_hosts.should_proxy("example.com").await);
+        fetch_example(&r, 1).await;
+        assert_eq!(proxy.calls(), 5, "the default request still got the arm");
+    }
+
+    #[tokio::test]
+    async fn a_wall_that_rendered_in_full_still_holds_under_a_short_deadline() {
+        // A short budget does not excuse a wall the exit fully rendered: the
+        // host is held after two, as on a full budget, so a caller looping short
+        // deadlines on a banned host cannot keep the residential pool busy.
+        let (proxy, r) = clamped_walled_arms(MockBehavior::Ok(arm_wall_html())).await;
+        assert_eq!(proxy.calls(), 2, "two walled arms, then held");
+        assert!(r.residential_held_hosts.should_proxy("example.com").await);
+    }
+
+    #[tokio::test]
+    async fn an_unclamped_arm_timeout_still_counts() {
+        // On its full budget a timeout is the tier's: it counts globally too.
+        let (proxy, r) = arm_timeouts_on_one_host(60, tdl).await;
+        assert!(proxy.calls() >= 50, "arm ran {} times", proxy.calls());
+        assert!(r.breakers.global_for(RendererKind::ChromeProxy).is_open());
     }
 
     #[tokio::test]
