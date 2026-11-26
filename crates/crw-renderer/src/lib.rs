@@ -10511,9 +10511,12 @@ mod tests {
     #[tokio::test]
     async fn chrome_proxy_arm_keeps_its_fresh_budget_on_a_chosen_deadline() {
         // A deadline chosen for the caller (engine default, the SaaS default,
-        // crawl) is unchanged, however little of it is left.
+        // crawl) is unchanged, however little of it is left. 2.9 s is under
+        // CHROME_PROXY_ARM_MIN yet leaves the ladder ample time above
+        // MIN_TIER_BUDGET: at 1.5 s a slow runner drained it before the tiers
+        // ran, no wall was seen and the arm was never reached.
         for d in [
-            crw_core::Deadline::from_request_ms(1_500),
+            crw_core::Deadline::from_request_ms(2_900),
             crw_core::Deadline::from_request_ms(6_000),
         ] {
             let (proxy, _) = walled_scrape_under(d).await;
