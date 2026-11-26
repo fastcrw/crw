@@ -84,6 +84,28 @@ const NETWORK_IDLE_QUIET_MS: i64 = 500;
 /// the readiness poll's window because a wrong "complete" hides a real
 /// truncation from the caller.
 const BUDGET_SETTLED_QUIET_MS: i64 = 1000;
+/// Time held back from the post-navigate race so the partial snapshot it falls
+/// back to finishes before the request's deadline instead of being cancelled
+/// by the tier's outer timeout. Small on purpose: the race is only shortened
+/// when the deadline binds, and on the SaaS's 5 s default a larger reserve
+/// would cut the phase of pages that finish today. The snapshot's own steps
+/// are fitted into what is left instead (see `snapshot_step_budgets`).
+const SNAPSHOT_RESERVE: Duration = Duration::from_millis(1000);
+
+/// Timeouts for the partial snapshot's two steps, `Page.stopLoading` and the
+/// DOM read: their usual 1 s and 2 s, shrunk to fit `left` so the read still
+/// lands before the deadline. The read gets the larger share: it is the one
+/// that returns the page. A tier that skips the stop gives it all to the read.
+fn snapshot_step_budgets(left: Duration, stops: bool) -> (Duration, Duration) {
+    let usable = left.saturating_sub(Duration::from_millis(100));
+    let stop = if stops {
+        Duration::from_secs(1).min(usable / 4)
+    } else {
+        Duration::ZERO
+    };
+    let read = Duration::from_secs(2).min(usable.saturating_sub(stop));
+    (stop, read)
+}
 /// latency-qn fast-ready: mandatory content floor (non-whitespace body chars)
 /// below which we NEVER early-exit — prevents snapshotting an empty CSR shell
 /// (the quality red line; CSR SPAs go load+idle with body still empty). Matches
@@ -3851,6 +3873,13 @@ impl CdpRenderer {
             // we attempt a partial-DOM snapshot and return `truncated = true`;
             // `single.rs` decides success on md length.
             let phase = self.post_navigate_phase(conn, &session_id, url, wait_for_ms, &net_tracker);
+            // `nav_budget` was sized before the navigation, so a slow origin's
+            // load (6.5 s on milanwillowglen.com) pushed this race past the
+            // tier's outer timeout, which ends with the request's deadline:
+            // the outer timeout fired first and the loaded page came back as a
+            // bare Timeout with no snapshot. End the race early enough for the
+            // snapshot below to run inside the deadline.
+            let nav_budget = nav_budget.min(deadline.remaining().saturating_sub(SNAPSHOT_RESERVE));
             let (html, truncated, settled) = match tokio::time::timeout(nav_budget, phase).await {
                 Ok(Ok(html)) => (html, false, false),
                 Ok(Err(err)) => return Err(err),
@@ -3886,17 +3915,20 @@ impl CdpRenderer {
                     // (`Transfer.unpark`, state `.delivering`) that aborts the whole
                     // browser and every render on it. Seen 7x in prod on 2026-11-15.
                     // Its snapshot does not need the stop; the target is closed next.
-                    if self.name != "lightpanda" {
+                    let stops = self.name != "lightpanda";
+                    let (stop_budget, read_budget) =
+                        snapshot_step_budgets(deadline.remaining(), stops);
+                    if stops {
                         let _ = conn
                             .send_recv(
                                 "Page.stopLoading",
                                 serde_json::json!({}),
                                 Some(&session_id),
-                                Duration::from_secs(1),
+                                stop_budget,
                             )
                             .await;
                     }
-                    let html = Self::eval_html(conn, &session_id, Duration::from_secs(2))
+                    let html = Self::eval_html(conn, &session_id, read_budget)
                         .await
                         .unwrap_or_default();
                     crw_core::metrics::metrics()
@@ -6122,6 +6154,30 @@ mod tests {
     }
 
     // --- CdpRenderer builder field assignment -----------------------------------
+
+    #[test]
+    fn snapshot_steps_fit_the_time_left() {
+        let ms = Duration::from_millis;
+        // Plenty left: the usual 1 s stop and 2 s read.
+        assert_eq!(
+            crate::cdp::snapshot_step_budgets(ms(10_000), true),
+            (ms(1000), ms(2000))
+        );
+        // The reserve: both steps end before the deadline.
+        let (stop, read) = crate::cdp::snapshot_step_budgets(ms(1000), true);
+        assert_eq!((stop, read), (ms(225), ms(675)));
+        assert!(stop + read < ms(1000));
+        // LightPanda skips the stop, so the read gets all of it.
+        assert_eq!(
+            crate::cdp::snapshot_step_budgets(ms(1000), false),
+            (ms(0), ms(900))
+        );
+        // Nothing left: no step outlives the deadline.
+        assert_eq!(
+            crate::cdp::snapshot_step_budgets(ms(50), true),
+            (ms(0), ms(0))
+        );
+    }
 
     #[test]
     fn with_nav_budget_overrides_the_default_page_timeout_budget() {
