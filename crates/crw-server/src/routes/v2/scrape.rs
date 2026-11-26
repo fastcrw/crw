@@ -8,7 +8,6 @@ use axum::extract::{MatchedPath, Path, State};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crw_core::Deadline;
 use crw_core::error::CrwError;
 use crw_core::types::{
     OutputFormat, PARKED_DOMAIN_VENDOR, RequestedRenderer, STRUCTURAL_FAILURE_VENDOR, ScrapeRequest,
@@ -374,6 +373,7 @@ pub(crate) fn to_internal(
 pub async fn scrape(
     State(state): State<AppState>,
     matched: MatchedPath,
+    headers: axum::http::HeaderMap,
     body: Result<Json<V2ScrapeRequest>, JsonRejection>,
 ) -> Result<Json<V2ScrapeResponse>, V2Error> {
     let Json(mut v2) = body.map_err(AppError::from)?;
@@ -410,10 +410,7 @@ pub async fn scrape(
     let user_agent = &state.config.crawler.user_agent;
     let default_stealth =
         state.config.crawler.stealth.enabled && state.config.crawler.stealth.inject_headers;
-    let deadline = Deadline::from_request_ms(state.config.effective_deadline_ms(
-        req.deadline_ms,
-        crw_core::actions::deadline_wait_for(req.actions.as_ref(), req.wait_for),
-    ));
+    let deadline = crate::routes::scrape::scrape_deadline(&state.config, &req, Some(&headers));
 
     let data = scrape_url(
         &req,

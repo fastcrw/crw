@@ -17,6 +17,10 @@ use std::time::{Duration, Instant};
 pub struct Deadline {
     absolute: Instant,
     requested_ms: u64,
+    /// The caller set this deadline itself and stops waiting when it passes,
+    /// as opposed to one the engine (or the SaaS in front of it) chose. Tiers
+    /// that otherwise take a fresh budget of their own end by it instead.
+    hard: bool,
 }
 
 impl Deadline {
@@ -26,6 +30,16 @@ impl Deadline {
         Self {
             absolute: Instant::now() + Duration::from_millis(ms),
             requested_ms: ms,
+            hard: false,
+        }
+    }
+
+    /// Like [`Self::from_request_ms`], for a deadline the caller set itself
+    /// (see [`Self::is_hard`]).
+    pub fn hard_ms(ms: u64) -> Self {
+        Self {
+            hard: true,
+            ..Self::from_request_ms(ms)
         }
     }
 
@@ -34,7 +48,15 @@ impl Deadline {
         Self {
             absolute: Instant::now() + d,
             requested_ms: d.as_millis() as u64,
+            hard: false,
         }
+    }
+
+    /// `true` when the caller set this deadline and stops waiting at it,
+    /// `false` when it was chosen for the caller (a configured default, or a
+    /// fresh budget a tier built for itself).
+    pub fn is_hard(&self) -> bool {
+        self.hard
     }
 
     /// Time remaining until the deadline. Returns `Duration::ZERO` if expired.
@@ -78,6 +100,14 @@ impl Deadline {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_caller_deadline_is_hard() {
+        assert!(Deadline::hard_ms(15_000).is_hard());
+        assert_eq!(Deadline::hard_ms(15_000).requested_ms(), 15_000);
+        assert!(!Deadline::from_request_ms(15_000).is_hard());
+        assert!(!Deadline::now_plus(Duration::from_secs(15)).is_hard());
+    }
 
     #[test]
     fn fresh_deadline_has_remaining() {
