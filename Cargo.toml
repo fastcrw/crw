@@ -65,7 +65,7 @@ toml = "1"
 # HTML processing
 lol_html = "3"
 scraper = "0.29"
-htmd = "0.5"
+htmd = "0.6"
 # htmd node type, read by the custom element handlers in crw-extract
 markup5ever_rcdom = "0.38"
 ego-tree = "0.11"
