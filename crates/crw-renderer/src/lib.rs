@@ -999,6 +999,19 @@ fn is_fingerprint_shaped_transport_error(e: &CrwError) -> bool {
         && !matches!(e, CrwError::Timeout(_))
 }
 
+/// The plain-HTTP failures the impersonated hop is tried on: the
+/// fingerprint-shaped ones, plus a stall on a PDF path. A stall is excluded
+/// above because the ladder could use the time, but no browser tier can fetch
+/// a PDF (chrome turns the navigation into a download and aborts it), so the
+/// hop costs a PDF nothing. And a PDF host may answer only a Chrome TLS
+/// fingerprint and leave any other client waiting for headers after the
+/// handshake: industrial.panasonic.com sent curl 0 bytes in 25 s and the
+/// whole 739 KB PDF in 0.5 s to a Chrome fingerprint (2026-11-26).
+fn impersonated_hop_may_recover(e: &CrwError, url: &str) -> bool {
+    is_fingerprint_shaped_transport_error(e)
+        || (matches!(e, CrwError::Timeout(_)) && url_path_is_pdf(url))
+}
+
 /// Did plain HTTP get a wall: a block page or a challenge, by body or by
 /// header, or a hard-block status? The auto arm's trigger for the
 /// impersonated hop, as one predicate for the `renderJs: false` arm, which
@@ -2112,7 +2125,12 @@ impl FallbackRenderer {
                 // With nothing after the hop, any answer that is not a wall
                 // beats the wall plain HTTP got, a JavaScript shell included:
                 // `renderJs: false` asked for exactly that.
-                let accepted = if ladder_follows {
+                // A PDF has no HTML for the page predicates to read (its
+                // `html` is empty), and no later tier can fetch one, so any
+                // PDF that is not a block status ends the chain here.
+                let accepted = if r.content_type.as_deref() == Some("application/pdf") {
+                    !self.impersonation_blocked(&r)
+                } else if ladder_follows {
                     self.impersonation_accepted(&r)
                 } else {
                     !self.impersonation_blocked(&r)
@@ -2820,7 +2838,7 @@ impl FallbackRenderer {
                 if !is_hard_pinned && self.impersonated.is_some() {
                     let trigger = match &fetched {
                         Ok(r) if plain_http_was_walled(r) => Some(ImpersonatedTrigger::Wall),
-                        Err(e) if is_fingerprint_shaped_transport_error(e) => {
+                        Err(e) if impersonated_hop_may_recover(e, url) => {
                             Some(ImpersonatedTrigger::Transport)
                         }
                         _ => None,
@@ -3068,9 +3086,10 @@ impl FallbackRenderer {
                 // tarpitting origin is slow to every client, so a second
                 // request under a Chrome fingerprint cannot make it fast. It
                 // would only spend the ladder's remaining budget re-learning
-                // that the origin is slow.
+                // that the origin is slow. A PDF path is the exception, see
+                // `impersonated_hop_may_recover`.
                 let fetched = match fetched {
-                    Err(e) if is_fingerprint_shaped_transport_error(&e) => {
+                    Err(e) if impersonated_hop_may_recover(&e, url) => {
                         #[cfg(feature = "impersonated")]
                         if let Some(r) = self
                             .try_impersonated_hop(
@@ -8135,6 +8154,112 @@ mod tests {
                 reason: FailoverErrorKind::VendorBlock,
             })
         );
+    }
+
+    /// Serves a PDF, the shape the impersonated client got from
+    /// industrial.panasonic.com while plain HTTP stalled.
+    #[cfg(feature = "impersonated")]
+    struct PdfFetcher;
+
+    #[cfg(feature = "impersonated")]
+    #[async_trait::async_trait]
+    impl PageFetcher for PdfFetcher {
+        async fn fetch(
+            &self,
+            url: &str,
+            _headers: &HashMap<String, String>,
+            _wait_for_ms: Option<u64>,
+            _deadline: crw_core::Deadline,
+        ) -> CrwResult<FetchResult> {
+            let mut r = MockFetcher {
+                name: "impersonated-http",
+                behavior: MockBehavior::Ok(String::new()),
+            }
+            .fetch(url, &HashMap::new(), None, tdl())
+            .await?;
+            r.content_type = Some("application/pdf".into());
+            r.raw_bytes = Some(b"%PDF-1.7\n%%EOF\n".to_vec());
+            Ok(r)
+        }
+        fn name(&self) -> &str {
+            "impersonated-http"
+        }
+        fn supports_js(&self) -> bool {
+            false
+        }
+        async fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    /// Plain HTTP stalls on a `.pdf` URL: the hop runs (no browser tier can
+    /// fetch a PDF) and its PDF ends the chain, although a PDF has no HTML for
+    /// the page predicates. Off a PDF path a stall still skips the hop.
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn fetch_auto_pdf_stall_takes_the_impersonated_hop() {
+        for render_js in [None, Some(false)] {
+            let http = Arc::new(MockFetcher {
+                name: "http",
+                behavior: MockBehavior::Timeout,
+            }) as Arc<dyn PageFetcher>;
+            let chrome = Arc::new(MockFetcher {
+                name: "chrome",
+                behavior: MockBehavior::Panic("the ladder must not run once the hop has the PDF"),
+            }) as Arc<dyn PageFetcher>;
+            let mut r = make_renderer_with_mocks(vec![chrome]);
+            r.http = http;
+            let built = inject_impersonated(&mut r, Arc::new(PdfFetcher));
+            let result = r
+                .fetch(
+                    "https://industrial.panasonic.com/cdbs/www-data/pdf/RDF0000/ABA0000C1018.pdf",
+                    &HashMap::new(),
+                    render_js,
+                    None,
+                    None,
+                    tdl(),
+                )
+                .await
+                .unwrap_or_else(|e| panic!("render_js={render_js:?}: {e:?}"));
+            assert_eq!(result.content_type.as_deref(), Some("application/pdf"));
+            assert_eq!(result.rendered_with.as_deref(), Some("impersonated-http"));
+            assert_eq!(built.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn fetch_auto_html_stall_still_skips_the_impersonated_hop() {
+        let http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::Timeout,
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(rich_html("CHROME-")),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![chrome]);
+        r.http = http;
+        let built = inject_impersonated(
+            &mut r,
+            Arc::new(MockFetcher {
+                name: "impersonated-http",
+                behavior: MockBehavior::Panic("a stalled HTML origin is slow to every client"),
+            }),
+        );
+        let result = r
+            .fetch(
+                "https://slow.example/page",
+                &HashMap::new(),
+                None,
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.rendered_with.as_deref(), Some("chrome"));
+        assert_eq!(built.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[cfg(feature = "impersonated")]
