@@ -8,6 +8,13 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.49.2](https://github.com/fastcrw/crw/compare/v0.49.1...v0.49.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **renderer:** give an octet-stream PDF attachment the body budget ([e17b908](https://github.com/fastcrw/crw/commit/e17b9086ddb4853b87b13aac95d68b23858969e3))
+
 ## [0.49.1](https://github.com/fastcrw/crw/compare/v0.49.0...v0.49.1) (2026-11-23)
 
 
