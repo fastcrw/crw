@@ -4170,6 +4170,14 @@ mod tests {
     /// Tier timeout above `HTTP_CONNECT_TIMEOUT`, which the race requires.
     const RACE_TIER: std::time::Duration = std::time::Duration::from_millis(2600);
 
+    /// The client reads the proxy env when it is built, and other tests in this
+    /// module set `HTTP_PROXY` under `ENV_LOCK`; building outside the lock can
+    /// pick up their unreachable proxy.
+    fn race_fetcher() -> HttpFetcher {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER)
+    }
+
     /// An origin that sends headers after 4 s, longer than the tier timeout,
     /// used to fail twice (the retry stalled the same way). The first request
     /// now stays alive past the mark and is served inside `2 x tier + backoff`.
@@ -4185,7 +4193,7 @@ mod tests {
             )
         }
         let base = spawn_router(axum::Router::new().route("/", axum::routing::get(slow))).await;
-        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let fetcher = race_fetcher();
         let started = std::time::Instant::now();
         let r = fetcher
             .fetch(
@@ -4230,7 +4238,7 @@ mod tests {
         }
         let base =
             spawn_router(axum::Router::new().route("/", axum::routing::get(stalled_body))).await;
-        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let fetcher = race_fetcher();
         let started = std::time::Instant::now();
         let err = fetcher
             .fetch(
@@ -4274,7 +4282,7 @@ mod tests {
         }
         let base =
             spawn_router(axum::Router::new().route("/", axum::routing::get(late_headers))).await;
-        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let fetcher = race_fetcher();
         let r = fetcher
             .fetch(
                 &format!("{base}/"),
@@ -4303,7 +4311,7 @@ mod tests {
         }
         let base =
             spawn_router(axum::Router::new().route("/", axum::routing::get(first_hangs))).await;
-        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let fetcher = race_fetcher();
         let started = std::time::Instant::now();
         let r = fetcher
             .fetch(
@@ -4333,7 +4341,7 @@ mod tests {
         }
         let base =
             spawn_router(axum::Router::new().route("/stall.pdf", axum::routing::get(never))).await;
-        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let fetcher = race_fetcher();
         let started = std::time::Instant::now();
         let err = fetcher
             .fetch(
