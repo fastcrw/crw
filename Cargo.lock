@@ -1143,7 +1143,7 @@ dependencies = [
  "htmd",
  "jsonschema",
  "lol_html",
- "lopdf 0.46.0",
+ "lopdf 0.47.0",
  "markup5ever_rcdom",
  "once_cell",
  "pdf-inspector",
@@ -2857,9 +2857,9 @@ dependencies = [
 
 [[package]]
 name = "lopdf"
-version = "0.46.0"
+version = "0.47.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d43f64cb8c0d673ff84245a6de9e0172c0cc05dc5dd9d263660b5b4a02b6c4ae"
+checksum = "c6ad532ff9262dd4bfd6e085400cbb39959d48cb8d08518b01b68f77bdf6feca"
 dependencies = [
  "aes 0.9.3",
  "bitflags 2.13.0",
