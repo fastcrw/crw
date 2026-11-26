@@ -145,6 +145,18 @@ timeout_ms = 60000           # LLM budget for one JSON extraction; basis mode ge
 # api_keys = ["crw_live_key-1234"]
 ```
 
+### LLM behind a reverse proxy
+
+When the model endpoint in `[extraction.llm]` sits behind one or more reverse proxies, every hop between CRW and the model needs a read timeout at or above `extraction.llm.timeout_ms`. The shortest hop wins: CRW waits the full `timeout_ms`, but a proxy that gives up first closes the request, and the extraction fails with a `504 Gateway Timeout` from the proxy (the model server usually logs a `499`).
+
+nginx defaults `proxy_read_timeout` to 60 s, so a slow or cold model is cut at 60 s. Raise it on each nginx hop (in Nginx Proxy Manager: the proxy host, Advanced):
+
+```nginx
+proxy_read_timeout 300s;
+```
+
+Any other proxy in the chain (a wake-on-LAN proxy, a gateway) needs its own upstream timeout raised the same way.
+
 ## Stealth mode
 
 Enable globally to make CRW look like a real browser on every HTTP request:
