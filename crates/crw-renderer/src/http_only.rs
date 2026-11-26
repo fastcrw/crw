@@ -120,6 +120,47 @@ fn is_retriable_error(e: &reqwest::Error) -> bool {
     e.is_timeout() && !e.is_connect()
 }
 
+/// A send outcome that settles a slow-origin race: a response the fetch loop
+/// will not retry. An error or a 502-504 leaves the race to the other leg.
+fn settles_race(r: &reqwest::Result<reqwest::Response>) -> bool {
+    matches!(r, Ok(resp) if !is_retriable_status(resp.status().as_u16()))
+}
+
+/// Sends `first`; if it has not finished by `retry_at`, starts `retry` beside
+/// it and returns whichever settles first (see [`settles_race`]). When neither
+/// settles, a response beats an error, and the later outcome beats the earlier
+/// one. The flag says whether the retry was started.
+async fn race_stalled_request<F>(
+    first: F,
+    retry: impl FnOnce() -> F,
+    retry_at: std::time::Duration,
+) -> (reqwest::Result<reqwest::Response>, bool)
+where
+    F: std::future::Future<Output = reqwest::Result<reqwest::Response>>,
+{
+    tokio::pin!(first);
+    tokio::select! {
+        r = &mut first => return (r, false),
+        () = tokio::time::sleep(retry_at) => {}
+    }
+    let second = retry();
+    tokio::pin!(second);
+    let (done, rest) = tokio::select! {
+        r = &mut first => (r, second.as_mut()),
+        r = &mut second => (r, first.as_mut()),
+    };
+    if settles_race(&done) {
+        return (done, true);
+    }
+    let later = rest.await;
+    let out = if later.is_ok() || done.is_err() {
+        later
+    } else {
+        done
+    };
+    (out, true)
+}
+
 /// True when the direct egress could not talk to the origin at all: the peer
 /// refused/reset/aborted the transport, OR the TCP connect timed out (a blackhole
 /// that silently drops our SYN). All are signals our egress IP is unwelcome, which
@@ -659,6 +700,11 @@ impl PageFetcher for HttpFetcher {
         // capping it would newly time out a slow-but-working exit on the 15s search
         // and 92.5s crawl budgets.
         let mut armed_from_challenge = false;
+        // When the slow-origin race below gets headers inside the tier timeout,
+        // the first request keeps the tier timeout as its total, body
+        // included, exactly as before the race gave it a longer one. This is
+        // that end time.
+        let mut body_ends_by: Option<Instant>;
         if proxy_first {
             let m = crw_core::metrics::metrics();
             m.egress_latch_hit_total.inc();
@@ -755,15 +801,71 @@ impl PageFetcher for HttpFetcher {
             // path, or a response whose headers declared one, see below).
             // Never lowered: a budget below the tier timeout keeps the client's.
             // Only the body gets the longer budget: the wait for headers stays at
-            // the tier timeout, so a `.pdf` origin that never answers still fails
-            // as fast as before instead of holding the request for the deadline.
+            // the tier timeout (stretched by the slow-origin race below to
+            // `2 x tier + backoff`), so a `.pdf` origin that never answers does
+            // not hold the request for the deadline.
+            let lifted = lift_body_budget && remaining > self.request_timeout;
             let mut header_budget = remaining;
-            if lift_body_budget && remaining > self.request_timeout {
+            if lifted {
                 req = req.timeout(remaining);
                 header_budget = self.request_timeout;
             }
-            let send_fut = req.send();
-            let send_result = tokio::time::timeout(header_budget, send_fut).await;
+            // An origin that connected and then takes longer than the tier timeout
+            // to send headers (a slow server render: milanwillowglen.com answers
+            // in 3.3 to 6.3 s) used to lose its request at the tier timeout and get
+            // an identical fresh one that stalled the same way, so it failed in
+            // every mode while the deadline still had room. Now the first request
+            // is kept and the retry starts beside it at the moment it always did,
+            // with the budget it always had. The worst case stays at
+            // `2 x tier + backoff`, so later tiers keep the budget they get today.
+            // One exception: a `.pdf` path used to give up at the first header
+            // timeout with no retry, and now waits the same envelope. No browser
+            // tier can fetch a PDF, so the extra wait costs it nothing.
+            // Direct egress on the first attempt only: a proxied attempt has its
+            // own reserves and pays per byte. Needs a tier timeout above the
+            // connect timeout, so a request still pending at the mark is past
+            // DNS, TCP and TLS and waiting on the origin.
+            let retry_at = self.request_timeout + HTTP_RETRY_BACKOFF;
+            let race = attempt == 0
+                && !use_proxy
+                && !use_relaxed
+                && self.request_timeout > HTTP_CONNECT_TIMEOUT
+                && remaining > retry_at + crate::MIN_TIER_BUDGET;
+            body_ends_by = None;
+            let send_result = if race {
+                let envelope = std::cmp::min(remaining, retry_at + self.request_timeout);
+                let (first_budget, retry_budget) = if lifted {
+                    // The body lift stays: a PDF still streams on the whole budget.
+                    header_budget = envelope;
+                    (remaining, remaining - retry_at)
+                } else {
+                    (envelope, envelope - retry_at)
+                };
+                let sent_at = Instant::now();
+                let first = req.timeout(first_budget).send();
+                let retry = || build_request(active_client).timeout(retry_budget).send();
+                let raced = tokio::time::timeout(
+                    header_budget,
+                    race_stalled_request(first, retry, retry_at),
+                )
+                .await;
+                // Once the retry leg has started, the pair was this request's
+                // one retry.
+                match &raced {
+                    Ok((_, true)) => attempt = 1,
+                    // Headers inside the tier timeout: the old total stands.
+                    // Headers after it (before the retry started) are the
+                    // stalled case, whose body gets the envelope the retry
+                    // would have had.
+                    Ok((_, false)) if !lifted && sent_at.elapsed() < self.request_timeout => {
+                        body_ends_by = Some(sent_at + self.request_timeout);
+                    }
+                    _ => {}
+                }
+                raced.map(|(r, _)| r)
+            } else {
+                tokio::time::timeout(header_budget, req.send()).await
+            };
             // "The origin answered us at least once on this request." Recorded HERE,
             // once, rather than in the four `Ok(Ok(_))` arms below, so no future arm can
             // forget it. Direct egress only: a response relayed through the proxy could
@@ -821,7 +923,10 @@ impl PageFetcher for HttpFetcher {
                             url_for_error(url)
                         )));
                     }
-                    return Err(CrwError::Timeout(remaining.as_millis() as u64));
+                    // The wait that ran out is the header wait, which on a PDF
+                    // path is shorter than the attempt's budget: reporting the
+                    // budget read "Timeout after 58000ms" after 4 s.
+                    return Err(CrwError::Timeout(header_budget.as_millis() as u64));
                 }
                 Ok(Ok(r))
                     if attempt < HTTP_MAX_RETRIES && is_retriable_status(r.status().as_u16()) =>
@@ -1181,13 +1286,23 @@ impl PageFetcher for HttpFetcher {
         // Fixing it properly means restructuring `fetch` so the body read sits
         // inside the retry loop; that is a bigger change than this ticket, and the
         // failure needs a proxy that answers headers and then dies.
+        let body_budget = deadline.remaining().max(crate::MIN_TIER_BUDGET);
+        let tier_left = body_ends_by.map(|t| t.saturating_duration_since(Instant::now()));
         let bytes = match tokio::time::timeout(
-            deadline.remaining().max(crate::MIN_TIER_BUDGET),
+            tier_left.map_or(body_budget, |t| t.min(body_budget)),
             read_body_capped(resp, MAX_RESPONSE_BYTES),
         )
         .await
         {
             Ok(r) => r?,
+            // The tier timeout ran out mid-body, which before the race was
+            // reqwest's own timeout failing the body read: the same error class.
+            Err(_) if tier_left.is_some_and(|t| t < body_budget) => {
+                return Err(CrwError::HttpError(format!(
+                    "{}: the body did not arrive within the tier timeout",
+                    url_for_error(url)
+                )));
+            }
             Err(_) => {
                 return Err(CrwError::Timeout(
                     (start.elapsed().as_millis().max(1)) as u64,
@@ -4046,6 +4161,198 @@ mod tests {
         assert!(
             started.elapsed() < std::time::Duration::from_secs(3),
             "took {:?}: the header wait was not bounded by the 250ms tier timeout",
+            started.elapsed()
+        );
+    }
+
+    // ── slow-origin race: the first request outlives the tier timeout ──
+
+    /// Tier timeout above `HTTP_CONNECT_TIMEOUT`, which the race requires.
+    const RACE_TIER: std::time::Duration = std::time::Duration::from_millis(2600);
+
+    /// An origin that sends headers after 4 s, longer than the tier timeout,
+    /// used to fail twice (the retry stalled the same way). The first request
+    /// now stays alive past the mark and is served inside `2 x tier + backoff`.
+    #[tokio::test]
+    async fn slow_headers_are_served_by_the_first_request() {
+        static HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        async fn slow() -> impl axum::response::IntoResponse {
+            HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/html")],
+                "<html><body><h1>Late but whole</h1></body></html>",
+            )
+        }
+        let base = spawn_router(axum::Router::new().route("/", axum::routing::get(slow))).await;
+        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let started = std::time::Instant::now();
+        let r = fetcher
+            .fetch(
+                &format!("{base}/"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(18_000),
+            )
+            .await
+            .expect("a 4 s origin fits the 5.45 s envelope");
+        assert!(r.html.contains("Late but whole"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(5000),
+            "took {:?}: served by the retry, not the first request",
+            started.elapsed()
+        );
+        assert_eq!(
+            HITS.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "the retry still starts at the mark"
+        );
+    }
+
+    /// Headers inside the tier timeout, body stalled: the body keeps the tier
+    /// timeout as before, so the ladder gets the rest of the budget. The race
+    /// only lengthens a wait for HEADERS.
+    #[tokio::test]
+    async fn fast_headers_keep_the_tier_timeout_for_the_body() {
+        async fn stalled_body() -> impl axum::response::IntoResponse {
+            use futures::StreamExt as _;
+            let chunks = futures::stream::iter([&b"<html><body>"[..], &b"</body></html>"[..]])
+                .then(|c| async move {
+                    if c.starts_with(b"</") {
+                        tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                    }
+                    Ok::<_, std::io::Error>(axum::body::Bytes::from_static(c))
+                });
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/html")],
+                axum::body::Body::from_stream(chunks),
+            )
+        }
+        let base =
+            spawn_router(axum::Router::new().route("/", axum::routing::get(stalled_body))).await;
+        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let started = std::time::Instant::now();
+        let err = fetcher
+            .fetch(
+                &format!("{base}/"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(18_000),
+            )
+            .await
+            .expect_err("the body never completes");
+        assert!(matches!(err, CrwError::HttpError(_)), "got {err:?}");
+        assert!(
+            started.elapsed() < RACE_TIER + std::time::Duration::from_millis(700),
+            "took {:?}: the body outlived the tier timeout",
+            started.elapsed()
+        );
+    }
+
+    /// Headers just past the tier timeout but before the retry starts: the
+    /// stalled case, so the body is not held to the tier timeout that has
+    /// already passed.
+    #[tokio::test]
+    async fn headers_just_past_the_tier_mark_still_get_their_body() {
+        async fn late_headers() -> impl axum::response::IntoResponse {
+            use futures::StreamExt as _;
+            tokio::time::sleep(RACE_TIER + std::time::Duration::from_millis(100)).await;
+            let chunks = futures::stream::iter([
+                &b"<html><body><h1>Just late"[..],
+                &b"</h1></body></html>"[..],
+            ])
+            .then(|c| async move {
+                if c.starts_with(b"</") {
+                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                }
+                Ok::<_, std::io::Error>(axum::body::Bytes::from_static(c))
+            });
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/html")],
+                axum::body::Body::from_stream(chunks),
+            )
+        }
+        let base =
+            spawn_router(axum::Router::new().route("/", axum::routing::get(late_headers))).await;
+        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let r = fetcher
+            .fetch(
+                &format!("{base}/"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(18_000),
+            )
+            .await
+            .expect("the body arrives inside the envelope");
+        assert!(r.html.contains("Just late"));
+    }
+
+    /// The retry leg keeps what the old retry gave: a first request stuck for
+    /// good is rescued by a fresh one that answers.
+    #[tokio::test]
+    async fn stuck_first_request_is_rescued_by_the_retry() {
+        static HITS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        async fn first_hangs() -> impl axum::response::IntoResponse {
+            if HITS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/html")],
+                "<html><body><h1>Fresh answer</h1></body></html>",
+            )
+        }
+        let base =
+            spawn_router(axum::Router::new().route("/", axum::routing::get(first_hangs))).await;
+        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let started = std::time::Instant::now();
+        let r = fetcher
+            .fetch(
+                &format!("{base}/"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(18_000),
+            )
+            .await
+            .expect("the retry leg answers");
+        assert!(r.html.contains("Fresh answer"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(4000),
+            "took {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// A `.pdf` origin that never sends headers fails at the envelope, never at
+    /// the deadline, and the error names the wait it made, not the deadline
+    /// ("Timeout after 58000ms" after 4 s on prod).
+    #[tokio::test]
+    async fn pdf_header_stall_reports_the_wait_it_made() {
+        async fn never() -> impl axum::response::IntoResponse {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            (axum::http::StatusCode::OK, "late")
+        }
+        let base =
+            spawn_router(axum::Router::new().route("/stall.pdf", axum::routing::get(never))).await;
+        let fetcher = HttpFetcher::with_timeout("crw-test", None, false, RACE_TIER);
+        let started = std::time::Instant::now();
+        let err = fetcher
+            .fetch(
+                &format!("{base}/stall.pdf"),
+                &HashMap::new(),
+                None,
+                Deadline::from_request_ms(30_000),
+            )
+            .await
+            .expect_err("no headers, no page");
+        let envelope = RACE_TIER + HTTP_RETRY_BACKOFF + RACE_TIER;
+        assert!(
+            matches!(err, CrwError::Timeout(ms) if ms == envelope.as_millis() as u64),
+            "got {err:?}, want Timeout({})",
+            envelope.as_millis()
+        );
+        assert!(
+            started.elapsed() < envelope + std::time::Duration::from_secs(1),
+            "took {:?}",
             started.elapsed()
         );
     }
