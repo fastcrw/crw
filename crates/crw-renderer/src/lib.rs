@@ -813,7 +813,9 @@ pub const JS_ESCALATION_FAILED: &str = "js_escalation_failed:";
 
 /// Soft-block / soft-error status codes where the body often contains real
 /// content despite the status header. Sources:
-///   - UA/header-based bot filters: 401, 403, 405, 406, 412
+///   - UA/header-based bot filters: 401, 403, 405, 406, 409, 412. 409 is
+///     Varnish's proof-of-work verdict on rcgroups.com: plain HTTP gets it
+///     about 10 s in, and only a browser gets the thread (2026-11-27)
 ///   - Rate limits: 429
 ///   - Geo gates: 451
 ///   - Origin overload: 503
@@ -825,19 +827,19 @@ pub const JS_ESCALATION_FAILED: &str = "js_escalation_failed:";
 /// Firecrawl-comparison (April 2026 bench): the JS render path recovered
 /// content in ~25/99 such cases that HTTP alone could not. Shared by the auto
 /// and forced-JS arms of `fetch_inner`, which must agree on what counts as a
-/// body worth warning about. Two further copies of this list still live inline
-/// in `fetch_with_js` — worth folding in, but not while this change is in
-/// flight.
+/// body worth warning about, and by the JS-attempt classifiers in
+/// `classify_js_attempt` and `fetch_with_js`, so a status the HTTP tier
+/// escalates on is also one a browser answer is judged blocked by.
 fn is_soft_block_status(status_code: u16) -> bool {
     matches!(
         status_code,
-        401 | 403 | 404 | 405 | 406 | 410 | 412 | 429 | 451 | 500 | 503
+        401 | 403 | 404 | 405 | 406 | 409 | 410 | 412 | 429 | 451 | 500 | 503
     )
 }
 
 /// Does a soft-block status justify spending the JS ladder on this body?
 ///
-/// Split the set above by WHY each code is in it. For 401/403/405/406/412/429/
+/// Split the set above by WHY each code is in it. For 401/403/405/406/409/412/429/
 /// 451/503 the status itself is the wall, and a browser is a different enough
 /// client to be handed a different answer — the ladder can change the outcome,
 /// so it always runs. For 404/410/500 the listed reason is about the BODY
@@ -2128,14 +2130,26 @@ impl FallbackRenderer {
                 // A PDF has no HTML for the page predicates to read (its
                 // `html` is empty), and no later tier can fetch one, so any
                 // PDF that is not a block status ends the chain here.
-                let accepted = if r.content_type.as_deref() == Some("application/pdf") {
-                    !self.impersonation_blocked(&r)
-                } else if ladder_follows {
-                    self.impersonation_accepted(&r)
-                } else {
-                    !self.impersonation_blocked(&r)
-                };
+                // Only a 2xx replaces the plain answer. A 409 or a 5xx from the
+                // hop is the origin refusing this client, not a page: on
+                // rcgroups.com plain HTTP gets a 202 proof-of-work page, the
+                // hop a 409, and only a browser through the residential arm
+                // gets the thread. Ending there turned a 200 into a failure.
+                let accepted = (200..300).contains(&r.status_code)
+                    && if r.content_type.as_deref() == Some("application/pdf") {
+                        !self.impersonation_blocked(&r)
+                    } else if ladder_follows {
+                        self.impersonation_accepted(&r)
+                    } else {
+                        !self.impersonation_blocked(&r)
+                    };
                 if accepted {
+                    tracing::info!(
+                        url = %LogUrl(&url),
+                        trigger = trigger.as_str(),
+                        status_code = r.status_code,
+                        "impersonated hop accepted",
+                    );
                     r.credit_cost = credit_for(kind);
                     r.render_decision = Some(RenderDecision::Failover {
                         chain: vec![RendererKind::Http, kind],
@@ -3477,10 +3491,7 @@ impl FallbackRenderer {
         // miss. Without this a CF challenge slips through as "thin" (not a hard
         // block), so the chrome_proxy egress-recovery arm never fires.
         let cf_challenge = detector::looks_like_cloudflare_challenge(&result.html);
-        let is_status_blocked = matches!(
-            result.status_code,
-            401 | 403 | 404 | 405 | 406 | 410 | 412 | 429 | 451 | 500 | 503
-        );
+        let is_status_blocked = is_soft_block_status(result.status_code);
         let antibot = self.antibot_result(result.status_code, &result.html);
         let antibot_blocked = self.antibot.escalate_in_failover && antibot.signal.is_blocked();
         // Egress-recoverable hard-block subset (drives the gated chrome_proxy arm).
@@ -4445,13 +4456,10 @@ impl FallbackRenderer {
                     // the size-capped detectors above, so a CF challenge would
                     // otherwise slip through as "thin" and never arm chrome_proxy.
                     let cf_challenge = detector::looks_like_cloudflare_challenge(&result.html);
-                    // Mirrors the HTTP-tier escalation set (lib.rs:658). A JS
+                    // Mirrors the HTTP-tier escalation set (`is_soft_block_status`). A JS
                     // renderer can return 200 with bot HTML or 403 with content
                     // — without this check, both slip through as "valid".
-                    let is_status_blocked = matches!(
-                        result.status_code,
-                        401 | 403 | 404 | 405 | 406 | 410 | 412 | 429 | 451 | 500 | 503
-                    );
+                    let is_status_blocked = is_soft_block_status(result.status_code);
                     // The comprehensive 3-tier antibot classifier. The
                     // `detector` heuristics above only know a fixed phrase
                     // list + 8 named vendors; `classify()` additionally
@@ -8337,6 +8345,158 @@ mod tests {
             1,
             "exactly one fresh hop client per walled fetch"
         );
+    }
+
+    /// rcgroups.com's thread pages: plain HTTP gets Varnish's 202 proof-of-work
+    /// page (or its body stalls), the impersonated client a 409, and only a
+    /// browser gets the thread. The hop's 409 must not end the chain: before
+    /// the 2xx gate prod answered "Target returned 409 Error" at 11 s where the
+    /// ladder had served it.
+    #[cfg(feature = "impersonated")]
+    fn rcgroups_pow_html() -> String {
+        "<!DOCTYPE html><html><head><script>window.POW_CHALLENGE_DATA={\
+         challenge_nonce:'59d5a335f14ce951c89b812db6f283f7',difficulty:'4',\
+         headless_check:'1'};(async()=>{location.reload()})()</script></head>\
+         <body><noscript><h1>JavaScript Required</h1>\
+         <p>Please enable JavaScript to continue.</p></noscript></body></html>"
+            .to_string()
+    }
+
+    fn conflict_html() -> String {
+        "<html><head><title>409 Conflict</title></head><body><h1>Error 409 Conflict</h1>\
+         <p>Conflict. The request could not be completed with the state of the \
+         target resource. Guru Meditation: XID 128371923.</p><hr><p>Varnish cache \
+         server</p></body></html>"
+            .to_string()
+    }
+
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn fetch_auto_impersonated_4xx_keeps_the_ladder_going() {
+        let plain_shapes = [
+            // The slow-body cut is a fingerprint-shaped transport error: the
+            // shape that fires the hop.
+            MockBehavior::Err("the body did not arrive within the tier timeout".into()),
+            MockBehavior::OkStatus(202, rcgroups_pow_html()),
+        ];
+        for (i, plain) in plain_shapes.into_iter().enumerate() {
+            for (hop_name, hop) in [
+                ("409", MockBehavior::OkStatus(409, conflict_html())),
+                ("502", MockBehavior::OkStatus(502, conflict_html())),
+                ("202 PoW", MockBehavior::OkStatus(202, rcgroups_pow_html())),
+            ] {
+                let http = Arc::new(MockFetcher {
+                    name: "http",
+                    behavior: plain.clone(),
+                }) as Arc<dyn PageFetcher>;
+                let chrome = Arc::new(MockFetcher {
+                    name: "chrome",
+                    behavior: MockBehavior::Ok(rich_html("THREAD-")),
+                }) as Arc<dyn PageFetcher>;
+                let mut r = make_renderer_with_mocks(vec![chrome]);
+                r.http = http;
+                let built = inject_impersonated(
+                    &mut r,
+                    Arc::new(MockFetcher {
+                        name: "impersonated-http",
+                        behavior: hop,
+                    }),
+                );
+                let result = r
+                    .fetch(
+                        "https://www.rcgroups.com/forums/showthread.php?4821483",
+                        &HashMap::new(),
+                        None,
+                        None,
+                        None,
+                        tdl(),
+                    )
+                    .await
+                    .unwrap_or_else(|e| panic!("plain #{i}, hop {hop_name}: {e:?}"));
+                assert_eq!(
+                    result.rendered_with.as_deref(),
+                    Some("chrome"),
+                    "plain #{i}, hop {hop_name}: the browser must answer"
+                );
+                assert_eq!(result.status_code, 200);
+                assert!(result.html.contains("THREAD-"));
+                if i == 0 {
+                    assert_eq!(built.load(std::sync::atomic::Ordering::SeqCst), 1);
+                }
+            }
+        }
+    }
+
+    /// The plain-HTTP half of the rcgroups.com shape, no impersonated tier:
+    /// Varnish answers the plain client a 409 about 10 s in. That is its bot
+    /// verdict, so auto escalates exactly as on a 403, and the browser answers.
+    #[tokio::test]
+    async fn fetch_auto_plain_409_escalates_to_the_browser() {
+        let http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::OkStatus(409, conflict_html()),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Ok(rich_html("THREAD-")),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![chrome]);
+        r.http = http;
+        let result = r
+            .fetch(
+                "https://www.rcgroups.com/forums/showthread.php?4821483",
+                &HashMap::new(),
+                None,
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.rendered_with.as_deref(), Some("chrome"));
+        assert_eq!(result.status_code, 200);
+        assert!(result.html.contains("THREAD-"));
+    }
+
+    /// `renderJs: false` has no ladder after the hop, and still takes only a
+    /// 2xx from it: a 409 is not a better answer than the wall plain HTTP got.
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn render_js_false_keeps_the_plain_answer_over_an_impersonated_4xx() {
+        let http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::OkStatus(
+                429,
+                "<html><body><h1>Too Many Requests</h1></body></html>".to_string(),
+            ),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(Vec::new());
+        r.http = http;
+        let built = inject_impersonated(
+            &mut r,
+            Arc::new(MockFetcher {
+                name: "impersonated-http",
+                behavior: MockBehavior::OkStatus(409, conflict_html()),
+            }),
+        );
+        let result = r
+            .fetch(
+                "https://www.rcgroups.com/forums/showthread.php?4821483",
+                &HashMap::new(),
+                Some(false),
+                None,
+                None,
+                tdl(),
+            )
+            .await;
+        assert_eq!(built.load(std::sync::atomic::Ordering::SeqCst), 1);
+        match result {
+            Ok(r) => {
+                assert_ne!(r.rendered_with.as_deref(), Some("impersonated-http"));
+                assert_eq!(r.status_code, 429);
+            }
+            Err(e) => assert!(!format!("{e:?}").contains("409"), "{e:?}"),
+        }
     }
 
     #[cfg(feature = "impersonated")]
@@ -13430,7 +13590,7 @@ mod tests {
     fn other_soft_blocks_escalate_regardless_of_body() {
         // These can hide a real page behind a wall the browser clears, so the
         // body says nothing about whether the ladder is worth it.
-        for code in [401, 403, 405, 406, 412, 429, 451, 503] {
+        for code in [401, 403, 405, 406, 409, 412, 429, 451, 503] {
             assert!(
                 soft_block_warrants_js(code, INERT_404),
                 "{code} must keep escalating on an inert body"
@@ -13448,8 +13608,8 @@ mod tests {
     #[test]
     fn soft_block_status_excludes_success_redirect_and_neighboring_codes() {
         for code in [
-            200, 201, 204, 301, 302, 304, 400, 402, 407, 408, 409, 411, 413, 420, 428, 430, 450,
-            452, 499, 501, 502, 504, 520, 599,
+            200, 201, 204, 301, 302, 304, 400, 402, 407, 408, 411, 413, 420, 428, 430, 450, 452,
+            499, 501, 502, 504, 520, 599,
         ] {
             assert!(
                 !is_soft_block_status(code),
