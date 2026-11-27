@@ -116,11 +116,29 @@ fn element_tag(node: &Node) -> Option<&str> {
 /// of prose. When the `<pre>` text has no newline and one `<div>` inside it
 /// holds all of that text as a run of identical sibling elements, each sibling
 /// becomes a line of a fenced block. Anything else converts as before.
+///
+/// A `<pre>` with real newlines and no `<code>` inside (Sphinx/Pygments:
+/// `<pre><span></span><span class="c1"># comment</span>\n...`) is code too, but
+/// htmd emits it as raw lines, so `#` became a heading and indented lines were
+/// split off. Its content is fenced line by line.
 fn line_element_code_block(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
-    match code_lines_from_elements(element.node) {
-        Some(lines) => Some(fenced_code_block(&lines).into()),
-        None => handlers.fallback(element),
+    if let Some(lines) = code_lines_from_elements(element.node) {
+        return Some(fenced_code_block(&lines).into());
     }
+    let text = node_text(element.node);
+    if text.contains('\n') && !text.trim().is_empty() && !has_descendant(element.node, "code") {
+        let content = handlers.walk_children(element.node).content;
+        let lines: Vec<String> = content.lines().map(str::to_string).collect();
+        return Some(fenced_code_block(&lines).into());
+    }
+    handlers.fallback(element)
+}
+
+fn has_descendant(node: &Rc<Node>, tag: &str) -> bool {
+    node.children
+        .borrow()
+        .iter()
+        .any(|child| element_tag(child) == Some(tag) || has_descendant(child, tag))
 }
 
 fn code_lines_from_elements(pre: &Rc<Node>) -> Option<Vec<String>> {
@@ -900,13 +918,10 @@ mod tests {
 
     #[test]
     fn ordinary_pre_blocks_convert_as_before() {
-        // Real newlines: the line rule does not apply.
+        // Real newlines: the line rule does not apply, the text is fenced as is.
         let with_newlines =
             "<pre><div><span class=\"l\">a = 1</span>\n<span class=\"l\">b = 2</span></div></pre>";
-        assert_eq!(
-            html_to_markdown(with_newlines),
-            htmd::convert(with_newlines).unwrap()
-        );
+        assert_eq!(html_to_markdown(with_newlines), "```\na = 1\nb = 2\n```");
         // Token spans directly under <pre>/<code>, not a <div> of lines.
         let tokens = "<pre><code><span class=\"t\">print</span><span class=\"t\">(</span><span class=\"t\">x</span><span class=\"t\">)</span></code></pre>";
         assert!(html_to_markdown(tokens).contains("print(x)"));
@@ -916,6 +931,19 @@ mod tests {
         // Text outside the run (a visible "Copy" label): fall back.
         let labelled = "<pre><div><button>Copy</button></div><div><span class=\"l\">a</span><span class=\"l\">b</span></div></pre>";
         assert_eq!(html_to_markdown(labelled), htmd::convert(labelled).unwrap());
+    }
+
+    /// Sphinx/Pygments markup (docs.python.org, Read the Docs): no `<code>`.
+    #[test]
+    fn pre_without_code_keeps_its_lines_in_one_block() {
+        let html = "<div class=\"highlight\"><pre><span></span><span class=\"c1\"># compute totals</span>\n<span class=\"k\">def</span> <span class=\"nf\">total</span>(items):\n    s = 0\n    <span class=\"k\">for</span> i <span class=\"ow\">in</span> items:\n        s += i\n    <span class=\"k\">return</span> s\n</pre></div>";
+        let expected = "```\n# compute totals\ndef total(items):\n    s = 0\n    for i in items:\n        s += i\n    return s\n```";
+        let md = html_to_markdown(html);
+        assert!(md.contains(expected), "{md}");
+        let repl = "<pre><span class=\"gp\">&gt;&gt;&gt; </span>x = 1\n<span class=\"gp\">&gt;&gt;&gt; </span>x\n1\n</pre>";
+        assert!(html_to_markdown(repl).contains("```\n>>> x = 1\n>>> x\n1\n```"));
+        let breaks = "<pre>a<br>b\nc</pre>";
+        assert_eq!(html_to_markdown(breaks), "```\na\nb\nc\n```");
     }
 
     #[test]
@@ -928,7 +956,10 @@ mod tests {
     #[test]
     fn layout_tables_without_a_header_are_untouched() {
         let html = "<table><tr><td><pre>| a    | b |\n| ---- | - |</pre></td></tr></table>";
-        assert_eq!(html_to_markdown(html), htmd::convert(html).unwrap());
+        assert_eq!(
+            html_to_markdown(html),
+            "```\n| a    | b |\n| ---- | - |\n```"
+        );
         let nested = "<table><tr><th>H</th></tr><tr><td><table><tr><th>x    </th></tr></table></td></tr></table>";
         assert!(html_to_markdown(nested).contains("| H |"));
     }
