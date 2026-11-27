@@ -2130,12 +2130,21 @@ impl FallbackRenderer {
                 // A PDF has no HTML for the page predicates to read (its
                 // `html` is empty), and no later tier can fetch one, so any
                 // PDF that is not a block status ends the chain here.
-                // Only a 2xx replaces the plain answer. A 409 or a 5xx from the
-                // hop is the origin refusing this client, not a page: on
-                // rcgroups.com plain HTTP gets a 202 proof-of-work page, the
-                // hop a 409, and only a browser through the residential arm
-                // gets the thread. Ending there turned a 200 into a failure.
-                let accepted = (200..300).contains(&r.status_code)
+                // Only a 2xx, or a page that is genuinely not there, replaces
+                // the plain answer. A 409 or a 5xx from the hop is the origin
+                // refusing this client, not a page: Varnish answers rcgroups.com
+                // threads that way, and only a browser through the residential
+                // arm gets the thread. A 404 or 410 the classifier does not call
+                // a block is the answer itself (`is_missing_page`, the HTTP
+                // tier's own rule): Shopify sends plain HTTP a 429 and the hop
+                // the product's real 404, and sending that up the ladder ends in
+                // a "rate limited" verdict about a page that no longer exists.
+                let answered = (200..300).contains(&r.status_code)
+                    || is_missing_page(
+                        r.status_code,
+                        self.antibot_result(r.status_code, &r.html).signal,
+                    );
+                let accepted = answered
                     && if r.content_type.as_deref() == Some("application/pdf") {
                         !self.impersonation_blocked(&r)
                     } else if ladder_follows {
@@ -8458,8 +8467,57 @@ mod tests {
         assert!(result.html.contains("THREAD-"));
     }
 
+    /// Shopify's product pages: plain HTTP gets a 429, the hop the product's
+    /// real 404. That 404 is the answer (the page is gone), as on the HTTP
+    /// tier, not a reason to run the ladder into a "rate limited" verdict.
+    #[cfg(feature = "impersonated")]
+    #[tokio::test]
+    async fn fetch_auto_impersonated_missing_page_is_the_answer() {
+        let http = Arc::new(MockFetcher {
+            name: "http",
+            behavior: MockBehavior::OkStatus(
+                429,
+                "<html><body><h1>Too Many Requests</h1></body></html>".to_string(),
+            ),
+        }) as Arc<dyn PageFetcher>;
+        let chrome = Arc::new(MockFetcher {
+            name: "chrome",
+            behavior: MockBehavior::Panic("a real 404 from the hop ends the chain"),
+        }) as Arc<dyn PageFetcher>;
+        let mut r = make_renderer_with_mocks(vec![chrome]);
+        r.http = http;
+        inject_impersonated(
+            &mut r,
+            Arc::new(MockFetcher {
+                name: "impersonated-http",
+                behavior: MockBehavior::OkStatus(
+                    404,
+                    format!(
+                        "<html><body><h1>404 Not Found</h1><p>This page no longer \
+                         exists but we think you'll love these.</p>{}</body></html>",
+                        rich_html("SHOP-")
+                    ),
+                ),
+            }),
+        );
+        let result = r
+            .fetch(
+                "https://shop.example/products/gone",
+                &HashMap::new(),
+                None,
+                None,
+                None,
+                tdl(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.rendered_with.as_deref(), Some("impersonated-http"));
+        assert_eq!(result.status_code, 404);
+    }
+
     /// `renderJs: false` has no ladder after the hop, and still takes only a
-    /// 2xx from it: a 409 is not a better answer than the wall plain HTTP got.
+    /// 2xx (or a missing page) from it: a 409 is not a better answer than the
+    /// wall plain HTTP got.
     #[cfg(feature = "impersonated")]
     #[tokio::test]
     async fn render_js_false_keeps_the_plain_answer_over_an_impersonated_4xx() {
