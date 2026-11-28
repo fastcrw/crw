@@ -11,12 +11,24 @@ use std::sync::LazyLock;
 /// htmd with two of its handlers wrapped: `table` (padding removed) and `pre`
 /// (code rendered one element per line). Every other element converts exactly
 /// as `htmd::convert` would.
-static CONVERTER: LazyLock<HtmlToMarkdown> = LazyLock::new(|| {
+static CONVERTER: LazyLock<HtmlToMarkdown> = LazyLock::new(|| converter(false));
+
+/// [`CONVERTER`] for input that is a whole document (it has a `<body>`), where
+/// a `<pre>` alone in the body is a browser's view of a plain-text file (see
+/// [`is_whole_document`]).
+static DOCUMENT_CONVERTER: LazyLock<HtmlToMarkdown> = LazyLock::new(|| converter(true));
+
+fn converter(document: bool) -> HtmlToMarkdown {
     HtmlToMarkdown::builder()
         .add_handler(vec!["table"], compact_table)
-        .add_handler(vec!["pre"], line_element_code_block)
+        .add_handler(
+            vec!["pre"],
+            move |handlers: &dyn Handlers, element: Element| {
+                line_element_code_block(handlers, element, document)
+            },
+        )
         .build()
-});
+}
 
 /// Two or more spaces closing a cell. htmd escapes a literal `|` inside a cell
 /// as `&#124;`, so in its table output every `|` is a column delimiter.
@@ -83,14 +95,7 @@ fn htmd_draws_table(table: &Rc<Node>) -> bool {
                 _ => has_header(child),
             })
     }
-    let mut ancestor = parent_of(table);
-    while let Some(node) = ancestor {
-        if matches!(element_tag(&node), Some("td" | "th")) {
-            return false;
-        }
-        ancestor = parent_of(&node);
-    }
-    has_header(table)
+    !has_ancestor(table, &["td", "th"]) && has_header(table)
 }
 
 fn parent_of(node: &Node) -> Option<Rc<Node>> {
@@ -115,30 +120,131 @@ fn element_tag(node: &Node) -> Option<&str> {
 /// htmd fences only `<pre><code>`, so such a sample came out as a single line
 /// of prose. When the `<pre>` text has no newline and one `<div>` inside it
 /// holds all of that text as a run of identical sibling elements, each sibling
-/// becomes a line of a fenced block. Anything else converts as before.
+/// becomes a line of a fenced block.
 ///
 /// A `<pre>` with real newlines and no `<code>` inside (Sphinx/Pygments:
 /// `<pre><span></span><span class="c1"># comment</span>\n...`) is code too, but
 /// htmd emits it as raw lines, so `#` became a heading and indented lines were
-/// split off. Its content is fenced line by line.
-fn line_element_code_block(handlers: &dyn Handlers, element: Element) -> Option<HandlerResult> {
+/// split off. Its literal text is fenced instead (see [`bare_pre_text`]).
+fn line_element_code_block(
+    handlers: &dyn Handlers,
+    element: Element,
+    document: bool,
+) -> Option<HandlerResult> {
     if let Some(lines) = code_lines_from_elements(element.node) {
         return Some(fenced_code_block(&lines).into());
     }
-    let text = node_text(element.node);
-    if text.contains('\n') && !text.trim().is_empty() && !has_descendant(element.node, "code") {
-        let content = handlers.walk_children(element.node).content;
-        let lines: Vec<String> = content.lines().map(str::to_string).collect();
+    if let Some(text) = bare_pre_text(element.node, document) {
+        let lines: Vec<String> = text.lines().map(str::to_string).collect();
         return Some(fenced_code_block(&lines).into());
     }
     handlers.fallback(element)
 }
 
-fn has_descendant(node: &Rc<Node>, tag: &str) -> bool {
+/// The literal text of a multi-line `<pre>` that holds only text and inline
+/// markup (Pygments spans, emphasis, `<br>`, line `<div>`s), read from its
+/// text nodes so nothing in it is escaped or turned into markdown syntax
+/// inside the fence. A `<br>` is a line break and a `<div>` or `<p>` its own
+/// line, as a browser shows them.
+///
+/// `None` keeps htmd's path for anything a fence would make worse: any other
+/// element inside (`<code>` gets htmd's own fence, a link or an image would
+/// lose its target, a list, table or heading its structure), a `<pre>` inside
+/// a table cell or a link (a fence cannot sit in a pipe-table row or in link
+/// text), and a browser's view of a plain-text file ([`is_whole_document`]).
+fn bare_pre_text(pre: &Rc<Node>, document: bool) -> Option<String> {
+    let raw = node_text(pre);
+    if !raw.contains('\n')
+        || raw.trim().is_empty()
+        || !holds_inline_text(pre)
+        || has_ancestor(pre, &["td", "th", "a"])
+        || is_whole_document(pre, document)
+    {
+        return None;
+    }
+    let mut text = String::new();
+    push_pre_text(pre, &mut text);
+    Some(text)
+}
+
+fn holds_inline_text(node: &Rc<Node>) -> bool {
     node.children
         .borrow()
         .iter()
-        .any(|child| element_tag(child) == Some(tag) || has_descendant(child, tag))
+        .all(|child| match element_tag(child) {
+            Some(
+                "span" | "b" | "strong" | "i" | "em" | "u" | "s" | "mark" | "small" | "sub" | "sup"
+                | "font" | "samp" | "kbd" | "var" | "div" | "p",
+            ) => holds_inline_text(child),
+            Some("br") | None => true,
+            Some(_) => false,
+        })
+}
+
+fn push_pre_text(node: &Rc<Node>, out: &mut String) {
+    for child in node.children.borrow().iter() {
+        match &child.data {
+            NodeData::Text { contents } => out.push_str(&contents.borrow()),
+            NodeData::Element { name, .. } => match name.local.as_ref() {
+                "br" => out.push('\n'),
+                "div" | "p" => {
+                    end_line(out);
+                    push_pre_text(child, out);
+                    end_line(out);
+                }
+                _ => push_pre_text(child, out),
+            },
+            _ => {}
+        }
+    }
+}
+
+fn end_line(out: &mut String) {
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+}
+
+fn has_ancestor(node: &Rc<Node>, tags: &[&str]) -> bool {
+    let mut ancestor = parent_of(node);
+    while let Some(n) = ancestor {
+        if element_tag(&n).is_some_and(|t| tags.contains(&t)) {
+            return true;
+        }
+        ancestor = parent_of(&n);
+    }
+    false
+}
+
+/// `<body>` holds this `<pre>` and no other element: how a browser shows a
+/// plain-text or raw markdown response (Chrome: `<pre style="word-wrap:
+/// break-word; white-space: pre-wrap;">`, Firefox: a bare `<pre>`). The
+/// renderer reports no content type for such a page, so the shape is the only
+/// sign of it. In a fragment (readability output, a `cssSelector` match) every
+/// parse puts the content in a `<body>`, so there only Chrome's inline
+/// `pre-wrap` tells the view from a code block that was selected alone.
+// ponytail: Firefox's view (camoufox, self-host only) carries no inline style,
+// so after readability it is fenced whole; nothing is lost. Upgrade: have the
+// browser tiers report `document.contentType`, so `extract()` reads the page
+// as plain text and this shape check can go.
+fn is_whole_document(pre: &Rc<Node>, document: bool) -> bool {
+    let alone = parent_of(pre).is_some_and(|body| {
+        element_tag(&body) == Some("body")
+            && body
+                .children
+                .borrow()
+                .iter()
+                .all(|c| element_tag(c).is_none() || Rc::ptr_eq(c, pre))
+    });
+    let NodeData::Element { attrs, .. } = &pre.data else {
+        return false;
+    };
+    alone
+        && (document
+            || attrs
+                .borrow()
+                .iter()
+                .any(|a| a.name.local.as_ref() == "style" && a.value.contains("pre-wrap")))
 }
 
 fn code_lines_from_elements(pre: &Rc<Node>) -> Option<Vec<String>> {
@@ -272,7 +378,16 @@ pub fn html_to_markdown_with(html: &str, normalize: bool) -> String {
     } else {
         html.to_string()
     };
-    let md = CONVERTER.convert(&html).unwrap_or_default();
+    let has_body = html
+        .as_bytes()
+        .windows(5)
+        .any(|w| w.eq_ignore_ascii_case(b"<body"));
+    let converter = if has_body {
+        &DOCUMENT_CONVERTER
+    } else {
+        &CONVERTER
+    };
+    let md = converter.convert(&html).unwrap_or_default();
     let md = strip_anchor_artifacts(&md);
     let md = strip_data_uris(&md);
     if normalize {
@@ -319,13 +434,12 @@ pub fn drop_repeated_nav_lines(md: &str) -> String {
     let mut first_at: HashMap<&str, usize> = HashMap::new();
     let mut shaped = vec![false; lines.len()];
     let mut repeat = vec![false; lines.len()];
-    let mut in_fenced = false;
+    let mut fence = None;
     for (i, line) in lines.iter().enumerate() {
-        if line.trim_start().starts_with("```") {
-            in_fenced = !in_fenced;
+        if fence_boundary(&mut fence, line) {
             continue;
         }
-        if in_fenced || line.trim().len() < MIN_DEDUP_LINE_LEN {
+        if fence.is_some() || line.trim().len() < MIN_DEDUP_LINE_LEN {
             continue;
         }
         let residue = LINK_OR_IMAGE_RE.replace_all(line, "");
@@ -403,6 +517,32 @@ pub fn drop_repeated_nav_lines(md: &str) -> String {
     out
 }
 
+/// Whether `line` opens or closes a backtick fence, tracking the open fence's
+/// length in `open`. As in CommonMark, a fence of N backticks closes only on a
+/// run of at least N, so the ``` lines of a sample inside a ```` fence are
+/// content (a fenced README in a `<pre>`). Text after the closing run is
+/// tolerated: htmd writes a copy button left in the `<pre>` there (`` ```Copy``).
+fn fence_boundary(open: &mut Option<usize>, line: &str) -> bool {
+    let t = line.trim();
+    // htmd puts a list item's first block on its marker line: `1.  ```` opens.
+    let t = LIST_ITEM_RE
+        .find(t)
+        .map_or(t, |m| t[m.end()..].trim_start());
+    let run = t.len() - t.trim_start_matches('`').len();
+    if run < 3 {
+        return false;
+    }
+    match *open {
+        // CommonMark: a backtick fence's info string holds no backtick, so a
+        // list item that starts with inline code (`` ``` x `` ```) opens nothing.
+        None if t[run..].contains('`') => return false,
+        None => *open = Some(run),
+        Some(n) if run >= n => *open = None,
+        Some(_) => return false,
+    }
+    true
+}
+
 /// A markdown list item at any indent depth: `* x`, `    - x`, `\t1. x`.
 /// htmd indents nested `<ul>`/`<ol>` items by exactly 4 spaces, which is also
 /// the indented-code-block marker, so nested menus, sitemaps and multi-level
@@ -429,7 +569,7 @@ fn convert_indented_code_to_fenced_table_safe(md: &str) -> String {
 fn convert_indented_code_to_fenced_impl(md: &str, table_safe: bool) -> String {
     let mut result = String::with_capacity(md.len());
     let mut code_lines: Vec<&str> = Vec::new();
-    let mut in_fenced = false;
+    let mut fence = None;
     // Whether the last non-blank line before the current indented run was a
     // list item. Only then can the run be list continuation rather than code.
     let mut after_list_item = false;
@@ -444,8 +584,7 @@ fn convert_indented_code_to_fenced_impl(md: &str, table_safe: bool) -> String {
 
     for (idx, line) in lines.iter().copied().enumerate() {
         // Track existing fenced code blocks to avoid double-fencing.
-        if line.trim_start().starts_with("```") {
-            in_fenced = !in_fenced;
+        if fence_boundary(&mut fence, line) {
             if !code_lines.is_empty() {
                 flush_code_block(&mut result, &mut code_lines, run_continues_list);
             }
@@ -455,7 +594,7 @@ fn convert_indented_code_to_fenced_impl(md: &str, table_safe: bool) -> String {
             continue;
         }
 
-        if in_fenced {
+        if fence.is_some() {
             result.push_str(line);
             result.push('\n');
             continue;
@@ -919,8 +1058,7 @@ mod tests {
     #[test]
     fn ordinary_pre_blocks_convert_as_before() {
         // Real newlines: the line rule does not apply, the text is fenced as is.
-        let with_newlines =
-            "<pre><div><span class=\"l\">a = 1</span>\n<span class=\"l\">b = 2</span></div></pre>";
+        let with_newlines = "<div><pre><div><span class=\"l\">a = 1</span>\n<span class=\"l\">b = 2</span></div></pre></div>";
         assert_eq!(html_to_markdown(with_newlines), "```\na = 1\nb = 2\n```");
         // Token spans directly under <pre>/<code>, not a <div> of lines.
         let tokens = "<pre><code><span class=\"t\">print</span><span class=\"t\">(</span><span class=\"t\">x</span><span class=\"t\">)</span></code></pre>";
@@ -940,10 +1078,85 @@ mod tests {
         let expected = "```\n# compute totals\ndef total(items):\n    s = 0\n    for i in items:\n        s += i\n    return s\n```";
         let md = html_to_markdown(html);
         assert!(md.contains(expected), "{md}");
-        let repl = "<pre><span class=\"gp\">&gt;&gt;&gt; </span>x = 1\n<span class=\"gp\">&gt;&gt;&gt; </span>x\n1\n</pre>";
+        let repl = "<div><pre><span class=\"gp\">&gt;&gt;&gt; </span>x = 1\n<span class=\"gp\">&gt;&gt;&gt; </span>x\n1\n</pre></div>";
         assert!(html_to_markdown(repl).contains("```\n>>> x = 1\n>>> x\n1\n```"));
-        let breaks = "<pre>a<br>b\nc</pre>";
+        let breaks = "<div><pre>a<br>b\nc</pre></div>";
         assert_eq!(html_to_markdown(breaks), "```\na\nb\nc\n```");
+    }
+
+    /// The review cases for the bare `<pre>` fence: each must read no worse
+    /// than htmd's own output did.
+    #[test]
+    fn bare_pre_fence_keeps_text_literal_and_leaves_other_shapes_alone() {
+        // A README sample: the inner ``` lines stay content of the outer fence.
+        let readme = "<div><pre># Lib\n\n```python\ndef f():\n    return 1\n```\n</pre></div>";
+        assert_eq!(
+            html_to_markdown(readme),
+            "````\n# Lib\n\n```python\ndef f():\n    return 1\n```\n````"
+        );
+        // Text nodes are not markdown-escaped inside the fence.
+        let shell = "<div><pre><span class=\"nb\">cd</span> ~/app\n<span class=\"nb\">echo</span> `date`\n</pre></div>";
+        assert!(html_to_markdown(shell).contains("```\ncd ~/app\necho `date`\n```"));
+        // Emphasis is code text, not markdown syntax.
+        let man = "<div><pre><b>NAME</b>\n       ls - list <i>directory</i> contents\n</pre></div>";
+        assert!(
+            html_to_markdown(man).contains("```\nNAME\n       ls - list directory contents\n```")
+        );
+        // htmd's path for a link, an image or block markup inside, a `<pre>`
+        // in a link, and a browser's text view (Chrome and Firefox).
+        for html in [
+            "<div><pre>type <a href=\"https://pkg.go.dev/io#Reader\">Reader</a>\ninterface</pre></div>",
+            "<div><pre>one\n<img src=\"/d.png\" alt=\"Diagram\">\nthree</pre></div>",
+            "<div><pre>head\n<ul><li>one</li><li>two</li></ul><h3>Title</h3></pre></div>",
+            "<div><a href=\"/x\"><pre>a\nb</pre></a></div>",
+            "<html><head></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\"># Title\n\nSome *text*.\n</pre></body></html>",
+            "<html><head></head><body><pre># Lib\n\n- item\n</pre></body></html>",
+            // Readability keeps Chrome's view as a bare fragment.
+            "<pre style=\"word-wrap: break-word; white-space: pre-wrap;\"># Title\n\nSome *text*.\n</pre>",
+        ] {
+            assert_eq!(
+                html_to_markdown(html),
+                htmd::convert(html).unwrap(),
+                "{html}"
+            );
+        }
+        // A fragment that is only the `<pre>` (a `cssSelector: pre` match) is
+        // a code block, not a browser's text view.
+        assert_eq!(
+            html_to_markdown("<pre>a\n    b</pre>"),
+            "```\na\n    b\n```"
+        );
+        let cell = "<table><tr><th>h</th><th>k</th></tr><tr><td><pre>a\nb</pre></td><td>z</td></tr></table>";
+        assert_eq!(
+            html_to_markdown(cell),
+            "| h | k |\n| --- | - |\n| a b | z |"
+        );
+    }
+
+    /// A list item's first block sits on its marker line (`1.  ````), and a
+    /// copy button left in a `<pre>` lands after the closing run; neither may
+    /// flip the fence state for the code blocks that follow.
+    #[test]
+    fn later_code_blocks_survive_list_and_copy_button_fences() {
+        let tail = "<p>Next.</p><pre><code>def f():\n    return 1\n</code></pre>";
+        let want = "```\ndef f():\n    return 1\n```";
+        for head in [
+            "<ol><li><div class=\"highlight\"><pre><span></span>pip install x\npip install y</pre></div></li><li>Then run it.</li></ol>",
+            "<pre><code>a\nb</code><button>Copy</button></pre>",
+            "<ul><li><code>``</code> marks inline code</li></ul>",
+        ] {
+            let md = html_to_markdown(&format!("{head}{tail}"));
+            assert!(md.ends_with(want), "{md}");
+        }
+    }
+
+    #[test]
+    fn a_fence_closes_only_on_a_run_at_least_as_long() {
+        let md = "````\n```\n    indented\n```\n````\n\n    code";
+        assert_eq!(
+            convert_indented_code_to_fenced(md),
+            "````\n```\n    indented\n```\n````\n\n```\ncode\n```"
+        );
     }
 
     #[test]
@@ -956,10 +1169,7 @@ mod tests {
     #[test]
     fn layout_tables_without_a_header_are_untouched() {
         let html = "<table><tr><td><pre>| a    | b |\n| ---- | - |</pre></td></tr></table>";
-        assert_eq!(
-            html_to_markdown(html),
-            "```\n| a    | b |\n| ---- | - |\n```"
-        );
+        assert_eq!(html_to_markdown(html), htmd::convert(html).unwrap());
         let nested = "<table><tr><th>H</th></tr><tr><td><table><tr><th>x    </th></tr></table></td></tr></table>";
         assert!(html_to_markdown(nested).contains("| H |"));
     }
