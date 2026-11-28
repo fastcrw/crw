@@ -2,6 +2,15 @@
 
 All notable changes to CRW are documented here.
 
+## [0.49.4](https://github.com/fastcrw/crw/compare/v0.49.3...v0.49.4) (2026-11-28)
+
+
+### Bug Fixes
+
+* **extract:** fence multi-line &lt;pre&gt; blocks without &lt;code&gt; ([39322e2](https://github.com/fastcrw/crw/commit/39322e250246d3cc33b8ca8db03459b4d5507a83))
+* **extract:** keep htmd's path where a bare pre fence would break ([bd1bf0e](https://github.com/fastcrw/crw/commit/bd1bf0e3701732d3ba6702567b38a23c8014ee80))
+* **renderer:** stop the clearance lock serialising renders of one host ([6975dfc](https://github.com/fastcrw/crw/commit/6975dfc190c9d88090db468b0ce3305b0d7d20a2))
+
 ## [0.49.3](https://github.com/fastcrw/crw/compare/v0.49.2...v0.49.3) (2026-11-27)
 
 
