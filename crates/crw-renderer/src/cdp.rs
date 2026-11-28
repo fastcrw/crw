@@ -3645,33 +3645,40 @@ impl CdpRenderer {
                     crate::clearance::ClearanceCache::key(&host, proxy_id.as_deref(), effective_ua)
                 })
         };
-        // Single-flight: the FIRST fetch to a cold `(host,proxy)` holds the solve
-        // lock across navigate+capture, so concurrent same-key fetches (a crawl
-        // hammering one host) wait for that one solve instead of stampeding
-        // Cloudflare with N simultaneous challenges (which gets the IP banned).
-        // A waiter that finds the cookie already cached drops the lock at once and
-        // proceeds in parallel — only the actual solver serialises. (Belt-and-
-        // suspenders to the per-host limiter, which already serialises at
-        // politeness=1.) `_solve_guard` releases when fetch_inner returns.
+        // Single-flight on a key that has challenged before: the first fetch to it
+        // without a fresh cookie holds the solve lock across navigate+capture, so
+        // a crawl's concurrent pages wait for that one solve instead of all
+        // meeting the challenge at once. A key that never earned a cookie is not
+        // locked at all (it would queue every render of a plain host behind the
+        // one before it). A waiter waits only while it could still sit out a
+        // whole render of the solver and then run its own (`room`): the solver
+        // holds the lock until its render ends, which on a challenged page is
+        // the whole nav budget (14 to 18 s on tomatina.com). Below about twice
+        // the nav budget (an 18 s caller) `room` is zero, so a burst there runs
+        // its solves side by side rather than one in the lock and the rest out
+        // of time; a crawl or a default-deadline call still waits for the cookie.
+        // `_solve_guard` releases when fetch_inner returns.
         let mut _solve_guard: Option<tokio::sync::OwnedMutexGuard<()>> = None;
         let inject_cookies = match &clearance_key {
             None => None,
             Some(key) => {
-                let cache = crate::clearance::clearance_cache();
-                match cache.get(key) {
-                    hit @ Some(_) => hit,
-                    None => {
-                        let guard = cache.solve_lock(key).lock_owned().await;
-                        match cache.get(key) {
-                            // Solved while we waited → reuse, release immediately.
-                            hit @ Some(_) => hit,
-                            // Cold: we're the solver — hold the lock through capture.
-                            None => {
-                                _solve_guard = Some(guard);
-                                None
-                            }
-                        }
+                let render = crate::REQUEST_NAV_BUDGET
+                    .try_with(|b| *b)
+                    .ok()
+                    .flatten()
+                    .unwrap_or(self.nav_budget)
+                    + SNAPSHOT_RESERVE;
+                let room = deadline.remaining().saturating_sub(render * 2);
+                match crate::clearance::clearance_cache()
+                    .solve_turn(key, room)
+                    .await
+                {
+                    crate::clearance::SolveTurn::Cached(cookies) => Some(cookies),
+                    crate::clearance::SolveTurn::Solver(guard) => {
+                        _solve_guard = Some(guard);
+                        None
                     }
+                    crate::clearance::SolveTurn::Alone => None,
                 }
             }
         };

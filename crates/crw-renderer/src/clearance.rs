@@ -11,6 +11,11 @@
 //! This module is deliberately renderer-agnostic and side-effect-free: it owns
 //! the cache + the single-flight locks, nothing else. The CDP layer drives the
 //! capture/inject I/O against it.
+//!
+//! The single flight only applies to a key that has earned a `cf_clearance`
+//! before (see [`ClearanceCache::solve_turn`]). A host that never challenges
+//! never yields a cookie, so locking it turned every concurrent render of that
+//! host into a queue that ran one page at a time.
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -40,6 +45,22 @@ pub fn is_clearance_cookie(name: &str) -> bool {
 /// in-flight reuse never races the expiry.
 const DEFAULT_TTL: Duration = Duration::from_secs(25 * 60);
 
+/// How long a key stays known to challenge after its last `cf_clearance`
+/// capture. It outlives the cookie on purpose: the cold fetch after an expiry
+/// is the one the single flight exists for.
+const CHALLENGED_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// What a fetch does about the clearance cookie before it navigates.
+pub enum SolveTurn {
+    /// A fresh cached cookie: inject it and go, no lock.
+    Cached(Vec<ClearanceCookie>),
+    /// This fetch solves the key's challenge. Hold the guard until the cookie
+    /// is captured so the fetches waiting on the key can reuse it.
+    Solver(tokio::sync::OwnedMutexGuard<()>),
+    /// Go ahead alone: no cookie to inject and no lock held.
+    Alone,
+}
+
 struct Entry {
     cookies: Vec<ClearanceCookie>,
     captured_at: Instant,
@@ -50,6 +71,8 @@ struct Entry {
 pub struct ClearanceCache {
     entries: Mutex<HashMap<String, Entry>>,
     locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    /// Keys that captured a `cf_clearance`, with the capture time.
+    challenged: Mutex<HashMap<String, Instant>>,
     ttl: Duration,
 }
 
@@ -64,6 +87,7 @@ impl ClearanceCache {
         Self {
             entries: Mutex::new(HashMap::new()),
             locks: Mutex::new(HashMap::new()),
+            challenged: Mutex::new(HashMap::new()),
             ttl,
         }
     }
@@ -107,6 +131,12 @@ impl ClearanceCache {
         if cookies.is_empty() {
             return;
         }
+        if cookies.iter().any(|c| c.name == "cf_clearance") {
+            self.challenged
+                .lock()
+                .unwrap()
+                .insert(key.to_string(), Instant::now());
+        }
         self.entries.lock().unwrap().insert(
             key.to_string(),
             Entry {
@@ -122,14 +152,52 @@ impl ClearanceCache {
         self.entries.lock().unwrap().remove(key);
     }
 
-    /// The single-flight lock for `key`. The first fetch to a fresh `(host,proxy)`
-    /// holds it across solve+capture so concurrent fetches (e.g. a crawl's 100
-    /// parallel pages) wait for the one solve instead of stampeding Cloudflare
-    /// with 100 simultaneous challenges (which gets the IP banned). Once the
-    /// cookie is cached the waiters re-check, find it, and proceed in parallel.
+    /// The single-flight lock for `key`. Its holder solves the challenge while
+    /// concurrent fetches to the key wait for its cookie instead of each meeting
+    /// the challenge; once the cookie is cached the waiters re-check, find it,
+    /// and proceed in parallel. The chrome tier takes it through
+    /// [`Self::solve_turn`], which leaves a key that never challenged unlocked.
     pub fn solve_lock(&self, key: &str) -> Arc<AsyncMutex<()>> {
         let mut locks = self.locks.lock().unwrap();
         locks.entry(key.to_string()).or_default().clone()
+    }
+
+    /// Whether `key` captured a `cf_clearance` within [`CHALLENGED_TTL`].
+    fn is_challenged_at(&self, key: &str, now: Instant) -> bool {
+        let mut challenged = self.challenged.lock().unwrap();
+        match challenged.get(key) {
+            Some(at) if now.saturating_duration_since(*at) < CHALLENGED_TTL => true,
+            Some(_) => {
+                challenged.remove(key);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// Decide how a fetch to `key` treats the clearance cookie.
+    ///
+    /// A cached cookie is injected. A key that never earned a `cf_clearance`
+    /// goes alone: there is no challenge to wait for, and the first fetch's
+    /// render would only produce a page, never a cookie the others could use.
+    /// A key known to challenge takes the single flight, but a fetch waits for
+    /// another fetch's solve at most `room`, then goes alone rather than
+    /// spending its own deadline in the queue. A lock that is free is taken
+    /// even when `room` is zero, so one of a burst still solves for the rest.
+    pub async fn solve_turn(&self, key: &str, room: Duration) -> SolveTurn {
+        if let Some(cookies) = self.get(key) {
+            return SolveTurn::Cached(cookies);
+        }
+        if !self.is_challenged_at(key, Instant::now()) {
+            return SolveTurn::Alone;
+        }
+        let Ok(guard) = tokio::time::timeout(room, self.solve_lock(key).lock_owned()).await else {
+            return SolveTurn::Alone;
+        };
+        match self.get(key) {
+            Some(cookies) => SolveTurn::Cached(cookies),
+            None => SolveTurn::Solver(guard),
+        }
     }
 }
 
@@ -258,5 +326,116 @@ mod tests {
         );
         let _ = (a, b);
         assert_eq!(solves.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    fn challenged(c: &ClearanceCache, k: &str) -> bool {
+        c.is_challenged_at(k, Instant::now())
+    }
+
+    #[test]
+    fn only_a_cf_clearance_capture_marks_the_key_challenged() {
+        let c = ClearanceCache::default();
+        let k = ClearanceCache::key("example.com", None, "UA/1");
+        c.put(&k, vec![ck("__cf_bm")]);
+        assert!(!challenged(&c, &k), "__cf_bm rides on every CF response");
+        c.put(&k, vec![ck("__cf_bm"), ck("cf_clearance")]);
+        assert!(challenged(&c, &k));
+        // The mark outlives the cookie: the cold fetch after expiry still locks.
+        c.invalidate(&k);
+        assert!(challenged(&c, &k));
+        let later = Instant::now() + CHALLENGED_TTL + Duration::from_secs(1);
+        assert!(!c.is_challenged_at(&k, later));
+    }
+
+    #[tokio::test]
+    async fn a_key_that_never_challenged_is_never_locked() {
+        let c = ClearanceCache::default();
+        let k = ClearanceCache::key("plain.example", None, "UA/1");
+        let a = c.solve_turn(&k, Duration::from_secs(30)).await;
+        // The first fetch's render captured nothing, so its guard (had it taken
+        // one) would still be held here. The second fetch must not queue.
+        let b = tokio::time::timeout(
+            Duration::from_millis(50),
+            c.solve_turn(&k, Duration::from_secs(30)),
+        )
+        .await
+        .expect("second fetch to a plain host waited on a lock");
+        assert!(matches!(a, SolveTurn::Alone));
+        assert!(matches!(b, SolveTurn::Alone));
+    }
+
+    #[tokio::test]
+    async fn a_cached_cookie_is_injected_without_the_lock() {
+        let c = ClearanceCache::default();
+        let k = ClearanceCache::key("cf.example", None, "UA/1");
+        c.put(&k, vec![ck("cf_clearance")]);
+        let _held = c.solve_lock(&k).lock_owned().await;
+        let turn =
+            tokio::time::timeout(Duration::from_millis(50), c.solve_turn(&k, Duration::ZERO))
+                .await
+                .expect("a cached cookie must not wait on the lock");
+        assert!(matches!(turn, SolveTurn::Cached(v) if v == vec![ck("cf_clearance")]));
+    }
+
+    /// A challenged key whose cookie expired: the first fetch solves.
+    fn cold_challenged(host: &str) -> (Arc<ClearanceCache>, String) {
+        let c = Arc::new(ClearanceCache::default());
+        let k = ClearanceCache::key(host, None, "UA/1");
+        c.put(&k, vec![ck("cf_clearance")]);
+        c.invalidate(&k);
+        (c, k)
+    }
+
+    #[tokio::test]
+    async fn a_free_lock_is_taken_even_with_no_room() {
+        let (c, k) = cold_challenged("cf.example");
+        assert!(matches!(
+            c.solve_turn(&k, Duration::ZERO).await,
+            SolveTurn::Solver(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_waiter_with_no_room_goes_alone_at_once() {
+        let (c, k) = cold_challenged("cf.example");
+        let SolveTurn::Solver(_guard) = c.solve_turn(&k, Duration::ZERO).await else {
+            panic!("first fetch must solve");
+        };
+        let t0 = Instant::now();
+        assert!(matches!(
+            c.solve_turn(&k, Duration::ZERO).await,
+            SolveTurn::Alone
+        ));
+        assert!(t0.elapsed() < Duration::from_millis(50));
+    }
+
+    #[tokio::test]
+    async fn a_waiter_gives_up_after_its_room() {
+        let (c, k) = cold_challenged("cf.example");
+        let SolveTurn::Solver(_guard) = c.solve_turn(&k, Duration::ZERO).await else {
+            panic!("first fetch must solve");
+        };
+        let t0 = Instant::now();
+        let turn = c.solve_turn(&k, Duration::from_millis(100)).await;
+        assert!(matches!(turn, SolveTurn::Alone));
+        let waited = t0.elapsed();
+        assert!(waited >= Duration::from_millis(100), "{waited:?}");
+        assert!(waited < Duration::from_secs(2), "{waited:?}");
+    }
+
+    #[tokio::test]
+    async fn a_waiter_reuses_the_solvers_cookie() {
+        let (c, k) = cold_challenged("cf.example");
+        let SolveTurn::Solver(guard) = c.solve_turn(&k, Duration::ZERO).await else {
+            panic!("first fetch must solve");
+        };
+        let waiter = {
+            let (c, k) = (c.clone(), k.clone());
+            tokio::spawn(async move { c.solve_turn(&k, Duration::from_secs(5)).await })
+        };
+        tokio::task::yield_now().await;
+        c.put(&k, vec![ck("cf_clearance")]);
+        drop(guard);
+        assert!(matches!(waiter.await.unwrap(), SolveTurn::Cached(_)));
     }
 }
