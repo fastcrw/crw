@@ -8,6 +8,18 @@ The source of truth is the repository root changelog. Do not edit this docs page
 
 All notable changes to CRW are documented here.
 
+## [0.49.3](https://github.com/fastcrw/crw/compare/v0.49.2...v0.49.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **renderer:** end the chrome_proxy arm with the caller's deadline ([bd4a270](https://github.com/fastcrw/crw/commit/bd4a270ff265898475730f26e8105d33a78da0e7))
+* **renderer:** escalate a 409 and take only a 2xx from the impersonated hop ([f06f919](https://github.com/fastcrw/crw/commit/f06f91910a680f7a2abe4f4a315f6a6af7873d90))
+* **renderer:** serve origins slower than the HTTP tier timeout ([535c9bb](https://github.com/fastcrw/crw/commit/535c9bb407a6b690981cf6ca1e1a3cee2bfdad66))
+* **renderer:** snapshot a slow page before the deadline cancels it ([385d456](https://github.com/fastcrw/crw/commit/385d456fff3eeeb284ca88a08c85f3abbbee6627))
+* **renderer:** take the impersonated hop's real 404 as the answer ([c8967cd](https://github.com/fastcrw/crw/commit/c8967cd9ec71d3dbe5ede9aaaeda166dc6bca2ee))
+* **renderer:** wait longer for a slow origin when the deadline has room ([4912196](https://github.com/fastcrw/crw/commit/4912196985ab6e2885b0621ec2cc70c7e5e25812))
+
 ## [0.49.2](https://github.com/fastcrw/crw/compare/v0.49.1...v0.49.2) (2026-11-26)
 
 
